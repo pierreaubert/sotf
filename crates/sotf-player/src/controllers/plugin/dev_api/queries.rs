@@ -19,6 +19,9 @@ use serde_json::{Value, json};
 /// - `plugins.plugin.{index}.crosspoint.{output}.{input}.value` -> stored Matrix gain
 /// - `plugins.plugin.{index}.param_indices` -> actual queryable parameter IDs
 /// - `plugins.plugin.{index}.param.{i}.name|value|type|min|max|choice_count`
+///
+/// # Errors
+/// Returns an error if the query path or plugin index is invalid.
 pub fn plugin_query(graph: &PluginGraph, path: &str) -> Result<Value> {
     Ok(match path {
         "plugins.count" => json!(graph.len()),
@@ -217,6 +220,10 @@ fn query_param_descriptors(settings: &crate::PluginSettings) -> Result<Vec<Value
         .collect()
 }
 
+#[expect(
+    clippy::option_option,
+    reason = "The query distinguishes unsupported parameters, absent paths, and present paths "
+)]
 fn query_file_path_value<'a>(
     settings: &'a crate::PluginSettings,
     key: &str,

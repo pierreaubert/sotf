@@ -28,6 +28,10 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_room_eq_process(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();

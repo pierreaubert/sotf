@@ -16,6 +16,7 @@ pub const MAX_CACHE_SIZE: usize = 200;
 ///
 /// This tracker monitors which album art paths have been accessed recently
 /// to help with preloading decisions and cache eviction policies.
+#[derive(Debug)]
 pub struct ImageAccessTracker {
     /// Paths that have been accessed, with access count
     access_counts: HashMap<PathBuf, u32>,
@@ -35,6 +36,7 @@ impl Default for ImageAccessTracker {
 
 impl ImageAccessTracker {
     /// Create a new empty tracker
+    #[must_use]
     pub fn new() -> Self {
         Self {
             access_counts: HashMap::new(),
@@ -45,6 +47,7 @@ impl ImageAccessTracker {
     }
 
     /// Create a tracker with custom size limit
+    #[must_use]
     pub fn with_capacity(max_size: usize) -> Self {
         Self {
             access_counts: HashMap::new(),
@@ -69,16 +72,19 @@ impl ImageAccessTracker {
     }
 
     /// Check if a path has been accessed recently
+    #[must_use]
     pub fn was_accessed(&self, path: &Path) -> bool {
         self.access_counts.contains_key(path)
     }
 
     /// Get the access count for a path
+    #[must_use]
     pub fn access_count(&self, path: &Path) -> u32 {
         self.access_counts.get(path).copied().unwrap_or(0)
     }
 
     /// Check if a path has been preloaded
+    #[must_use]
     pub fn is_preloaded(&self, path: &Path) -> bool {
         self.preloaded.contains(path)
     }
@@ -91,6 +97,7 @@ impl ImageAccessTracker {
     /// Get paths that should be preloaded based on access patterns
     ///
     /// Returns paths that haven't been preloaded yet but are likely to be needed soon.
+    #[must_use]
     pub fn get_preload_candidates(&self, paths: &[PathBuf], count: usize) -> Vec<PathBuf> {
         paths
             .iter()
@@ -108,6 +115,7 @@ impl ImageAccessTracker {
     }
 
     /// Get cache statistics
+    #[must_use]
     pub fn stats(&self) -> TrackerStats {
         TrackerStats {
             tracked: self.access_counts.len(),
@@ -124,6 +132,7 @@ impl ImageAccessTracker {
     }
 
     /// Get the most recently accessed paths
+    #[must_use]
     pub fn recent_paths(&self, count: usize) -> Vec<&PathBuf> {
         self.lru_order.iter().rev().take(count).collect()
     }
@@ -163,6 +172,11 @@ pub struct TrackerStats {
 
 impl TrackerStats {
     /// Get tracker utilization as percentage
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub fn utilization(&self) -> f32 {
         if self.capacity > 0 {
             self.tracked as f32 / self.capacity as f32 * 100.0

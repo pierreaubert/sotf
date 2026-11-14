@@ -6,7 +6,7 @@
 //! cross-correlation. Unlike the Room EQ "Delay Detection" step, this
 //! one runs *while the mic is still set up* right after sweeps, and
 //! persists both the raw probe WAV and the analysed results into the
-//! recording session JSON so downstream tools (Room EQ, convert_recording,
+//! recording session JSON so downstream tools (Room EQ, `convert_recording`,
 //! etc.) can pick them up at load time with no extra action from the user.
 //!
 //! All state lives in [`ProbeCaptureState`] on the shared `RecordingState`

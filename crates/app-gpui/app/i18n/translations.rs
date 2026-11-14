@@ -30,6 +30,11 @@ pub struct MultiCaptureTranslations {
 }
 
 impl MultiCaptureTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -181,6 +186,7 @@ impl MultiCaptureTranslations {
     }
 
     #[cfg(not(target_os = "ios"))]
+    #[must_use]
     pub fn stage(self, stage: sotf_audio_player::ui_models::capture::CaptureStage) -> &'static str {
         use sotf_audio_player::ui_models::capture::CaptureStage;
         self.stages[match stage {
@@ -210,6 +216,7 @@ pub struct RoomEqEasyTranslations {
 }
 
 impl RoomEqEasyTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -252,6 +259,7 @@ impl RoomEqEasyTranslations {
         }
     }
 
+    #[must_use]
     pub fn description(
         self,
         layout: sotf_audio_player::room_eq_types::RoomEqEasyLayout,
@@ -264,6 +272,7 @@ impl RoomEqEasyTranslations {
         }
     }
 
+    #[must_use]
     pub fn configuration_title(
         self,
         layout: sotf_audio_player::room_eq_types::RoomEqEasyLayout,
@@ -278,6 +287,7 @@ impl RoomEqEasyTranslations {
         )
     }
 
+    #[must_use]
     pub fn invalid_layout(
         self,
         error: &sotf_audio_player::room_eq_types::RoomEqEasyLayoutError,
@@ -319,6 +329,7 @@ pub struct HeadphoneEasyTranslations {
 }
 
 impl HeadphoneEasyTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -373,6 +384,7 @@ impl HeadphoneEasyTranslations {
         }
     }
 
+    #[must_use]
     pub fn applied(self, filters: usize, preamp_db: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -394,6 +406,7 @@ impl HeadphoneEasyTranslations {
         }
     }
 
+    #[must_use]
     pub fn summary(self, filters: usize, preamp_db: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -457,6 +470,11 @@ pub struct HeadphoneEqTranslations {
 }
 
 impl HeadphoneEqTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -620,6 +638,7 @@ pub struct StreamsTranslations {
 }
 
 impl StreamsTranslations {
+    #[must_use]
     pub fn edit_station(language: Language) -> &'static str {
         match language {
             Language::English => "Edit",
@@ -630,6 +649,7 @@ impl StreamsTranslations {
         }
     }
 
+    #[must_use]
     pub fn add_station(language: Language) -> &'static str {
         match language {
             Language::English => "Add station",
@@ -640,6 +660,7 @@ impl StreamsTranslations {
         }
     }
 
+    #[must_use]
     pub fn cancel_station(language: Language) -> &'static str {
         match language {
             Language::English => "Cancel",
@@ -650,6 +671,7 @@ impl StreamsTranslations {
         }
     }
 
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -740,6 +762,11 @@ pub struct PlaylistTranslations {
 }
 
 impl PlaylistTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -858,6 +885,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn tracks(self, count: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -871,6 +899,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn name_required(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -884,6 +913,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn library_database_unavailable(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -899,6 +929,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn select_library_album_first(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -912,6 +943,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn select_queue_album_first(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -925,6 +957,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn restored(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -938,6 +971,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn imported(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -951,6 +985,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn exported(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -966,6 +1001,7 @@ impl PlaylistTranslations {
 }
 
 impl PlaylistTranslations {
+    #[must_use]
     pub fn active_playlist_unavailable(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -979,6 +1015,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn deleted_with_undo(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -992,6 +1029,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn no_tracks_to_queue(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -1005,6 +1043,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn no_playlist_tracks_available(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -1022,6 +1061,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn all_tracks_already_queued(self, count: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -1037,6 +1077,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn queued_with_missing(self, added: usize, missing: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -1058,6 +1099,7 @@ impl PlaylistTranslations {
         }
     }
 
+    #[must_use]
     pub fn added_to_playlist(self, album: &str) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -1103,6 +1145,11 @@ pub struct PluginRackTranslations {
 }
 
 impl PluginRackTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1473,6 +1520,7 @@ static SPANISH_TUTORIAL_SCREENS: [TutorialSlideTranslations; 7] = [
 ];
 
 impl TutorialTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1541,6 +1589,11 @@ pub struct MetadataEditorTranslations {
 }
 
 impl MetadataEditorTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1671,10 +1724,12 @@ impl MetadataEditorTranslations {
         }
     }
 
+    #[must_use]
     pub fn target_label(self, target: &str) -> String {
         format!("{}: {target}", self.target)
     }
 
+    #[must_use]
     pub fn preview_summary(
         self,
         affected_files: usize,
@@ -1726,6 +1781,7 @@ pub struct FileDialogTranslations {
 }
 
 impl FileDialogTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1804,6 +1860,7 @@ pub struct WorkflowTranslations {
 }
 
 impl WorkflowTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1874,6 +1931,7 @@ impl WorkflowTranslations {
         }
     }
 
+    #[must_use]
     pub fn progress(self, percent: f32) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -1887,6 +1945,7 @@ impl WorkflowTranslations {
         }
     }
 
+    #[must_use]
     pub fn iteration_loss(self, iteration: usize, loss: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -1910,6 +1969,7 @@ pub struct WizardNavigationTranslations {
 }
 
 impl WizardNavigationTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -1940,10 +2000,12 @@ impl WizardNavigationTranslations {
         }
     }
 
+    #[must_use]
     pub fn primary_action(self, next_step: Option<&str>) -> String {
-        next_step
-            .map(|label| format!("{} {label}", self.continue_to))
-            .unwrap_or_else(|| self.finish.to_string())
+        next_step.map_or_else(
+            || self.finish.to_string(),
+            |label| format!("{} {label}", self.continue_to),
+        )
     }
 }
 
@@ -1973,6 +2035,7 @@ pub struct RoomEqWorkflowTranslations {
 }
 
 impl RoomEqWorkflowTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2071,6 +2134,7 @@ impl RoomEqWorkflowTranslations {
         }
     }
 
+    #[must_use]
     pub fn step_label(self, step: RoomEqStep) -> &'static str {
         match (self.language, step) {
             (Language::Pseudo, step) => pseudo_borrowed(
@@ -2083,7 +2147,7 @@ impl RoomEqWorkflowTranslations {
             (Language::English, RoomEqStep::Configure) => "Configure",
             (Language::English, RoomEqStep::Optimize) => "Optimize",
             (Language::English, RoomEqStep::Review) => "Review",
-            (Language::English, RoomEqStep::Export) => "Export",
+            (Language::English | Language::German, RoomEqStep::Export) => "Export",
             (Language::French, RoomEqStep::LoadData) => "Données",
             (Language::French, RoomEqStep::Delay) => "Délais",
             (Language::French, RoomEqStep::Process) => "Traitement",
@@ -2097,7 +2161,6 @@ impl RoomEqWorkflowTranslations {
             (Language::German, RoomEqStep::Configure) => "Konfig.",
             (Language::German, RoomEqStep::Optimize) => "Optimieren",
             (Language::German, RoomEqStep::Review) => "Prüfen",
-            (Language::German, RoomEqStep::Export) => "Export",
             (Language::Spanish, RoomEqStep::LoadData) => "Datos",
             (Language::Spanish, RoomEqStep::Delay) => "Retardo",
             (Language::Spanish, RoomEqStep::Process) => "Procesar",
@@ -2132,6 +2195,7 @@ pub struct EqDiscoveryTranslations {
 }
 
 impl EqDiscoveryTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2218,6 +2282,7 @@ impl EqDiscoveryTranslations {
         }
     }
 
+    #[must_use]
     pub fn spinorama_step_label(self, step: SpinoramaStep) -> &'static str {
         match (self.language, step) {
             (Language::Pseudo, step) => pseudo_borrowed(
@@ -2227,7 +2292,7 @@ impl EqDiscoveryTranslations {
             (Language::English, SpinoramaStep::SelectSpeaker) => "Select",
             (Language::English, SpinoramaStep::Configure) => "Optimize",
             (Language::English, SpinoramaStep::Review) => "Review",
-            (Language::English, SpinoramaStep::Export) => "Export",
+            (Language::English | Language::German, SpinoramaStep::Export) => "Export",
             (Language::French, SpinoramaStep::SelectSpeaker) => "Sélection",
             (Language::French, SpinoramaStep::Configure) => "Optimiser",
             (Language::French, SpinoramaStep::Review) => "Révision",
@@ -2235,7 +2300,6 @@ impl EqDiscoveryTranslations {
             (Language::German, SpinoramaStep::SelectSpeaker) => "Auswahl",
             (Language::German, SpinoramaStep::Configure) => "Optimieren",
             (Language::German, SpinoramaStep::Review) => "Prüfen",
-            (Language::German, SpinoramaStep::Export) => "Export",
             (Language::Spanish, SpinoramaStep::SelectSpeaker) => "Seleccionar",
             (Language::Spanish, SpinoramaStep::Configure) => "Optimizar",
             (Language::Spanish, SpinoramaStep::Review) => "Revisar",
@@ -2245,6 +2309,7 @@ impl EqDiscoveryTranslations {
 }
 
 impl EqDiscoveryTranslations {
+    #[must_use]
     pub fn available(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -2252,12 +2317,12 @@ impl EqDiscoveryTranslations {
                 Self::for_language(Language::English).available(),
             ),
             Language::English => "Available",
-            Language::French => "Disponible",
+            Language::French | Language::Spanish => "Disponible",
             Language::German => "Verfügbar",
-            Language::Spanish => "Disponible",
         }
     }
 
+    #[must_use]
     pub fn not_available(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -2271,6 +2336,7 @@ impl EqDiscoveryTranslations {
         }
     }
 
+    #[must_use]
     pub fn speaker_count(self, count: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -2284,6 +2350,7 @@ impl EqDiscoveryTranslations {
         }
     }
 
+    #[must_use]
     pub fn matching_speaker_count(self, count: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -2297,6 +2364,7 @@ impl EqDiscoveryTranslations {
         }
     }
 
+    #[must_use]
     pub fn no_speakers_loaded(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -2310,6 +2378,7 @@ impl EqDiscoveryTranslations {
         }
     }
 
+    #[must_use]
     pub fn no_matching_speakers(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -2378,6 +2447,11 @@ impl RecordingWorkflowTranslations {
         }
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2524,6 +2598,7 @@ impl RecordingWorkflowTranslations {
         }
     }
 
+    #[must_use]
     pub fn seconds(self, seconds: u32) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -2537,7 +2612,8 @@ impl RecordingWorkflowTranslations {
         }
     }
 
-    /// Status line shown after the user accepts parked ReviewNeeded takes.
+    /// Status line shown after the user accepts parked `ReviewNeeded` takes.
+    #[must_use]
     pub fn accepted_takes(self, accepted: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -2560,6 +2636,7 @@ impl RecordingWorkflowTranslations {
     }
 
     /// Move-position modal body: where the mics go and the ~60 cm rule.
+    #[must_use]
     pub fn move_position_body(self, next_seat: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -2601,6 +2678,7 @@ pub struct ContextMenuTranslations {
 }
 
 impl ContextMenuTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2729,6 +2807,11 @@ pub struct DialogAboutTranslations {
 }
 
 impl DialogTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -2939,6 +3022,7 @@ impl DialogTranslations {
         }
     }
 
+    #[must_use]
     pub fn screen_name(self, screen: crate::app::types::Screen) -> &'static str {
         use crate::app::types::Screen;
 
@@ -2955,28 +3039,32 @@ impl DialogTranslations {
             (Language::French, Screen::Playlists) => "Listes de lecture",
             (Language::French, Screen::Spectrum) => "Spectre",
             (Language::French, Screen::Settings | Screen::SettingsDetail) => "Paramètres",
-            (Language::French, Screen::StudioHub | Screen::Studio) => "Studio",
+            (
+                Language::French | Language::German | Language::Spanish | Language::English,
+                Screen::StudioHub | Screen::Studio,
+            ) => "Studio",
             (Language::French, Screen::EqCurve) => "Courbe d’égalisation",
             (Language::French, Screen::Recording) => "Enregistrement",
             (Language::French, Screen::RoomEq) => "Correction de salle",
             (Language::French, Screen::HeadphoneEq) => "Égalisation casque",
-            (Language::French, Screen::Spinorama) => "Spinorama",
+            (
+                Language::French | Language::German | Language::Spanish | Language::English,
+                Screen::Spinorama,
+            ) => "Spinorama",
             (Language::French, Screen::PluginGraph) => "Graphe des modules",
             (Language::French, Screen::ListeningTest) => "Entraînement auditif",
             (Language::German, Screen::Home | Screen::HomeShelf) => "Startseite",
             (Language::German, Screen::NowPlaying) => "Aktuelle Wiedergabe",
             (Language::German, Screen::Library) => "Mediathek",
-            (Language::German, Screen::Streams) => "Streams",
+            (Language::German | Language::English, Screen::Streams) => "Streams",
             (Language::German, Screen::Queue) => "Warteschlange",
             (Language::German, Screen::Playlists) => "Wiedergabelisten",
             (Language::German, Screen::Spectrum) => "Spektrum",
             (Language::German, Screen::Settings | Screen::SettingsDetail) => "Einstellungen",
-            (Language::German, Screen::StudioHub | Screen::Studio) => "Studio",
             (Language::German, Screen::EqCurve) => "EQ-Kurve",
             (Language::German, Screen::Recording) => "Aufnahme",
             (Language::German, Screen::RoomEq) => "Raum-EQ",
             (Language::German, Screen::HeadphoneEq) => "Kopfhörer-EQ",
-            (Language::German, Screen::Spinorama) => "Spinorama",
             (Language::German, Screen::PluginGraph) => "Plugin-Graph",
             (Language::German, Screen::ListeningTest) => "Gehörtraining",
             (Language::Spanish, Screen::Home | Screen::HomeShelf) => "Inicio",
@@ -2987,33 +3075,33 @@ impl DialogTranslations {
             (Language::Spanish, Screen::Playlists) => "Listas de reproducción",
             (Language::Spanish, Screen::Spectrum) => "Espectro",
             (Language::Spanish, Screen::Settings | Screen::SettingsDetail) => "Ajustes",
-            (Language::Spanish, Screen::StudioHub | Screen::Studio) => "Studio",
             (Language::Spanish, Screen::EqCurve) => "Curva de EQ",
             (Language::Spanish, Screen::Recording) => "Grabación",
             (Language::Spanish, Screen::RoomEq) => "EQ de sala",
             (Language::Spanish, Screen::HeadphoneEq) => "EQ de auriculares",
-            (Language::Spanish, Screen::Spinorama) => "Spinorama",
             (Language::Spanish, Screen::PluginGraph) => "Grafo de complementos",
             (Language::Spanish, Screen::ListeningTest) => "Entrenamiento auditivo",
             (Language::English, Screen::Home | Screen::HomeShelf) => "Home",
             (Language::English, Screen::NowPlaying) => "Now Playing",
             (Language::English, Screen::Library) => "Library",
-            (Language::English, Screen::Streams) => "Streams",
             (Language::English, Screen::Queue) => "Queue",
             (Language::English, Screen::Playlists) => "Playlists",
             (Language::English, Screen::Spectrum) => "Spectrum",
             (Language::English, Screen::Settings | Screen::SettingsDetail) => "Settings",
-            (Language::English, Screen::StudioHub | Screen::Studio) => "Studio",
             (Language::English, Screen::EqCurve) => "EQ Curve",
             (Language::English, Screen::Recording) => "Recording",
             (Language::English, Screen::RoomEq) => "Room EQ",
             (Language::English, Screen::HeadphoneEq) => "Headphone EQ",
-            (Language::English, Screen::Spinorama) => "Spinorama",
             (Language::English, Screen::PluginGraph) => "Plugin Graph",
             (Language::English, Screen::ListeningTest) => "Ear Training",
         }
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn screen_overview(self, screen: crate::app::types::Screen) -> &'static str {
         use crate::app::types::Screen;
 
@@ -3211,6 +3299,7 @@ impl DialogTranslations {
         }
     }
 
+    #[must_use]
     pub fn keyboard_shortcuts_for(self, screen: &'static str) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -3224,6 +3313,7 @@ impl DialogTranslations {
         }
     }
 
+    #[must_use]
     pub fn screen_keybindings(self, screen: &'static str) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -3237,16 +3327,15 @@ impl DialogTranslations {
         }
     }
 
+    #[must_use]
     pub fn version(self, version: &str) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
                 self.language,
                 Self::for_language(Language::English).version(version),
             ),
-            Language::French => format!("Version {version}"),
-            Language::German => format!("Version {version}"),
+            Language::French | Language::German | Language::English => format!("Version {version}"),
             Language::Spanish => format!("Versión {version}"),
-            Language::English => format!("Version {version}"),
         }
     }
 }
@@ -3286,6 +3375,11 @@ pub struct ServerSettingsTranslations {
 }
 
 impl ServerSettingsTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -3458,6 +3552,11 @@ pub struct PhoneTranslations {
 }
 
 impl PhoneTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -3602,6 +3701,7 @@ impl PhoneTranslations {
 }
 
 impl PhoneTranslations {
+    #[must_use]
     pub fn active(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -3615,6 +3715,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn muted(self) -> &'static str {
         match self.language {
             Language::Pseudo => {
@@ -3627,6 +3728,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn done(self) -> &'static str {
         match self.language {
             Language::Pseudo => {
@@ -3639,6 +3741,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn tracks(self, count: usize) -> String {
         let value = match self.language {
             Language::Pseudo => Self::for_language(Language::English).tracks(count),
@@ -3658,6 +3761,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn untitled(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -3671,6 +3775,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn unknown_artist(self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_borrowed(
@@ -3684,6 +3789,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn decrease(self, label: &str) -> String {
         let value = match self.language {
             Language::Pseudo => Self::for_language(Language::English).decrease(label),
@@ -3699,6 +3805,7 @@ impl PhoneTranslations {
         }
     }
 
+    #[must_use]
     pub fn increase(self, label: &str) -> String {
         let value = match self.language {
             Language::Pseudo => Self::for_language(Language::English).increase(label),
@@ -3742,6 +3849,7 @@ pub struct PhoneToolTranslations {
 }
 
 impl PhoneToolTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -3846,6 +3954,7 @@ pub struct PhoneLibraryTranslations {
 }
 
 impl PhoneLibraryTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -3978,6 +4087,7 @@ pub struct RoomEqOverviewTranslations {
 }
 
 impl RoomEqReportTranslations {
+    #[must_use]
     pub fn summary_labels(language: Language) -> [&'static str; 8] {
         match language {
             Language::English => [
@@ -4033,6 +4143,7 @@ impl RoomEqReportTranslations {
         }
     }
 
+    #[must_use]
     pub fn source_labels(language: Language) -> [&'static str; 4] {
         match language {
             Language::English => ["Measurement sources", "Microphone", "Position", "Unknown"],
@@ -4053,6 +4164,11 @@ impl RoomEqReportTranslations {
         }
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4343,6 +4459,11 @@ pub struct LevelMeterTranslations {
 }
 
 impl LevelMeterTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4552,6 +4673,7 @@ pub struct EqViewTranslations {
 }
 
 impl EqViewTranslations {
+    #[must_use]
     pub fn wheel_hint(language: Language) -> &'static str {
         match language {
             Language::English => {
@@ -4572,6 +4694,7 @@ impl EqViewTranslations {
         }
     }
 
+    #[must_use]
     pub fn frequency_axis(language: Language) -> &'static str {
         match language {
             Language::English => "Frequency (Hz)",
@@ -4582,6 +4705,7 @@ impl EqViewTranslations {
         }
     }
 
+    #[must_use]
     pub fn order(language: Language) -> &'static str {
         match language {
             Language::English => "Order",
@@ -4592,16 +4716,17 @@ impl EqViewTranslations {
         }
     }
 
+    #[must_use]
     pub fn topology(language: Language) -> &'static str {
         match language {
             Language::English => "Topology",
-            Language::French => "Topologie",
-            Language::German => "Topologie",
+            Language::French | Language::German => "Topologie",
             Language::Spanish => "Topología",
             Language::Pseudo => "[Tôpôlôgÿ]",
         }
     }
 
+    #[must_use]
     pub fn oversampling(language: Language) -> &'static str {
         match language {
             Language::English => "Oversampling",
@@ -4612,6 +4737,11 @@ impl EqViewTranslations {
         }
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4796,6 +4926,11 @@ pub struct AppearanceTranslations {
 }
 
 impl AppearanceTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -4938,6 +5073,7 @@ pub struct SpeakerGraphTranslations {
 }
 
 impl SpeakerGraphTranslations {
+    #[must_use]
     pub fn objective_help(language: Language, score: bool) -> &'static str {
         match (language, score) {
             (Language::English, false) => {
@@ -4973,6 +5109,7 @@ impl SpeakerGraphTranslations {
         }
     }
 
+    #[must_use]
     pub fn directivity_review(language: Language) -> (&'static str, &'static str) {
         match language {
             Language::English => (
@@ -4998,6 +5135,7 @@ impl SpeakerGraphTranslations {
         }
     }
 
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -5066,6 +5204,7 @@ pub struct HeadphoneGraphTranslations {
 }
 
 impl HeadphoneGraphTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -5137,6 +5276,7 @@ pub struct KeybindingTranslations {
 }
 
 impl KeybindingTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -5227,6 +5367,7 @@ impl KeybindingTranslations {
         }
     }
 
+    #[must_use]
     pub fn category_name(
         self,
         category: crate::app::keybindings::KeybindingCategory,
@@ -5239,16 +5380,18 @@ impl KeybindingTranslations {
                 Self::for_language(Language::English).category_name(category),
             ),
             (Language::English, KeybindingCategory::Playback) => "Playback",
-            (Language::English, KeybindingCategory::Navigation) => "Navigation",
+            (
+                Language::English | Language::French | Language::German,
+                KeybindingCategory::Navigation,
+            ) => "Navigation",
             (Language::English, KeybindingCategory::ScreenSwitch) => "Screen Switching",
             (Language::English, KeybindingCategory::Library) => "Library",
             (Language::English, KeybindingCategory::Queue) => "Queue",
-            (Language::English, KeybindingCategory::Plugins) => "Plugins",
+            (Language::English | Language::German, KeybindingCategory::Plugins) => "Plugins",
             (Language::English, KeybindingCategory::ListeningTests) => "Listening Tests",
             (Language::English, KeybindingCategory::LevelMeters) => "Level Meters",
-            (Language::English, KeybindingCategory::System) => "System",
+            (Language::English | Language::German, KeybindingCategory::System) => "System",
             (Language::French, KeybindingCategory::Playback) => "Lecture",
-            (Language::French, KeybindingCategory::Navigation) => "Navigation",
             (Language::French, KeybindingCategory::ScreenSwitch) => "Changement d’écran",
             (Language::French, KeybindingCategory::Library) => "Bibliothèque",
             (Language::French, KeybindingCategory::Queue) => "File d’attente",
@@ -5257,14 +5400,11 @@ impl KeybindingTranslations {
             (Language::French, KeybindingCategory::LevelMeters) => "Indicateurs de niveau",
             (Language::French, KeybindingCategory::System) => "Système",
             (Language::German, KeybindingCategory::Playback) => "Wiedergabe",
-            (Language::German, KeybindingCategory::Navigation) => "Navigation",
             (Language::German, KeybindingCategory::ScreenSwitch) => "Bildschirmwechsel",
             (Language::German, KeybindingCategory::Library) => "Mediathek",
             (Language::German, KeybindingCategory::Queue) => "Warteschlange",
-            (Language::German, KeybindingCategory::Plugins) => "Plugins",
             (Language::German, KeybindingCategory::ListeningTests) => "Hörtests",
             (Language::German, KeybindingCategory::LevelMeters) => "Pegelanzeigen",
-            (Language::German, KeybindingCategory::System) => "System",
             (Language::Spanish, KeybindingCategory::Playback) => "Reproducción",
             (Language::Spanish, KeybindingCategory::Navigation) => "Navegación",
             (Language::Spanish, KeybindingCategory::ScreenSwitch) => "Cambio de pantalla",
@@ -5277,6 +5417,7 @@ impl KeybindingTranslations {
         }
     }
 
+    #[must_use]
     pub fn preset_description(self, preset: crate::app::keybindings::KeymapPreset) -> &'static str {
         use crate::app::keybindings::KeymapPreset;
 
@@ -5312,6 +5453,7 @@ impl KeybindingTranslations {
         }
     }
 
+    #[must_use]
     pub fn preset_name(self, preset: crate::app::keybindings::KeymapPreset) -> &'static str {
         use crate::app::keybindings::KeymapPreset;
 
@@ -5323,6 +5465,11 @@ impl KeybindingTranslations {
         }
     }
 
+    #[must_use]
+    /// Returns the localized keybinding action description.
+    ///
+    /// # Panics
+    /// Panics if the selected non-English locale has no description for the requested action.
     pub fn action_description(self, action: &'static str) -> &'static str {
         let translations = match self.language {
             Language::Pseudo => return pseudo_static(action),
@@ -5976,6 +6123,7 @@ pub struct SidebarTranslations {
 }
 
 impl SidebarTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6032,6 +6180,7 @@ pub struct FooterTranslations {
 }
 
 impl FooterTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6124,6 +6273,7 @@ pub struct AudioDeviceTranslations {
 }
 
 impl AudioDeviceTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6184,6 +6334,7 @@ pub struct RecordingTranslations {
 }
 
 impl RecordingTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6230,24 +6381,23 @@ impl RecordingTranslations {
         }
     }
 
+    #[must_use]
     pub fn step_label(self, step: RecordingStep) -> &'static str {
         match (self.language, step) {
             (Language::Pseudo, step) => pseudo_borrowed(
                 self.language,
                 Self::for_language(Language::English).step_label(step),
             ),
-            (Language::English, RecordingStep::Config) => "Config",
+            (Language::English | Language::French, RecordingStep::Config) => "Config",
             (Language::English, RecordingStep::SplCalibration) => "SPL Calibration",
-            (Language::English, RecordingStep::Capture) => "Capture",
+            (Language::English | Language::French, RecordingStep::Capture) => "Capture",
             (Language::English, RecordingStep::Probe) => "Probe",
             (Language::English, RecordingStep::BassAnchor) => "Bass Anchor",
             (Language::English, RecordingStep::Evaluating) => "Evaluating",
             (Language::English, RecordingStep::Saving) => "Saving",
-            (Language::French, RecordingStep::Config) => "Config",
             (Language::French, RecordingStep::SplCalibration) => "Calibrage SPL",
-            (Language::French, RecordingStep::Capture) => "Capture",
             (Language::French, RecordingStep::Probe) => "Sonde",
-            (Language::French, RecordingStep::BassAnchor) => "Graves",
+            (Language::French | Language::Spanish, RecordingStep::BassAnchor) => "Graves",
             (Language::French, RecordingStep::Evaluating) => "Évaluation",
             (Language::French, RecordingStep::Saving) => "Sauvegarde",
             (Language::German, RecordingStep::Config) => "Konfig.",
@@ -6261,7 +6411,6 @@ impl RecordingTranslations {
             (Language::Spanish, RecordingStep::SplCalibration) => "Calibración SPL",
             (Language::Spanish, RecordingStep::Capture) => "Captura",
             (Language::Spanish, RecordingStep::Probe) => "Sonda",
-            (Language::Spanish, RecordingStep::BassAnchor) => "Graves",
             (Language::Spanish, RecordingStep::Evaluating) => "Evaluación",
             (Language::Spanish, RecordingStep::Saving) => "Guardado",
         }
@@ -6292,6 +6441,7 @@ pub struct FederationTranslations {
 }
 
 impl FederationTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6403,6 +6553,7 @@ pub struct ABCompareTranslations {
 }
 
 impl ABCompareTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6498,6 +6649,7 @@ pub struct SpectrumTranslations {
 }
 
 impl SpectrumTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6585,6 +6737,7 @@ pub struct CastTranslations {
 }
 
 impl CastTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6636,6 +6789,7 @@ pub struct PlaybackApplyTranslations {
 }
 
 impl PlaybackApplyTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -6672,6 +6826,7 @@ pub struct MultibandPresetTranslations {
 }
 
 impl MultibandPresetTranslations {
+    #[must_use]
     pub const fn labels(self) -> [&'static str; 4] {
         [self.custom, self.balanced, self.wide_mids, self.high_detail]
     }
@@ -6737,6 +6892,7 @@ pub struct PluginCommonTranslations {
 }
 
 impl PluginCommonTranslations {
+    #[must_use]
     pub fn plugin_count(self, count: usize) -> String {
         let noun = match (self.language, count == 1) {
             (Language::German, true) => "Plugin",
@@ -6751,6 +6907,7 @@ impl PluginCommonTranslations {
             label
         }
     }
+    #[must_use]
     pub fn solo_action(self, soloed: bool) -> &'static str {
         match (self.language, soloed) {
             (Language::English, false) => "Solo plugin",
@@ -6782,6 +6939,11 @@ impl PluginCommonTranslations {
                 .map(pseudo_static),
         }
     }
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -7012,6 +7174,11 @@ impl PluginCommonTranslations {
         }
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn description(self, plugin_type: &sotf_audio_player::PluginType) -> &'static str {
         use sotf_audio_player::PluginType;
 
@@ -7420,6 +7587,7 @@ impl PluginCommonTranslations {
         }
     }
 
+    #[must_use]
     pub fn label(self, label: &'static str) -> &'static str {
         let translations = match self.language {
             Language::Pseudo => return pseudo_static(label),
@@ -7435,6 +7603,7 @@ impl PluginCommonTranslations {
             .unwrap_or(label)
     }
 
+    #[must_use]
     pub fn editor_too_narrow(self) -> &'static str {
         match self.language {
             Language::English => "The editor is too narrow. Widen the window or reduce UI zoom.",
@@ -7454,10 +7623,10 @@ impl PluginCommonTranslations {
     }
 
     #[doc(hidden)]
+    #[must_use]
     pub fn has_localized_label(self, label: &str) -> bool {
         let translations = match self.language {
-            Language::Pseudo => return true,
-            Language::English => return true,
+            Language::Pseudo | Language::English => return true,
             Language::French => FRENCH_PLUGIN_LABELS,
             Language::German => GERMAN_PLUGIN_LABELS,
             Language::Spanish => SPANISH_PLUGIN_LABELS,
@@ -7998,6 +8167,7 @@ pub struct ExternalPluginWorkerTranslations {
 }
 
 impl ExternalPluginWorkerTranslations {
+    #[must_use]
     pub fn event_label(
         self,
         event: Option<&sotf_audio::engine::IsolatedExternalPluginWorkerEvent>,
@@ -8017,6 +8187,7 @@ impl ExternalPluginWorkerTranslations {
         }
     }
 
+    #[must_use]
     pub fn counters(
         self,
         status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
@@ -8039,6 +8210,7 @@ impl ExternalPluginWorkerTranslations {
         )
     }
 
+    #[must_use]
     pub fn sandbox_label(
         self,
         status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
@@ -8107,6 +8279,10 @@ pub struct ExternalPluginSettingsTranslations {
 }
 
 impl ExternalPluginSettingsTranslations {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -8333,22 +8509,27 @@ impl ExternalPluginSettingsTranslations {
         }
     }
 
+    #[must_use]
     pub fn added_to_rack_message(self, plugin_name: &str) -> String {
         format!("{}: {plugin_name}", self.added_to_rack)
     }
 
+    #[must_use]
     pub fn add_error_message(self, error: &str) -> String {
         format!("{}: {error}", self.add_error)
     }
 
+    #[must_use]
     pub fn scan_results_message(self, count: usize) -> String {
         format!("{}: {count}", self.results)
     }
 
+    #[must_use]
     pub fn runtime_enabled_message(self) -> String {
         format!("{}: {}", self.runtime_access, self.enabled)
     }
 
+    #[must_use]
     pub fn runtime_error_message(self, error: &str) -> String {
         format!("{}: {error}", self.runtime_error)
     }
@@ -8371,6 +8552,7 @@ pub struct LibraryFolderTranslations {
 }
 
 impl LibraryFolderTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -8433,6 +8615,7 @@ impl LibraryFolderTranslations {
         }
     }
 
+    #[must_use]
     pub fn access_error_message(
         self,
         error: &sotf_audio_player::LibraryDirectoryAccessError,
@@ -8476,6 +8659,7 @@ pub struct SettingsSurfaceTranslations {
 }
 
 impl SettingsSurfaceTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -8638,6 +8822,7 @@ pub struct PluginGraphNodeTranslations {
 }
 
 impl PluginGraphNodeTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -8738,6 +8923,11 @@ impl PluginGraphNodeTranslations {
 }
 
 impl PluginGraphTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -8879,6 +9069,7 @@ pub struct ListeningTestTranslations {
 }
 
 impl ListeningTestTranslations {
+    #[must_use]
     pub fn preparing_label(&self) -> &'static str {
         match self.eq.language {
             Language::English => "Measuring…",
@@ -8971,6 +9162,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn no_answers_submitted(&self) -> &'static str {
         match self.language {
             Language::English => "No answers submitted.",
@@ -8981,6 +9173,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn session_ended_early(&self) -> &'static str {
         match self.language {
             Language::English => "Session ended early.",
@@ -8991,6 +9184,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn result_explanation(&self, preference: bool) -> &'static str {
         match (self.language, preference) {
             (Language::English, true) => {
@@ -9019,13 +9213,12 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn pause_resume(&self, paused: bool) -> &'static str {
         match (self.language, paused) {
-            (Language::English, false) => "Pause",
             (Language::English, true) => "Resume listening",
-            (Language::French, false) => "Pause",
             (Language::French, true) => "Reprendre l’écoute",
-            (Language::German, false) => "Pause",
+            (Language::English | Language::French | Language::German, false) => "Pause",
             (Language::German, true) => "Weiterhören",
             (Language::Spanish, false) => "Pausar",
             (Language::Spanish, true) => "Reanudar la escucha",
@@ -9033,6 +9226,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn end_session(&self) -> &'static str {
         match self.language {
             Language::English => "End session",
@@ -9123,6 +9317,7 @@ impl ListeningTestTranslations {
         Translations::for_language(Language::English).listening_test
     }
 
+    #[must_use]
     pub fn parameter_reset(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().parameter_reset()),
@@ -9133,6 +9328,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn parameter_editor(&self, expert: bool) -> &'static str {
         match (self.language, expert) {
             (Language::Pseudo, expert) => pseudo_static(Self::english().parameter_editor(expert)),
@@ -9147,6 +9343,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn how_to_listen_title(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().how_to_listen_title()),
@@ -9157,6 +9354,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn how_to_listen_reopen(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().how_to_listen_reopen()),
@@ -9167,6 +9365,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn how_to_listen_acknowledge(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().how_to_listen_acknowledge()),
@@ -9219,6 +9418,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn fatigue_interval(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().fatigue_interval()),
@@ -9229,6 +9429,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn fatigue_prompt(&self, completed_trials: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -9250,6 +9451,7 @@ impl ListeningTestTranslations {
         }
     }
 
+    #[must_use]
     pub fn fatigue_continue(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().fatigue_continue()),
@@ -9333,6 +9535,7 @@ pub struct EqTrainingTranslations {
 }
 
 impl EqTrainingTranslations {
+    #[must_use]
     pub fn choose_source(&self) -> &'static str {
         match self.language {
             Language::English => "Choose and play audio…",
@@ -9343,16 +9546,17 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn source_position(&self, index: usize, count: usize) -> String {
         match self.language {
-            Language::English => format!("Source {index}/{count}"),
-            Language::French => format!("Source {index}/{count}"),
+            Language::English | Language::French => format!("Source {index}/{count}"),
             Language::German => format!("Quelle {index}/{count}"),
             Language::Spanish => format!("Fuente {index}/{count}"),
             Language::Pseudo => pseudo_owned(self.language, format!("Source {index}/{count}")),
         }
     }
 
+    #[must_use]
     pub fn source_error(&self, detail: &str) -> String {
         let label = match self.language {
             Language::English => "Could not open audio",
@@ -9364,6 +9568,7 @@ impl EqTrainingTranslations {
         format!("{label}: {detail}")
     }
 
+    #[must_use]
     pub fn frequency_details(&self) -> &'static str {
         match self.language {
             Language::English => "Frequency range and filter width",
@@ -9374,6 +9579,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn gain_choices(&self) -> &'static str {
         match self.language {
             Language::English => "Gain choices",
@@ -9384,6 +9590,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn minimum_frequency(&self) -> &'static str {
         match self.language {
             Language::English => "Minimum frequency",
@@ -9394,6 +9601,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn maximum_frequency(&self) -> &'static str {
         match self.language {
             Language::English => "Maximum frequency",
@@ -9410,6 +9618,7 @@ impl EqTrainingTranslations {
             .eq
     }
 
+    #[must_use]
     pub fn chart_series(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().chart_series()),
@@ -9420,6 +9629,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn frequency_axis(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().frequency_axis()),
@@ -9430,16 +9640,17 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn gain_axis(&self) -> &'static str {
         match self.language {
             Language::Pseudo => pseudo_static(Self::english().gain_axis()),
-            Language::English => "Gain (dB)",
-            Language::French => "Gain (dB)",
+            Language::English | Language::French => "Gain (dB)",
             Language::German => "Verstärkung (dB)",
             Language::Spanish => "Ganancia (dB)",
         }
     }
 
+    #[must_use]
     pub fn adaptive_status(&self, enabled: bool) -> &'static str {
         match (self.language, enabled) {
             (Language::Pseudo, enabled) => pseudo_static(Self::english().adaptive_status(enabled)),
@@ -9454,6 +9665,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn clip_loop_status(&self, enabled: bool) -> &'static str {
         match (self.language, enabled) {
             (Language::Pseudo, enabled) => pseudo_static(Self::english().clip_loop_status(enabled)),
@@ -9468,6 +9680,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn clip_loop_range(&self, start: f64, end: f64) -> String {
         match self.language {
             Language::Pseudo => {
@@ -9480,6 +9693,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn accuracy(&self, value: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(self.language, Self::english().accuracy(value)),
@@ -9490,6 +9704,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn trial_progress(&self, current: usize, total: usize, accuracy: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -9503,6 +9718,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn completion_status(&self, correct: usize, total: usize, accuracy: f64) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(
@@ -9523,6 +9739,7 @@ impl EqTrainingTranslations {
             ),
         }
     }
+    #[must_use]
     pub fn streak(&self, count: usize) -> String {
         match self.language {
             Language::Pseudo => pseudo_owned(self.language, Self::english().streak(count)),
@@ -9533,6 +9750,7 @@ impl EqTrainingTranslations {
         }
     }
 
+    #[must_use]
     pub fn exercise_display(
         &self,
         exercise: sotf_audio_player::ear_training::EqTrainingExercise,
@@ -9655,6 +9873,7 @@ pub struct ListeningTestLevelTranslations {
 }
 
 impl ListeningTestLevelTranslations {
+    #[must_use]
     pub fn metric_label(
         &self,
         metric: sotf_audio_player::controllers::ab_test_session::LevelMatchMetric,
@@ -9768,6 +9987,7 @@ pub struct AutoEqSectionTranslations {
 }
 
 impl AutoEqSectionTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -9873,6 +10093,7 @@ pub struct AutoEqBlockTranslations {
 }
 
 impl AutoEqBlockTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -9965,6 +10186,11 @@ impl AutoEqBlockTranslations {
 }
 
 impl AutoEqParameterTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -10101,6 +10327,11 @@ impl AutoEqParameterTranslations {
 }
 
 impl AutoEqFormTranslations {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -10633,6 +10864,7 @@ pub struct Translations {
 
 impl Translations {
     /// Get translations for a specific language
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::Pseudo => Self::pseudo(),
@@ -10644,6 +10876,11 @@ impl Translations {
     }
 
     /// English translations (default)
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn english() -> Self {
         Self {
             autoeq_form: AutoEqFormTranslations::for_language(Language::English),
@@ -11149,6 +11386,11 @@ impl Translations {
     }
 
     /// French translations
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn french() -> Self {
         Self {
             autoeq_form: AutoEqFormTranslations::for_language(Language::French),
@@ -11654,6 +11896,11 @@ impl Translations {
     }
 
     /// German translations
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn german() -> Self {
         Self {
             autoeq_form: AutoEqFormTranslations::for_language(Language::German),
@@ -12159,6 +12406,11 @@ impl Translations {
     }
 
     /// Spanish translations
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn spanish() -> Self {
         Self {
             autoeq_form: AutoEqFormTranslations::for_language(Language::Spanish),

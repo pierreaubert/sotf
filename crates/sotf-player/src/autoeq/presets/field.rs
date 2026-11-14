@@ -1,5 +1,6 @@
 /// Validation warnings for parameter values.
 /// Returns a warning message if the value is outside recommended ranges.
+#[must_use]
 pub fn field_warning(field: &str, value: f64) -> Option<&'static str> {
     match field {
         "num_filters" if value > 12.0 => Some("Many filters may cause audible ringing"),
@@ -12,6 +13,7 @@ pub fn field_warning(field: &str, value: f64) -> Option<&'static str> {
 }
 
 /// Inline hint text for parameter fields (Intermediate mode).
+#[must_use]
 pub fn field_hint(field: &str) -> Option<&'static str> {
     match field {
         "num_filters" => Some("5-7 for quick results, 10+ for surgical precision"),

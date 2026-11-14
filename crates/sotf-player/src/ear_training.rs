@@ -32,6 +32,7 @@ impl EqTrainingExercise {
         Self::GainIdentification,
     ];
 
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::BandIdentification => "Frequency band",
@@ -61,6 +62,7 @@ impl EarTrainingCourse {
         Self::Mastery,
     ];
 
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Foundations => "Foundations",
@@ -71,6 +73,7 @@ impl EarTrainingCourse {
         }
     }
 
+    #[must_use]
     pub fn config(self) -> EqTrainingConfig {
         match self {
             Self::Foundations => EqTrainingConfig {
@@ -118,6 +121,7 @@ pub enum EqChangeMode {
 }
 
 impl EqChangeMode {
+    #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
             Self::Boost => "Boost",
@@ -165,6 +169,10 @@ impl Default for EqTrainingConfig {
 }
 
 impl EqTrainingConfig {
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
     pub fn validate(&self) -> Result<(), EqTrainingError> {
         if !(MIN_BANDS..=MAX_BANDS).contains(&self.band_count) {
             return Err(EqTrainingError::InvalidBandCount);
@@ -189,6 +197,14 @@ impl EqTrainingConfig {
         Ok(())
     }
 
+    /// Band frequencies.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn band_frequencies(&self) -> Result<Vec<f64>, EqTrainingError> {
         self.validate()?;
         let intervals = (self.band_count - 1) as f64;
@@ -210,6 +226,7 @@ pub struct EqTrainingQuestion {
 }
 
 impl EqTrainingQuestion {
+    #[must_use]
     pub fn signed_gain_db(&self) -> f64 {
         match self.change {
             EqChange::Boost => self.gain_db,
@@ -217,6 +234,7 @@ impl EqTrainingQuestion {
         }
     }
 
+    #[must_use]
     pub fn filter(&self) -> EQFilter {
         EQFilter::new(
             BiquadFilterType::Peak,
@@ -226,6 +244,7 @@ impl EqTrainingQuestion {
         )
     }
 
+    #[must_use]
     pub fn plugin_parameters(&self) -> serde_json::Value {
         let filter = self.filter();
         // EQFilter is a saved player setting; the DSP plugin uses a different schema.
@@ -238,6 +257,7 @@ impl EqTrainingQuestion {
         }] })
     }
 
+    #[must_use]
     pub fn correct_answer(&self, exercise: EqTrainingExercise) -> usize {
         match exercise {
             EqTrainingExercise::BandIdentification => self.band_index,
@@ -249,6 +269,7 @@ impl EqTrainingQuestion {
         }
     }
 
+    #[must_use]
     pub fn answer_labels(&self, exercise: EqTrainingExercise, bands: &[f64]) -> Vec<String> {
         match exercise {
             EqTrainingExercise::BandIdentification => bands
@@ -265,6 +286,11 @@ impl EqTrainingQuestion {
 
     /// Lightweight log-frequency preview used before an answer is revealed.
     /// Audio always uses the actual biquad returned by [`Self::filter`].
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn preview_curve(&self, points: usize) -> Vec<(f64, f64)> {
         if points < 2 {
             return Vec::new();
@@ -309,6 +335,10 @@ pub struct EqTrainingSession {
 }
 
 impl EqTrainingSession {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
     pub fn new(config: EqTrainingConfig) -> Result<Self, EqTrainingError> {
         let band_frequencies = config.band_frequencies()?;
         Ok(Self {
@@ -320,17 +350,22 @@ impl EqTrainingSession {
         })
     }
 
+    /// Start.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
     pub fn start(&mut self) -> Result<&EqTrainingQuestion, EqTrainingError> {
         if self.ended_early || self.current_question.is_some() || !self.trials.is_empty() {
             return Err(EqTrainingError::SessionAlreadyStarted);
         }
-        self.current_question = Some(self.generate_question(0));
-        Ok(self
-            .current_question
-            .as_ref()
-            .expect("question was just created"))
+        let question = self.generate_question(0);
+        Ok(self.current_question.insert(question))
     }
 
+    /// Submit answer.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
     pub fn submit_answer(
         &mut self,
         selected_band_index: usize,
@@ -350,14 +385,17 @@ impl EqTrainingSession {
         if self.current_is_answered() {
             return Err(EqTrainingError::QuestionAlreadyAnswered);
         }
-        self.trials.push(EqTrainingResult {
+        Ok(self.trials.push_mut(EqTrainingResult {
             correct: selected_band_index == question.correct_answer(self.config.exercise),
             question,
             selected_band_index,
-        });
-        Ok(self.trials.last().expect("result was just appended"))
+        }))
     }
 
+    /// Advance.
+    ///
+    /// # Errors
+    /// Returns an error if training configuration or the requested session transition is invalid.
     pub fn advance(&mut self) -> Result<Option<&EqTrainingQuestion>, EqTrainingError> {
         if !self.current_is_answered() {
             return Err(EqTrainingError::AnswerRequired);
@@ -370,6 +408,7 @@ impl EqTrainingSession {
         Ok(self.current_question.as_ref())
     }
 
+    #[must_use]
     pub fn current_is_answered(&self) -> bool {
         self.current_question.as_ref().is_some_and(|question| {
             self.trials
@@ -378,6 +417,7 @@ impl EqTrainingSession {
         })
     }
 
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.current_question.is_none() && self.trials.len() == self.config.trial_count
     }
@@ -392,14 +432,21 @@ impl EqTrainingSession {
         true
     }
 
+    #[must_use]
     pub fn is_finished(&self) -> bool {
         self.ended_early || self.is_complete()
     }
 
+    #[must_use]
     pub fn correct_count(&self) -> usize {
         self.trials.iter().filter(|trial| trial.correct).count()
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn accuracy(&self) -> f64 {
         if self.trials.is_empty() {
             0.0
@@ -408,6 +455,7 @@ impl EqTrainingSession {
         }
     }
 
+    #[must_use]
     pub fn band_stats(&self) -> Vec<EqBandStats> {
         let mut stats = vec![EqBandStats::default(); self.band_frequencies.len()];
         for trial in &self.trials {
@@ -418,6 +466,11 @@ impl EqTrainingSession {
         stats
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn weakest_band(&self) -> Option<usize> {
         self.band_stats()
             .into_iter()
@@ -431,6 +484,10 @@ impl EqTrainingSession {
             .map(|(index, _)| index)
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Seeded selection intentionally uses native-width PRNG bits before bounded indexing"
+    )]
     fn generate_question(&self, number: usize) -> EqTrainingQuestion {
         let previous_band = self.trials.last().map(|trial| trial.question.band_index);
         let mut band_index = (splitmix64(self.config.seed.wrapping_add(number as u64)) as usize)
@@ -488,6 +545,7 @@ pub struct EarTrainingSessionSummary {
 }
 
 impl EarTrainingSessionSummary {
+    #[must_use]
     pub fn from_session(session: &EqTrainingSession, course: Option<EarTrainingCourse>) -> Self {
         let completed_at_unix_secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -541,10 +599,16 @@ impl EarTrainingProgress {
             .push(EarTrainingSessionSummary::from_session(session, course));
     }
 
+    #[must_use]
     pub fn total_attempts(&self) -> usize {
         self.sessions.iter().map(|session| session.attempts).sum()
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn accuracy(&self) -> f64 {
         let attempts = self.total_attempts();
         if attempts == 0 {
@@ -558,6 +622,7 @@ impl EarTrainingProgress {
         }
     }
 
+    #[must_use]
     pub fn streak(&self) -> usize {
         self.sessions
             .iter()
@@ -566,6 +631,11 @@ impl EarTrainingProgress {
             .count()
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Training frequencies and accuracy scores use floating-point interpolation and ratios"
+    )]
     pub fn weakest_frequency_hz(&self) -> Option<f64> {
         let mut aggregate: Vec<(f64, usize, usize)> = Vec::new();
         for session in &self.sessions {
@@ -593,6 +663,7 @@ impl EarTrainingProgress {
             .map(|entry| entry.0)
     }
 
+    #[must_use]
     pub fn recommendation(&self) -> String {
         match self.recommendation_details() {
             EarTrainingRecommendation::Foundations => "Start with Foundations at 12 dB.".into(),
@@ -603,6 +674,7 @@ impl EarTrainingProgress {
         }
     }
 
+    #[must_use]
     pub fn recommendation_details(&self) -> EarTrainingRecommendation {
         if self.sessions.is_empty() {
             return EarTrainingRecommendation::Foundations;
@@ -613,6 +685,7 @@ impl EarTrainingProgress {
             })
     }
 
+    #[must_use]
     pub fn adaptive_config(&self) -> EqTrainingConfig {
         let mut config = EqTrainingConfig::default();
         if self.accuracy() >= 0.85 {
@@ -628,6 +701,10 @@ impl EarTrainingProgress {
         config
     }
 
+    /// Load.
+    ///
+    /// # Errors
+    /// Returns an error if the training history cannot be read or decoded.
     pub fn load(path: &Path) -> std::io::Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
@@ -637,6 +714,10 @@ impl EarTrainingProgress {
             .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))
     }
 
+    /// Save atomic.
+    ///
+    /// # Errors
+    /// Returns an error if history serialization, temporary-file writing, or replacement fails.
     pub fn save_atomic(&self, path: &Path) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -671,7 +752,7 @@ pub enum EqTrainingError {
 }
 
 impl std::fmt::Display for EqTrainingError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let message = match self {
             Self::InvalidBandCount => "band count must be between 2 and 25",
             Self::InvalidFrequencyRange => "frequency range must stay within 20 Hz–20 kHz",
@@ -684,7 +765,7 @@ impl std::fmt::Display for EqTrainingError {
             Self::QuestionAlreadyAnswered => "the current question has already been answered",
             Self::AnswerRequired => "answer the current question before advancing",
         };
-        formatter.write_str(message)
+        f.write_str(message)
     }
 }
 

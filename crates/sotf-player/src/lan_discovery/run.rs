@@ -15,6 +15,9 @@ use std::net::Ipv4Addr;
 use std::net::{SocketAddr, SocketAddrV4};
 
 /// Advertise the SOTF API as `_sotf._tcp` so mobile clients can discover it.
+///
+/// # Errors
+/// Returns an error if the discovery responder cannot initialize or use its network socket.
 pub async fn run_sotf_lan_discovery(
     settings: SotfApiSettings,
     local_ip: Ipv4Addr,

@@ -1,4 +1,4 @@
-//! AutoEQ configuration types - parameter limits and optimization config.
+//! `AutoEQ` configuration types - parameter limits and optimization config.
 
 /// Limits for optimization parameters
 #[derive(Debug, Clone, Copy)]
@@ -16,7 +16,7 @@ impl ParamLimits {
     };
     pub const SAMPLE_RATE: Self = Self {
         min: 44100.0,
-        max: 384000.0,
+        max: 384_000.0,
         step: 1000.0,
     };
     pub const DB: Self = Self {
@@ -46,7 +46,7 @@ impl ParamLimits {
     };
     pub const MAXEVAL: Self = Self {
         min: 100.0,
-        max: 100000.0,
+        max: 100_000.0,
         step: 100.0,
     };
     pub const BO_INITIAL_SAMPLES: Self = Self {
@@ -82,7 +82,7 @@ impl ParamLimits {
     pub const TOLERANCE: Self = Self {
         min: 1e-12,
         max: 1.0,
-        step: 0.00000001,
+        step: 0.000_000_01,
     };
     pub const ADAPTIVE_WEIGHT: Self = Self {
         min: 0.0,
@@ -131,7 +131,7 @@ impl ParamLimits {
     };
     pub const SEED: Self = Self {
         min: 0.0,
-        max: 999999.0,
+        max: 999_999.0,
         step: 1.0,
     };
     pub const MIXED_CROSSOVER_FREQ: Self = Self {
@@ -176,6 +176,10 @@ pub struct EqDesignConfig {
 
 /// Optimization algorithm parameters: DE, BO, refinement, and smoothing.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct AlgorithmConfig {
     /// Optimization algorithm (e.g., "autoeq:de", "autoeq:cobyla")
     pub algo: String,
@@ -235,6 +239,10 @@ pub struct GoalsConfig {
 /// Advanced room correction settings: target response, excursion protection,
 /// Schroeder split, subwoofer and channel matching.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RoomCorrectionConfig {
     /// Enable target tilt
     pub use_target_tilt: bool,
@@ -274,7 +282,7 @@ pub struct RoomCorrectionConfig {
     pub schroeder_high_max_q: f64,
     /// High freq shelving only
     pub schroeder_high_shelving_only: bool,
-    /// Low freq max_db override (None = use global max_db)
+    /// Low freq `max_db` override (None = use global `max_db`)
     pub schroeder_low_max_db: Option<f64>,
 
     /// Enable subwoofer-specific optimizer overrides
@@ -297,8 +305,12 @@ pub struct RoomCorrectionConfig {
     pub channel_matching_max_filters: usize,
 }
 
-/// Version 2 feature flags: delay, seed, VoG, broadband matching, and mixed-mode crossover.
+/// Version 2 feature flags: delay, seed, `VoG`, broadband matching, and mixed-mode crossover.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct V2Config {
     /// Allow inter-speaker delay optimization
     pub allow_delay: bool,
@@ -308,7 +320,7 @@ pub struct V2Config {
     pub seed: u64,
     /// Enable Voice of God (timbre matching)
     pub vog_enabled: bool,
-    /// VoG reference channel name
+    /// `VoG` reference channel name
     pub vog_reference_channel: String,
     /// Enable broadband target matching
     pub broadband_target_matching: bool,
@@ -322,6 +334,10 @@ pub struct V2Config {
 
 /// Advanced system optimization: phase alignment, multi-seat, and multi-measurement.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct SystemOptimizationConfig {
     /// Enable phase alignment
     pub use_phase_alignment: bool,
@@ -347,15 +363,15 @@ pub struct SystemOptimizationConfig {
     pub use_multi_measurement: bool,
     /// Multi-measurement strategy
     pub multi_measurement_strategy: String,
-    /// Variance lambda (for variance_penalized strategy)
+    /// Variance lambda (for `variance_penalized` strategy)
     pub multi_measurement_variance_lambda: f64,
-    /// Per-measurement weights (for weighted_sum strategy)
+    /// Per-measurement weights (for `weighted_sum` strategy)
     pub multi_measurement_weights: Vec<f64>,
     /// Display labels for weight inputs
     pub multi_measurement_labels: Vec<String>,
 }
 
-/// AutoEQ optimization configuration - matches OptimizationParams from sotf-audio-player
+/// `AutoEQ` optimization configuration - matches `OptimizationParams` from sotf-audio-player
 #[derive(Debug, Clone)]
 pub struct AutoEqConfig {
     /// EQ design parameters.
@@ -373,6 +389,10 @@ pub struct AutoEqConfig {
 }
 
 impl Default for AutoEqConfig {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     fn default() -> Self {
         Self {
             eq_design: EqDesignConfig {

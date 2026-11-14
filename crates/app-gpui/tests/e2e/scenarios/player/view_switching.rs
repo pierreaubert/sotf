@@ -6,6 +6,7 @@ use sotf_audio_player_gpui::app::Screen;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct ViewSwitchingStabilityScenario;
 
 fn stop_test_playback(driver: &mut AppDriver<'_>) {

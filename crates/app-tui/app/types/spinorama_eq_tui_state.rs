@@ -35,7 +35,7 @@ pub struct SpinoramaEqTuiState {
 
     // Step 5: update plugin confirmation
     pub update_substep: SpinUpdateSubStep,
-    /// (slot_index, filter_count) of existing EQ to overwrite.
+    /// (`slot_index`, `filter_count`) of existing EQ to overwrite.
     pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
@@ -77,12 +77,12 @@ impl SpinoramaEqTuiState {
     pub fn update_filter(&mut self) {
         self.model.update_suggestions();
         // Clamp index
-        if !self.model.speaker_suggestions.is_empty() {
+        if self.model.speaker_suggestions.is_empty() {
+            self.selected_speaker_idx = 0;
+        } else {
             self.selected_speaker_idx = self
                 .selected_speaker_idx
                 .min(self.model.speaker_suggestions.len() - 1);
-        } else {
-            self.selected_speaker_idx = 0;
         }
     }
 
@@ -93,6 +93,7 @@ impl SpinoramaEqTuiState {
     }
 
     /// Check if optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.model.optimization_status == OptimizationStatus::Running
     }

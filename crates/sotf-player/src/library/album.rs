@@ -12,6 +12,7 @@ use symphonia::core::formats::probe::Hint;
 use symphonia::core::formats::{FormatOptions, TrackType};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
+use symphonia::core::meta::{RawValue, StandardTag, Tag};
 
 #[derive(Debug, Clone, Default)]
 pub struct Album {
@@ -33,6 +34,9 @@ pub struct Album {
 impl Album {
     /// Read one local audio file without scanning or importing its directory.
     /// Call from a worker: probing metadata performs filesystem I/O.
+    ///
+    /// # Errors
+    /// Returns an error if the path is not a supported audio file or its metadata cannot be decoded.
     pub fn from_audio_file(path: &Path) -> Result<Self, String> {
         let path = path.canonicalize().map_err(|error| error.to_string())?;
         if !path.is_file() {
@@ -65,6 +69,7 @@ impl Album {
     }
 
     /// Determine the channel configuration of this album
+    #[must_use]
     pub fn channel_type(&self) -> Option<AlbumChannelType> {
         if self.tracks.is_empty() {
             return None;
@@ -93,6 +98,7 @@ impl Album {
     }
 
     /// Get the channel count if all tracks have the same number of channels
+    #[must_use]
     pub fn uniform_channel_count(&self) -> Option<u32> {
         match self.channel_type()? {
             AlbumChannelType::Stereo => Some(2),
@@ -102,6 +108,7 @@ impl Album {
     }
 
     /// Get the sample rate of this album (from the first track that has it)
+    #[must_use]
     pub fn sample_rate(&self) -> Option<u32> {
         self.tracks.iter().find_map(|t| t.sample_rate)
     }
@@ -109,9 +116,10 @@ impl Album {
 
 impl Album {
     /// Get the artist(s) for this album by scanning all tracks.
-    /// Returns the album_artist if consistent across tracks, otherwise
+    /// Returns the `album_artist` if consistent across tracks, otherwise
     /// returns "Various Artists" for compilations.
-    /// Prefers album_artist, falls back to track artist.
+    /// Prefers `album_artist`, falls back to track artist.
+    #[must_use]
     pub fn artist(&self) -> String {
         use std::collections::BTreeSet;
 
@@ -123,8 +131,10 @@ impl Album {
             .collect();
 
         // If we have a consistent album_artist, use it
-        if album_artists.len() == 1 {
-            return album_artists.into_iter().next().unwrap();
+        if album_artists.len() == 1
+            && let Some(artist) = album_artists.into_iter().next()
+        {
+            return artist;
         }
 
         // Otherwise fall back to track artists
@@ -137,13 +147,17 @@ impl Album {
         if track_artists.is_empty() {
             "Unknown Artist".to_string()
         } else if track_artists.len() == 1 {
-            track_artists.into_iter().next().unwrap()
+            track_artists
+                .into_iter()
+                .next()
+                .unwrap_or_else(|| "Unknown Artist".to_string())
         } else {
             // Multiple artists - this is a compilation
             "Various Artists".to_string()
         }
     }
 
+    #[must_use]
     pub fn display_name(&self) -> String {
         let artist = self.artist();
         if let Some(year) = self.year {
@@ -158,9 +172,16 @@ impl Album {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Metadata extraction and album grouping keep their per-format or per-group decisions together"
+)]
 pub(super) fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std::error::Error>> {
     let file = std::fs::File::open(path)?;
-    let mss = MediaSourceStream::new(Box::new(file), Default::default());
+    let mss = MediaSourceStream::new(
+        Box::new(file),
+        symphonia::core::io::MediaSourceStreamOptions::default(),
+    );
 
     let mut hint = Hint::new();
     if let Some(ext) = path.extension() {
@@ -185,15 +206,17 @@ pub(super) fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std
         if let Some(time_base) = track.time_base
             && let Some(n_frames) = track.num_frames
         {
-            let duration =
-                time_base.calc_time(symphonia::core::units::Timestamp::new(n_frames as i64));
-            metadata.duration_secs = duration.map(|time| time.as_secs().max(0) as u64);
+            let duration = i64::try_from(n_frames).ok().and_then(|frames| {
+                time_base.calc_time(symphonia::core::units::Timestamp::new(frames))
+            });
+            metadata.duration_secs =
+                duration.map(|time| u64::try_from(time.as_secs()).unwrap_or_default());
         }
 
         if let Some(CodecParameters::Audio(codec_params)) = &track.codec_params {
             // Get channel count
             if let Some(channels) = codec_params.channels.as_ref() {
-                metadata.channels = Some(channels.count() as u32);
+                metadata.channels = u32::try_from(channels.count()).ok();
             }
 
             // Get sample rate
@@ -209,7 +232,6 @@ pub(super) fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std
     }
 
     // Extract metadata tags
-    use symphonia::core::meta::{RawValue, StandardTag, Tag};
 
     let non_empty_string = |value: &str| {
         let trimmed = value.trim();
@@ -229,17 +251,17 @@ pub(super) fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std
             metadata.album = non_empty_string(value);
         }
         Some(StandardTag::TrackNumber(num)) => {
-            metadata.track_number = Some(*num as u32);
+            metadata.track_number = u32::try_from(*num).ok();
         }
-        Some(StandardTag::RecordingDate(value)) | Some(StandardTag::ReleaseDate(value)) => {
+        Some(StandardTag::RecordingDate(value) | StandardTag::ReleaseDate(value)) => {
             if let Some(year_str) = value.split('-').next()
                 && let Ok(year) = year_str.parse()
             {
                 metadata.year = Some(year);
             }
         }
-        Some(StandardTag::RecordingYear(year)) | Some(StandardTag::ReleaseYear(year)) => {
-            metadata.year = Some(*year as u32);
+        Some(StandardTag::RecordingYear(year) | StandardTag::ReleaseYear(year)) => {
+            metadata.year = Some(u32::from(*year));
         }
         Some(StandardTag::Genre(value)) => {
             metadata.genre = non_empty_string(value);
@@ -248,7 +270,7 @@ pub(super) fn extract_metadata(path: &Path) -> Result<TrackMetadata, Box<dyn std
             metadata.composer = non_empty_string(value);
         }
         Some(StandardTag::DiscNumber(num)) => {
-            metadata.disc_number = Some(*num as u32);
+            metadata.disc_number = u32::try_from(*num).ok();
         }
         Some(StandardTag::Conductor(value)) => {
             metadata.conductor = non_empty_string(value);
@@ -380,8 +402,7 @@ pub(super) fn directory_album_key(album: &Album) -> String {
         .tracks
         .iter()
         .find_map(|track| track.path.parent())
-        .map(|parent| parent.to_string_lossy().to_string())
-        .unwrap_or_default();
+        .map_or_default(|parent| parent.to_string_lossy().to_string());
     let edition = album.edition.as_deref().unwrap_or_default();
 
     format!(
@@ -408,6 +429,11 @@ pub(super) fn folder_album_key(album: &Album) -> Option<String> {
 /// - Deduplicate tracks by title + disc + track number (for duplicate editions)
 /// - Keep the album metadata (year, art) from the album with highest DR
 /// - Prefer albums with known artists over "Unknown Artist" or "Various Artists"
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Metadata extraction and album grouping keep their per-format or per-group decisions together"
+)]
 pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
     // Group by (normalized_title, normalized_artist) to keep different artists separate.
     // Albums with unknown/various artists are merged into a matching known-artist group
@@ -422,7 +448,7 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
     let mut groups: std::collections::HashMap<(String, String), Vec<&Album>> =
         std::collections::HashMap::new();
 
-    for album in &albums {
+    for album in albums {
         let title = album.title.trim();
         let normalized_title = clean_album_title(title).trim().to_lowercase();
         let artist = album.artist();
@@ -456,7 +482,7 @@ pub fn group_and_merge_albums(albums: Vec<&Album>) -> Vec<Album> {
 
         if let Some(target_key) = known_key {
             if let Some(unknown_albums) = groups.remove(&(title, unknown_artist_key)) {
-                groups.get_mut(&target_key).unwrap().extend(unknown_albums);
+                groups.entry(target_key).or_default().extend(unknown_albums);
             }
         }
     }

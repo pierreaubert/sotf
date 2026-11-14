@@ -13,6 +13,7 @@ pub struct DevReply {
 }
 
 impl DevReply {
+    #[must_use]
     pub fn ok() -> Self {
         Self {
             ok: true,
@@ -27,6 +28,7 @@ impl DevReply {
         }
     }
 
+    #[must_use]
     pub fn to_json(&self) -> String {
         match &self.error {
             None => r#"{"ok":true}"#.to_string(),
@@ -38,7 +40,7 @@ impl DevReply {
     }
 }
 
-/// Reply for a /query request — same envelope as DevReply, plus an
+/// Reply for a /query request — same envelope as `DevReply`, plus an
 /// optional `value` payload on success.
 #[derive(Debug, Clone)]
 pub struct DevQueryReply {
@@ -46,6 +48,7 @@ pub struct DevQueryReply {
 }
 
 impl DevQueryReply {
+    #[must_use]
     pub fn ok(value: serde_json::Value) -> Self {
         Self { value: Ok(value) }
     }
@@ -56,9 +59,10 @@ impl DevQueryReply {
         }
     }
 
+    #[must_use]
     pub fn to_json(&self) -> String {
         match &self.value {
-            Ok(v) => format!(r#"{{"ok":true,"value":{}}}"#, v),
+            Ok(v) => format!(r#"{{"ok":true,"value":{v}}}"#),
             Err(e) => format!(
                 r#"{{"ok":false,"error":{}}}"#,
                 serde_json::Value::String(e.clone())
@@ -113,7 +117,7 @@ pub enum DevCommand {
         output_directory: Option<PathBuf>,
         reply: mpsc::SyncSender<DevReply>,
     },
-    /// Point the RoomEQ LoadData form at a copied measurement fixture.
+    /// Point the `RoomEQ` `LoadData` form at a copied measurement fixture.
     QaRoomEqFixture {
         fixture_dir: PathBuf,
         reply: mpsc::SyncSender<DevReply>,

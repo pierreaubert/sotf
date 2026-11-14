@@ -1,7 +1,7 @@
 use super::types::MeasurementInput;
 use super::types::PreviewCurves;
 
-/// Load a MeasurementInput into an autoeq DriverMeasurement
+/// Load a `MeasurementInput` into an autoeq `DriverMeasurement`
 pub(super) fn load_measurement_as_driver(
     input: &MeasurementInput,
 ) -> Result<autoeq_optim::loss::DriverMeasurement, String> {
@@ -32,6 +32,9 @@ pub(super) fn load_measurement_as_driver(
 }
 
 /// Load and compute preview curves for display before optimization
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn load_preview_curves(
     speaker: &str,
     version: &str,
@@ -39,7 +42,7 @@ pub fn load_preview_curves(
     curve_name: &str,
 ) -> Result<PreviewCurves, String> {
     let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {e}"))?;
 
     rt.block_on(load_preview_curves_async(
         speaker,
@@ -49,7 +52,10 @@ pub fn load_preview_curves(
     ))
 }
 
-/// Async version of load_preview_curves
+/// Async version of `load_preview_curves`
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub async fn load_preview_curves_async(
     speaker: &str,
     version: &str,

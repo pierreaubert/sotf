@@ -4,6 +4,14 @@
 
 impl PlayerView {
     /// Render horizontal 3-panel layout: Library | Queue | Rack
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub fn render_horizontal_3panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, solved) = {
             let state = self.state.read(cx);
@@ -23,8 +31,8 @@ impl PlayerView {
         let rack_node = solved.find("rack");
         let library_visible = library_node.is_some_and(|node| node.visible);
         let rack_visible = rack_node.is_some_and(|node| node.visible);
-        let library_width = library_node.map(|node| node.width).unwrap_or(0.0);
-        let rack_width = rack_node.map(|node| node.width).unwrap_or(0.0);
+        let library_width = library_node.map_or(0.0, |node| node.width);
+        let rack_width = rack_node.map_or(0.0, |node| node.width);
         let queue_width = solved
             .find("queue")
             .filter(|node| node.visible)
@@ -175,7 +183,7 @@ impl PlayerView {
                             layout.is_dragging_lufs_divider = false;
 
                             if any_dragging && let Err(e) = state.app.save_config(layout) {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                log::warn!("Failed to save panel layout: {e}");
                             }
                         });
                     });
@@ -294,6 +302,14 @@ impl PlayerView {
     }
 
     /// Render vertical 3-panel layout: Library / Queue / Rack stacked
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub fn render_vertical_3panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, solved) = {
             let state = self.state.read(cx);
@@ -313,8 +329,8 @@ impl PlayerView {
         let rack_node = solved.find("rack");
         let library_visible = library_node.is_some_and(|node| node.visible);
         let rack_visible = rack_node.is_some_and(|node| node.visible);
-        let library_height = library_node.map(|node| node.height).unwrap_or(0.0);
-        let rack_height = rack_node.map(|node| node.height).unwrap_or(0.0);
+        let library_height = library_node.map_or(0.0, |node| node.height);
+        let rack_height = rack_node.map_or(0.0, |node| node.height);
         let rack_width = rack_node
             .filter(|node| node.visible)
             .map_or(0.0, |node| node.width);
@@ -454,7 +470,7 @@ impl PlayerView {
                             layout.is_dragging_lufs_divider = false;
 
                             if any_dragging && let Err(e) = state.app.save_config(layout) {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                log::warn!("Failed to save panel layout: {e}");
                             }
                         });
                     });
@@ -615,7 +631,7 @@ impl PlayerView {
     }
 
     /// Render queue content for 3-panel layout
-    /// Meters visibility is controlled by hide_queue_meters_for_rack state field
+    /// Meters visibility is controlled by `hide_queue_meters_for_rack` state field
     pub fn render_queue_content(
         &self,
         solved_queue_width: f32,

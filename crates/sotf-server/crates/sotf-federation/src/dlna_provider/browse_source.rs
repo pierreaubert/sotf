@@ -5,6 +5,10 @@ use crate::provider::ProviderError;
 /// Trait abstraction over Browse responses so pagination logic can be unit-
 /// tested deterministically (with a stub) rather than against a real server.
 pub trait BrowseSource {
+    /// Requests one page of browse results.
+    ///
+    /// # Errors
+    /// Returns an error if the server cannot return or parse the requested page.
     fn browse_page(&mut self, start: u32, count: u32) -> Result<BrowsePage, ProviderError>;
 }
 
@@ -17,6 +21,9 @@ pub trait BrowseSource {
 ///   3. Page contained fewer than `page_size` items.
 ///   4. We have reached or exceeded `TotalMatches` (if reported).
 ///   5. We have done `MAX_BROWSE_ITERATIONS` iterations.
+///
+/// # Errors
+/// Returns an error if a page request fails.
 pub fn paginate_browse<B: BrowseSource>(
     source: &mut B,
     page_size: u32,
@@ -27,15 +34,14 @@ pub fn paginate_browse<B: BrowseSource>(
     loop {
         if iter >= MAX_BROWSE_ITERATIONS {
             log::warn!(
-                "DLNA Browse pagination hit max iteration cap of {} — bailing out",
-                MAX_BROWSE_ITERATIONS
+                "DLNA Browse pagination hit max iteration cap of {MAX_BROWSE_ITERATIONS} — bailing out"
             );
             break;
         }
         iter += 1;
 
         let page = source.browse_page(start, page_size)?;
-        let batch_len = page.containers.len() as u32;
+        let batch_len = u32::try_from(page.containers.len()).unwrap_or(u32::MAX);
 
         if page.containers.is_empty() {
             break;
@@ -47,14 +53,14 @@ pub fn paginate_browse<B: BrowseSource>(
         all.extend(page.containers);
 
         if let Some(total) = page.total_matches
-            && all.len() as u32 >= total
+            && all.len() >= usize::try_from(total).unwrap_or(usize::MAX)
         {
             break;
         }
         if batch_len < page_size {
             break;
         }
-        start += batch_len;
+        start = start.saturating_add(batch_len);
     }
     Ok(all)
 }

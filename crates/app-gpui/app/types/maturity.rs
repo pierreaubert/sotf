@@ -4,6 +4,7 @@ use super::Screen;
 
 impl Screen {
     /// Returns the maturity level of this screen.
+    #[must_use]
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
             Screen::Home

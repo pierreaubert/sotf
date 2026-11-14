@@ -6,6 +6,10 @@ use crate::theme::Theme;
 use gpui_ui_kit::workflow::{Position, WorkflowGraph, WorkflowNodeData, WorkflowTheme};
 
 /// Create the default graph: Player → EQ → Output
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn create_default_graph(output_name: &str, output_channels: usize) -> WorkflowGraph {
     let mut graph = WorkflowGraph::new();
 
@@ -56,7 +60,7 @@ pub(super) fn create_default_graph(output_name: &str, output_channels: usize) ->
     graph
 }
 
-/// Create a WorkflowTheme from the app Theme
+/// Create a `WorkflowTheme` from the app Theme
 pub(super) fn create_workflow_theme(theme: &Theme) -> WorkflowTheme {
     WorkflowTheme {
         canvas_background: theme.background,

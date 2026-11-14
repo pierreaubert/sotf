@@ -41,6 +41,9 @@ pub struct MetadataEditorState {
 impl MetadataEditorState {
     pub const FIELD_COUNT: usize = 13;
 
+    ///
+    /// # Errors
+    /// Returns an error if the album has no database identity or contains no editable tracks.
     pub fn for_album(album: &sotf_audio_player::Album) -> Result<Self, String> {
         let album_id = album
             .id
@@ -58,7 +61,7 @@ impl MetadataEditorState {
                 album_artist: first
                     .and_then(|track| track.album_artist.clone())
                     .unwrap_or_else(|| artist.clone()),
-                year: album.year.map(|year| year.to_string()).unwrap_or_default(),
+                year: album.year.map_or_default(|year| year.to_string()),
                 genre: first
                     .and_then(|track| track.genre.clone())
                     .unwrap_or_default(),
@@ -67,8 +70,7 @@ impl MetadataEditorState {
                     .unwrap_or_default(),
                 disc_number: first
                     .and_then(|track| track.disc_number)
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|value| value.to_string()),
                 conductor: first
                     .and_then(|track| track.conductor.clone())
                     .unwrap_or_default(),
@@ -96,6 +98,7 @@ impl MetadataEditorState {
         })
     }
 
+    #[must_use]
     pub fn for_track(track: &sotf_audio_player::Track) -> Self {
         let title = track
             .title
@@ -105,21 +108,15 @@ impl MetadataEditorState {
         Self {
             scope: MetadataEditorScope::Track,
             target: sotf_audio_player::MetadataTarget::TrackPath(track.path.clone()),
-            target_label: format!("Track \"{}\"", title),
+            target_label: format!("Track \"{title}\""),
             fields: MetadataEditorFields {
                 title: title.clone(),
                 artist: artist.clone(),
                 album_artist: track.album_artist.clone().unwrap_or_default(),
                 genre: track.genre.clone().unwrap_or_default(),
                 composer: track.composer.clone().unwrap_or_default(),
-                disc_number: track
-                    .disc_number
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
-                track_number: track
-                    .track_number
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
+                disc_number: track.disc_number.map_or_default(|value| value.to_string()),
+                track_number: track.track_number.map_or_default(|value| value.to_string()),
                 conductor: track.conductor.clone().unwrap_or_default(),
                 performer: track.performer.clone().unwrap_or_default(),
                 isrc: track.isrc.clone().unwrap_or_default(),
@@ -132,13 +129,14 @@ impl MetadataEditorState {
             edit_buffer: String::new(),
             preview: None,
             error: None,
-            search_query: format!("{} {}", artist, title).trim().to_string(),
+            search_query: format!("{artist} {title}").trim().to_string(),
             search_results: Vec::new(),
             selected_result: 0,
             search_error: None,
         }
     }
 
+    #[must_use]
     pub fn field_label(index: usize) -> &'static str {
         match index {
             0 => "Title",
@@ -158,6 +156,7 @@ impl MetadataEditorState {
         }
     }
 
+    #[must_use]
     pub fn field_value(&self, index: usize) -> &str {
         match index {
             0 => &self.fields.title,
@@ -198,6 +197,9 @@ impl MetadataEditorState {
         self.error = None;
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if numeric metadata fields cannot be parsed.
     pub fn patch(&self) -> Result<sotf_audio_player::MetadataPatch, String> {
         fn text(value: &str) -> Option<String> {
             let trimmed = value.trim();
@@ -211,7 +213,7 @@ impl MetadataEditorState {
             trimmed
                 .parse::<u32>()
                 .map(Some)
-                .map_err(|_| format!("{label} must be a positive number"))
+                .map_err(|_error| format!("{label} must be a positive number"))
         }
 
         Ok(sotf_audio_player::MetadataPatch {

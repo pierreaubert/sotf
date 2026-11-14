@@ -18,6 +18,6 @@ pub const SOURCE_TYPE_NAMES: &[(&str, &str)] = &[
     ("icy_radio", "Radio"),
 ];
 
-/// Index of the selected source type when in AddSource mode
+/// Index of the selected source type when in `AddSource` mode
 pub static ADD_SOURCE_TYPE_IDX: std::sync::atomic::AtomicUsize =
     std::sync::atomic::AtomicUsize::new(0);

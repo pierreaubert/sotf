@@ -42,6 +42,7 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
+    #[must_use]
     pub fn loopback(run_id: RunId, capabilities: Capabilities) -> Self {
         Self {
             bind: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 0),
@@ -52,6 +53,7 @@ impl ServerConfig {
     }
 }
 
+#[derive(Debug)]
 pub struct ServerHandle {
     endpoint: SocketAddr,
     stop: Arc<AtomicBool>,
@@ -59,6 +61,7 @@ pub struct ServerHandle {
 }
 
 impl ServerHandle {
+    #[must_use]
     pub fn endpoint(&self) -> SocketAddr {
         self.endpoint
     }
@@ -86,6 +89,15 @@ struct RoutedConnection {
     command_sequence: u64,
 }
 
+/// Start the loopback development API server.
+///
+/// # Errors
+/// Returns an error if the address is not loopback, the socket cannot bind,
+/// or a server thread cannot be started.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Server startup keeps worker ownership and shutdown wiring together"
+)]
 pub fn start_server(
     config: ServerConfig,
     dispatcher: impl TargetDispatcher,
@@ -108,7 +120,7 @@ pub fn start_server(
         bounded_channel::<RoutedConnection>(limits.command_queue.max(1));
     let mut threads = Vec::new();
 
-    let dispatch_stop = stop.clone();
+    let dispatch_stop = Arc::clone(&stop);
     let dispatch_limits = limits.clone();
     let dispatch_telemetry = route_sender.telemetry();
     threads.push(
@@ -152,12 +164,12 @@ pub fn start_server(
             limits.active_connections.div_ceil(worker_count).max(1),
         );
         worker_senders.push(sender);
-        let worker_stop = stop.clone();
+        let worker_stop = Arc::clone(&stop);
         let worker_limits = limits.clone();
         let worker_run_id = config.run_id.clone();
-        let worker_caps = capabilities.clone();
+        let worker_caps = Arc::clone(&capabilities);
         let worker_routes = route_sender.clone();
-        let worker_sequence = sequence.clone();
+        let worker_sequence = Arc::clone(&sequence);
         threads.push(
             thread::Builder::new()
                 .name(format!("sotf-dev-parse-{index}"))
@@ -182,7 +194,7 @@ pub fn start_server(
                         if !authenticated(&request, &worker_run_id) {
                             let response = json_reply(
                                 401,
-                                DevReply::failure("unauthorized", "invalid or missing run ID"),
+                                &DevReply::failure("unauthorized", "invalid or missing run ID"),
                             );
                             let _ = response.write_to(&mut stream, worker_limits.response_bytes);
                             continue;
@@ -197,7 +209,7 @@ pub fn start_server(
                             }));
                             reply.meta.command_sequence = command_sequence;
                             reply.meta.timing.total_ns = elapsed_ns(accepted);
-                            let response = json_reply(200, reply);
+                            let response = json_reply(200, &reply);
                             let _ = response.write_to(&mut stream, worker_limits.response_bytes);
                             continue;
                         }
@@ -207,11 +219,11 @@ pub fn start_server(
                                     let mut reply = DevReply::success(value);
                                     reply.meta.command_sequence = command_sequence;
                                     reply.meta.timing.total_ns = elapsed_ns(accepted);
-                                    json_reply(200, reply)
+                                    json_reply(200, &reply)
                                 }
                                 Err(error) => json_reply(
                                     500,
-                                    DevReply::failure("serialization", error.to_string()),
+                                    &DevReply::failure("serialization", error.to_string()),
                                 ),
                             };
                             let _ = response.write_to(&mut stream, worker_limits.response_bytes);
@@ -229,7 +241,7 @@ pub fn start_server(
                                 if let Some(stream) = overload_stream.as_mut() {
                                     let _ = json_reply(
                                         429,
-                                        DevReply::failure(
+                                        &DevReply::failure(
                                             "queue_full",
                                             "target command queue is full",
                                         ),
@@ -244,7 +256,7 @@ pub fn start_server(
         );
     }
 
-    let accept_stop = stop.clone();
+    let accept_stop = Arc::clone(&stop);
     threads.push(
         thread::Builder::new()
             .name("sotf-dev-accept".into())
@@ -270,7 +282,7 @@ pub fn start_server(
                                 Err(mpsc::TrySendError::Full(mut stream)) => {
                                     let _ = json_reply(
                                         429,
-                                        DevReply::failure(
+                                        &DevReply::failure(
                                             "connection_limit",
                                             "connection limit reached",
                                         ),
@@ -307,8 +319,8 @@ fn authenticated(request: &HttpRequest, run_id: &RunId) -> bool {
         .is_some_and(|candidate| run_id.authenticate(candidate))
 }
 
-fn json_reply(status: u16, reply: DevReply) -> HttpResponse {
-    match serde_json::to_vec(&reply) {
+fn json_reply(status: u16, reply: &DevReply) -> HttpResponse {
+    match serde_json::to_vec(reply) {
         Ok(body) => HttpResponse::json(status, body),
         Err(error) => HttpResponse::text(500, error.to_string()),
     }
@@ -331,10 +343,12 @@ fn enrich_response(
         return response;
     };
     let total_ns = elapsed_ns(accepted);
-    let queue_ns = dispatch_started
-        .saturating_duration_since(accepted)
-        .as_nanos()
-        .min(u128::from(u64::MAX)) as u64;
+    let queue_ns = u64::try_from(
+        dispatch_started
+            .saturating_duration_since(accepted)
+            .as_nanos(),
+    )
+    .unwrap_or(u64::MAX);
     let dispatch_ns = total_ns.saturating_sub(queue_ns);
     let default_meta = ReplyMetadata {
         command_sequence,
@@ -366,7 +380,7 @@ fn enrich_response(
 }
 
 fn elapsed_ns(started: Instant) -> u64 {
-    started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64
+    u64::try_from(started.elapsed().as_nanos()).unwrap_or(u64::MAX)
 }
 
 fn parser_error_response(error: &HttpError) -> HttpResponse {
@@ -384,7 +398,7 @@ fn parser_error_response(error: &HttpError) -> HttpResponse {
     };
     json_reply(
         status,
-        DevReply::failure("invalid_request", error.to_string()),
+        &DevReply::failure("invalid_request", error.to_string()),
     )
 }
 

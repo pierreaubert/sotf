@@ -15,7 +15,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_fir_taps_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         fir_taps_input =
             fir_taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
@@ -35,12 +35,12 @@
         .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_fir_phase_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         fir_phase_select = fir_phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_fir_phase_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         fir_phase_select =
             fir_phase_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }

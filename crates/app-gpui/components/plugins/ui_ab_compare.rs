@@ -16,7 +16,7 @@ use crate::components::plugins::ui_layout_renderer;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, ClickEvent, Div, SharedString, div, px, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Divider, Text, TextSize, TextWeight};
 use sotf_audio_player::controllers::ab_compare_path::{
     PluginInRack, allowed_plugin_types, parse_path_config,
@@ -25,6 +25,7 @@ use sotf_audio_player::controllers::ab_compare_path::{
 /// Derive the custom A/B view from persisted settings. This keeps save/reload
 /// and graph-modal discard consistent without transient-state synchronization.
 #[doc(hidden)]
+#[must_use]
 pub fn ab_compare_view_state(
     settings: &sotf_audio_player::PluginSettings,
 ) -> (
@@ -62,7 +63,7 @@ fn path_selection_update(settings: &sotf_audio_player::PluginSettings, path: u8)
     let param_idx =
         sotf_plugins::param_specs::index_of(sotf_plugins::param_specs::ab_compare::PARAMS, key);
     let value = if binary {
-        path.min(1) as f64
+        f64::from(path.min(1))
     } else if path == 0 {
         -sotf_plugins::param_specs::ab_compare::PARAMS[param_idx].display_scale
     } else {
@@ -72,6 +73,14 @@ fn path_selection_update(settings: &sotf_audio_player::PluginSettings, path: u8)
 }
 
 /// Render the A/B Compare custom plugin view.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub fn render_ab_compare(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -176,11 +185,11 @@ pub fn render_ab_compare(
         ));
     let paths = div()
         .flex()
-        .when(stack_paths || wide_short, |paths| paths.flex_col())
+        .when(stack_paths || wide_short, gpui::Styled::flex_col)
         .gap(d.section)
         .min_w_0()
-        .when(wide_short, |paths| paths.flex_1())
-        .when(!wide_short, |paths| paths.w_full())
+        .when(wide_short, gpui::Styled::flex_1)
+        .when(!wide_short, gpui::Styled::w_full)
         .child(render_path_section(
             text.path_a,
             0,
@@ -226,7 +235,7 @@ pub fn render_ab_compare(
         .child(
             div()
                 .flex()
-                .when(!wide_short, |core| core.flex_col())
+                .when(!wide_short, gpui::Styled::flex_col)
                 .gap(d.section)
                 .w_full()
                 .child(primary)
@@ -253,6 +262,14 @@ pub fn render_ab_compare(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_path_section(
     label: &str,
     path: u8,
@@ -479,6 +496,14 @@ fn render_add_menu(
     menu
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_sub_plugin_card(
     path: u8,
     plugin_idx: usize,

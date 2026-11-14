@@ -1,6 +1,11 @@
-use super::*;
+use super::{
+    Alignment, App, Block, BorderType, Borders, Clear, Constraint, Direction, Frame, Layout, List,
+    ListItem, ListState, Modifier, Paragraph, Style, centered_modal_rect,
+};
 
 pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
+    use ratatui::widgets::StatefulWidget;
+
     let area = f.area();
     let modal_area = centered_modal_rect(area, 80, 80, 20, 6);
 
@@ -52,12 +57,12 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
             let is_selected = i == app.file_explorer.selected;
             let is_dir = path.is_dir();
             let icon = if is_dir { "/" } else { " " };
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| path.display().to_string());
+            let name = path.file_name().map_or_else(
+                || path.display().to_string(),
+                |n| n.to_string_lossy().to_string(),
+            );
 
-            let content = format!(" {}{}", icon, name);
+            let content = format!(" {icon}{name}");
             let style = if is_selected {
                 Style::default()
                     .fg(app.theme.fg_selected)
@@ -77,7 +82,6 @@ pub(crate) fn draw_file_explorer_modal(f: &mut Frame, app: &App) {
     let mut state = ListState::default();
     state.select(Some(app.file_explorer.selected));
 
-    use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, chunks[1], f.buffer_mut(), &mut state);
 
     // Help text

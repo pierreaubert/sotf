@@ -10,8 +10,7 @@ use sotf_audio_player::signal_recorder::MIN_REPEAT_SWEEPS;
 pub(super) fn now_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+        .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX))
 }
 
 pub(super) fn request_spl_cancel(app: &mut App) {
@@ -67,7 +66,7 @@ pub(super) fn current_save_field_value(app: &App) -> String {
 
 pub(super) fn fmt_opt_dim(v: f64) -> String {
     if v > 0.0 {
-        format!("{:.2}", v)
+        format!("{v:.2}")
     } else {
         String::new()
     }
@@ -106,7 +105,10 @@ pub(super) fn commit_save_field_edit(app: &mut App) {
 
 /// True for fields whose value is edited as a typed number string.
 pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool {
-    use RecordingField::*;
+    use RecordingField::{
+        ChannelInput, CtcLoopbackInput, Duration, Level, NumPositions, NumRecordingChannels,
+        NumSweeps, SweepEnd, SweepStart,
+    };
     matches!(
         field,
         Duration
@@ -122,12 +124,16 @@ pub(crate) fn is_recording_field_numerical_kind(field: &RecordingField) -> bool 
 }
 
 pub(super) fn set_recording_field_from_string(app: &mut App) {
+    use RecordingField::{
+        ChannelInput, CtcLoopbackInput, Duration, Level, NumPositions, NumRecordingChannels,
+        NumSweeps, SweepEnd, SweepStart,
+    };
+
     use crate::app::recording_field_at;
     let buf = app.recording.edit_buffer.clone();
     let Some(field) = recording_field_at(&app.recording, app.recording.selected_field) else {
         return;
     };
-    use RecordingField::*;
     match field {
         Duration => {
             if let Ok(v) = buf.parse::<f32>() {
@@ -260,11 +266,11 @@ pub(crate) fn add_custom_speaker(app: &mut App) {
     let next_ch = cfg
         .channel_mappings
         .iter()
-        .map(|m| m.channel_count())
+        .map(sotf_audio_player::recording_types::ChannelMapping::channel_count)
         .sum::<usize>();
     let idx = cfg.channel_mappings.len() + 1;
     cfg.channel_mappings
-        .push(ChannelMapping::single(next_ch, format!("Ch{}", idx)));
+        .push(ChannelMapping::single(next_ch, format!("Ch{idx}")));
     cfg.sync_channel_count();
 }
 
@@ -323,8 +329,7 @@ pub(crate) fn init_recording_channels(app: &mut App) {
         app.recording.model.transfer_matrix_loopbacks.clear();
         app.recording.model.ctc_reference_sweep_path = None;
         app.recording.model.ctc_reference_sweep_duration_s = None;
-        app.recording.model.current_recording_channel =
-            if expected_count > 0 { Some(0) } else { None };
+        app.recording.model.current_recording_channel = (expected_count > 0).then_some(0);
     }
 }
 
@@ -362,12 +367,15 @@ pub(super) fn ctc_raw_capture_channel_indices(app: &App, channel_idx: usize) -> 
             .model
             .channel_recordings
             .get(*idx)
-            .map(|rec| rec.mic_index)
-            .unwrap_or(usize::MAX)
+            .map_or(usize::MAX, |rec| rec.mic_index)
     });
     indices
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub(crate) fn save_recordings(app: &mut App) {
     use roomeq_model::OptimizerConfig;
     use roomeq_model::RoomConfig;
@@ -400,7 +408,7 @@ pub(crate) fn save_recordings(app: &mut App) {
 
     // B4: Create output directory before saving or exporting matrix WAVs.
     if let Err(e) = std::fs::create_dir_all(&dir) {
-        app.recording.save.error = Some(format!("Cannot create directory: {}", e));
+        app.recording.save.error = Some(format!("Cannot create directory: {e}"));
         return;
     }
 
@@ -424,10 +432,10 @@ pub(crate) fn save_recordings(app: &mut App) {
             .ctc_reference_sweep_path
             .as_ref()
             .map(|path| {
-                std::path::Path::new(path)
-                    .strip_prefix(&dir)
-                    .map(|p| p.to_path_buf())
-                    .unwrap_or_else(|_| std::path::PathBuf::from(path))
+                std::path::Path::new(path).strip_prefix(&dir).map_or_else(
+                    |_| std::path::PathBuf::from(path),
+                    std::path::Path::to_path_buf,
+                )
             });
         match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
             &app.recording.model.channel_recordings,
@@ -443,22 +451,21 @@ pub(crate) fn save_recordings(app: &mut App) {
             &app.recording.model.transfer_matrix_loopbacks,
         ) {
             Ok(Some(measurements)) => {
-                match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
-                    &app.recording.model.channel_recordings,
-                    &channel_names,
-                    &measurements,
-                ) {
-                    Some(range) => {
-                        ctc_raw_sweep_range = Some(range);
-                        Some(measurements)
-                    }
-                    None => {
-                        ctc_raw_fallback = true;
-                        app.recording.model.status_message =
-                            "Raw-sweep CTC mixes sweep ranges; falling back to measured CTC"
-                                .to_string();
-                        None
-                    }
+                if let Some(range) =
+                    sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                        &app.recording.model.channel_recordings,
+                        &channel_names,
+                        &measurements,
+                    )
+                {
+                    ctc_raw_sweep_range = Some(range);
+                    Some(measurements)
+                } else {
+                    ctc_raw_fallback = true;
+                    app.recording.model.status_message =
+                        "Raw-sweep CTC mixes sweep ranges; falling back to measured CTC"
+                            .to_string();
+                    None
                 }
             }
             Ok(None) => {
@@ -470,7 +477,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             Err(e) => {
                 ctc_raw_fallback = true;
                 app.recording.model.status_message =
-                    format!("Could not export raw-sweep CTC transfer matrix: {}", e);
+                    format!("Could not export raw-sweep CTC transfer matrix: {e}");
                 None
             }
         }
@@ -488,7 +495,7 @@ pub(crate) fn save_recordings(app: &mut App) {
             Ok(measurements) => measurements,
             Err(e) => {
                 app.recording.model.status_message =
-                    format!("Could not export CTC transfer matrix: {}", e);
+                    format!("Could not export CTC transfer matrix: {e}");
                 None
             }
         };
@@ -546,12 +553,12 @@ pub(crate) fn save_recordings(app: &mut App) {
                 None
             },
             sweep_start_hz: if raw {
-                ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                ctc_raw_sweep_range.map(|(start, _)| f64::from(start))
             } else {
                 None
             },
             sweep_end_hz: if raw {
-                ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                ctc_raw_sweep_range.map(|(_, end)| f64::from(end))
             } else {
                 None
             },
@@ -580,9 +587,9 @@ pub(crate) fn save_recordings(app: &mut App) {
         crossovers,
         target_curve: None,
         optimizer: OptimizerConfig::default(),
-        provenance: Default::default(),
+        provenance: roomeq_model::ProvenanceConfig::default(),
         recording_config: Some(configuration),
-        measured_impulse_responses: Default::default(),
+        measured_impulse_responses: std::collections::BTreeMap::default(),
         ctc,
         reporting: None,
         cea2034_cache: None,
@@ -635,7 +642,7 @@ pub(crate) fn save_recordings(app: &mut App) {
                 )
                 .map_err(|error| format!("Could not save recording evidence: {error}"))
             }),
-            Err(e) => Err(format!("Serialize error: {}", e)),
+            Err(e) => Err(format!("Serialize error: {e}")),
         };
         let _ = tx.send(result);
     });

@@ -1,4 +1,7 @@
-#![allow(clippy::field_reassign_with_default)]
+#![allow(
+    clippy::field_reassign_with_default,
+    reason = "Tests start from canonical defaults and override only the scenario fields"
+)]
 //! Phase 5: State Machine Modeling
 //!
 //! This module models the application state as explicit state machines,

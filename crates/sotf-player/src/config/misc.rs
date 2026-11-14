@@ -9,6 +9,9 @@ pub(super) static CONFIG_DIR_OVERRIDE: OnceLock<PathBuf> = OnceLock::new();
 /// Set a custom config directory, overriding the platform default.
 /// Must be called before any `get_app_config_dir()` usage.
 /// Creates the directory if it doesn't exist.
+///
+/// # Panics
+/// Panics if the directory cannot be created or an override was already installed.
 pub fn set_config_dir_override(path: PathBuf) {
     std::fs::create_dir_all(&path).expect("Failed to create config dir override");
     CONFIG_DIR_OVERRIDE

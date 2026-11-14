@@ -5,12 +5,21 @@ use crate::federation_config::{
     ConnectionDiagnostic, ConnectionStatus, FederationSourceEntry, SourceConnectionConfig,
     StepResult,
 };
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 /// Run a structured diagnostic test against a federation source.
 /// Tests each layer: DNS -> TCP -> TLS/Protocol.
 /// Blocking — creates its own tokio runtime.
+#[must_use]
 pub fn run_connection_diagnostic(source: &FederationSourceEntry) -> ConnectionStatus {
-    let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
+    let rt = match tokio::runtime::Runtime::new() {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return ConnectionStatus::Error(format!(
+                "Could not create diagnostic runtime: {error}"
+            ));
+        }
+    };
     rt.block_on(async {
         match &source.connection {
             SourceConnectionConfig::Mpd {
@@ -201,7 +210,6 @@ async fn diagnose_mpd(host: &str, port: u16, password: Option<&str>) -> Connecti
             let tcp_result = StepResult::Ok(format!("port {port} open"));
             let tls_handshake = StepResult::Skipped("MPD uses plain TCP".to_string());
 
-            use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
             let mut reader = BufReader::new(stream);
             let mut greeting = String::new();
             let protocol_hello =

@@ -2,7 +2,7 @@ use crate::app::actions;
 use gpui::KeyBinding;
 
 /// Plugin Graph bindings live in their own context so graph editing wins over
-/// the layered PlayerView navigation, playback, filter, and meter bindings.
+/// the layered `PlayerView` navigation, playback, filter, and meter bindings.
 pub(super) fn plugin_graph_bindings() -> Vec<KeyBinding> {
     vec![
         KeyBinding::new("tab", actions::GraphSelectNextNode, Some("PluginGraph")),

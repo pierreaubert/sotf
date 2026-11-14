@@ -53,6 +53,7 @@ pub struct TypographyRems {
 /// The neutral preset stays byte-for-byte equivalent to the old scale while
 /// Apple / Material / Fluent can tune base and heading size through their
 /// design-system presets.
+#[must_use]
 pub fn typography_rems_from_rules(typography: &TypographyRules) -> TypographyRems {
     let to_rems = |px_value: f32| rems(px_value / BASE_REM_PX);
     let caption_px = (typography.small_size - LEGACY_CAPTION_OFFSET_PX).max(8.0);
@@ -77,7 +78,7 @@ pub fn typography_rems_from_rules(typography: &TypographyRules) -> TypographyRem
 /// let d = Ds::from_cx(cx);
 /// div().px(d.pad_x).py(d.pad_y).gap(d.gap).rounded(d.r_md).text_size(d.text_sm)
 /// ```
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct Ds {
     /// Half-grid unit (~2px) — hairline spacing that still follows zoom.
     pub half_grid: Rems,

@@ -22,10 +22,16 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     // don't exist.
     let mappings = &app.recording.model.playback_config.channel_mappings;
     let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-    let channel_indices: Vec<u16> = mappings
+    let Ok(channel_indices) = mappings
         .iter()
-        .map(|m| m.interface_channel() as u16)
-        .collect();
+        .map(|m| u16::try_from(m.interface_channel()))
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        app.recording.model.probe_capture.status = ProbeCaptureStatus::Failed(
+            "Output channel exceeds the capture channel range".to_string(),
+        );
+        return;
+    };
 
     // Build the output WAV path under the same directory the sweeps
     // landed in so everything travels together at save time.
@@ -35,7 +41,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         } else {
             app.recording.output_directory.clone()
         };
-        format!("{}/probe_all_channels.wav", base_dir)
+        format!("{base_dir}/probe_all_channels.wav")
     };
 
     let probe_ms = app.recording.model.probe_capture.probe_duration_ms;
@@ -52,7 +58,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         .model
         .probe_cancel_requested
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let cancel_flag = app.recording.model.probe_cancel_requested.clone();
+    let cancel_flag = std::sync::Arc::clone(&app.recording.model.probe_cancel_requested);
 
     app.recording.model.probe_capture.status = ProbeCaptureStatus::Running {
         started_at_ms: now_ms(),
@@ -60,9 +66,8 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     app.recording.model.probe_capture.results = None;
     let capture_generation = app.recording.model.probe_capture.next_capture_generation();
 
-    let slot = PROBE_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot =
+        std::sync::Arc::clone(PROBE_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
     if let Ok(mut g) = slot.lock() {
         *g = None;
     }
@@ -118,11 +123,9 @@ pub(super) fn spawn_spl_calibration_capture(app: &mut App) {
     let input_device = Some(app.recording.model.recording_config.device_name.clone());
 
     let capture_generation = prepare_spl_calibration_capture(app, now_ms());
-    let cancel_flag = app.recording.model.spl_cancel_requested.clone();
+    let cancel_flag = std::sync::Arc::clone(&app.recording.model.spl_cancel_requested);
 
-    let slot = SPL_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot = std::sync::Arc::clone(SPL_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
     if let Ok(mut g) = slot.lock() {
         *g = None;
     }
@@ -155,10 +158,16 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         return;
     }
     let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-    let channel_indices: Vec<u16> = mappings
+    let Ok(channel_indices) = mappings
         .iter()
-        .map(|m| m.interface_channel() as u16)
-        .collect();
+        .map(|m| u16::try_from(m.interface_channel()))
+        .collect::<Result<Vec<_>, _>>()
+    else {
+        app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Failed(
+            "Output channel exceeds the capture channel range".to_string(),
+        );
+        return;
+    };
 
     let wav_path_str = {
         let base_dir = if app.recording.output_directory.is_empty() {
@@ -166,7 +175,7 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         } else {
             app.recording.output_directory.clone()
         };
-        format!("{}/bass_anchor_all_channels.wav", base_dir)
+        format!("{base_dir}/bass_anchor_all_channels.wav")
     };
 
     let bass_freq_hz = app.recording.model.bass_anchor_capture.bass_freq_hz;
@@ -180,14 +189,11 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         app.recording
             .model.recording_config
             .ctc_loopback_input_channel
-            .and_then(|c| match u16::try_from(c) {
-                Ok(v) => Some(v),
-                Err(_) => {
-                    log::warn!(
-                        "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
-                    );
-                    None
-                }
+            .and_then(|c| if let Ok(v) = u16::try_from(c) { Some(v) } else {
+                log::warn!(
+                    "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
+                );
+                None
             });
     let signal_level_db = app.recording.model.signal_level_db;
     let output_device = Some(app.recording.model.playback_config.device_name.clone());
@@ -199,7 +205,7 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         .model
         .bass_anchor_cancel_requested
         .store(false, std::sync::atomic::Ordering::Relaxed);
-    let cancel_flag = app.recording.model.bass_anchor_cancel_requested.clone();
+    let cancel_flag = std::sync::Arc::clone(&app.recording.model.bass_anchor_cancel_requested);
 
     app.recording.model.bass_anchor_capture.status = BassAnchorCaptureStatus::Running {
         started_at_ms: now_ms(),
@@ -211,9 +217,9 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         .bass_anchor_capture
         .next_capture_generation();
 
-    let slot = BASS_ANCHOR_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot = std::sync::Arc::clone(
+        BASS_ANCHOR_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))),
+    );
     if let Ok(mut g) = slot.lock() {
         *g = None;
     }

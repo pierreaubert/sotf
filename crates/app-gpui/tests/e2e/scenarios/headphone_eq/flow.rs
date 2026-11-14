@@ -5,6 +5,7 @@ use sotf_audio_player_gpui::app::types::HeadphoneEqStep;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct HeadphoneEqFlowScenario;
 
 impl TestScenario for HeadphoneEqFlowScenario {

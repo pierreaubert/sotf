@@ -83,25 +83,29 @@ pub fn get_app_config_dir() -> Option<PathBuf> {
 }
 
 /// Get the path to the music database file
+#[must_use]
 pub fn get_music_db_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("music.db"))
 }
 
 /// Get the path to the microphone presets config file
+#[must_use]
 pub fn get_microphone_presets_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("microphones.json"))
 }
 
 /// Get the path to the plugin presets directory
+#[must_use]
 pub fn get_plugin_presets_dir() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| {
         let presets_dir = dir.join("plugin_presets");
-        std::fs::create_dir_all(&presets_dir).ok();
+        let _ = std::fs::create_dir_all(&presets_dir);
         presets_dir
     })
 }
 
 /// Get the path to the external plugin sandbox grant store.
+#[must_use]
 pub fn get_plugin_sandbox_grants_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("plugin_sandbox_grants.json"))
 }
@@ -110,70 +114,82 @@ pub fn get_plugin_sandbox_grants_path() -> Option<PathBuf> {
 ///
 /// This lives under the app support directory so Mac App Store builds can
 /// record without relying on a security-scoped external folder.
+#[must_use]
 pub fn get_recordings_dir() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| {
         let recordings_dir = dir.join("Recordings");
-        std::fs::create_dir_all(&recordings_dir).ok();
+        let _ = std::fs::create_dir_all(&recordings_dir);
         recordings_dir
     })
 }
 
 /// Get the path to the EQ directory (for headphone/speaker EQ curves)
+#[must_use]
 pub fn get_eq_dir() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| {
         let eq_dir = dir.join("EQ");
-        std::fs::create_dir_all(&eq_dir).ok();
+        let _ = std::fs::create_dir_all(&eq_dir);
         eq_dir
     })
 }
 
 /// Get the path to the app state config file (deprecated - use app-specific paths)
 #[deprecated(note = "Use get_tui_state_path() or get_gpui_state_path() instead")]
+#[must_use]
 pub fn get_app_state_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("app_state.json"))
 }
 
 /// Get the path to the TUI app state config file
+#[must_use]
 pub fn get_tui_state_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("app_state_tui.json"))
 }
 
 /// Get the path to the GPUI app state config file
+#[must_use]
 pub fn get_gpui_state_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("app_state_gpui.json"))
 }
 
 /// Get the durable EQ ear-training progress path shared by frontends.
+#[must_use]
 pub fn get_ear_training_progress_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("ear-training-progress.json"))
 }
 
 /// Get the path to the TUI log file
+#[must_use]
 pub fn get_tui_log_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("sotf_tui_player.log"))
 }
 
 /// Get the path to the GPUI log file
+#[must_use]
 pub fn get_gpui_log_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("sotf_gpui_player.log"))
 }
 
 /// Get the path to the server configuration file
+#[must_use]
 pub fn get_server_config_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("servers.json"))
 }
 
 /// Get the path to metadata provider configuration.
+#[must_use]
 pub fn get_metadata_services_config_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("metadata_services.json"))
 }
 
 /// Get the path to the native remote server store.
+#[must_use]
 pub fn get_remote_servers_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("remote_servers.json"))
 }
 
 /// Get the path to the internal native remote token store.
+#[must_use]
 pub fn get_remote_server_tokens_path() -> Option<PathBuf> {
     get_app_config_dir().map(|dir| dir.join("remote_server_tokens.json"))
 }
@@ -181,6 +197,9 @@ pub fn get_remote_server_tokens_path() -> Option<PathBuf> {
 /// Delete a bearer token from the internal native remote token store.
 ///
 /// This fallback is used on platforms without a system credential store.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or token deletion fails.
 pub fn delete_remote_server_token(key: &str) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_server_tokens_path() {
         if path.exists() {

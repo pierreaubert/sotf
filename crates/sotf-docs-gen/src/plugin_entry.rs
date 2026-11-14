@@ -15,6 +15,10 @@ const HAL_INPUT_PARAMS: &[ParamSpec] = &[ParamSpec::int(
 .structural()
 .doc("Number of HAL input channels")];
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "This function is the declarative plugin documentation registry"
+)]
 pub(super) fn plugin_registry() -> Vec<PluginEntry> {
     use sotf_plugins::param_specs;
     vec![

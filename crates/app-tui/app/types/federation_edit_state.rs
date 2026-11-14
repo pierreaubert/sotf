@@ -4,7 +4,7 @@ use sotf_audio_player::federation_config::FederationSourceEntry;
 pub struct FederationEditState {
     pub source: FederationSourceEntry,
     /// Field index within the source-specific connection fields
-    /// 0..N are connection fields, N is display_name, N+1 is priority, N+2 is enabled
+    /// 0..N are connection fields, N is `display_name`, N+1 is priority, N+2 is enabled
     pub selected_field: usize,
     pub editing_value: bool,
     pub edit_buffer: String,
@@ -12,6 +12,7 @@ pub struct FederationEditState {
 }
 
 impl FederationEditState {
+    #[must_use]
     pub fn new(source: FederationSourceEntry, is_new: bool) -> Self {
         Self {
             source,
@@ -23,31 +24,30 @@ impl FederationEditState {
     }
 
     /// Total number of editable fields (connection fields + name + priority)
+    #[must_use]
     pub fn field_count(&self) -> usize {
         self.source.connection.field_names().len() + 2
     }
 
     /// Get label for the field at the given index
+    #[must_use]
     pub fn field_label(&self, index: usize) -> &str {
         let conn_fields = self.source.connection.field_names();
-        if index < conn_fields.len() {
-            conn_fields[index]
-        } else if index == conn_fields.len() {
-            "Display Name"
-        } else {
-            "Priority"
+        match index.cmp(&conn_fields.len()) {
+            std::cmp::Ordering::Less => conn_fields[index],
+            std::cmp::Ordering::Equal => "Display Name",
+            std::cmp::Ordering::Greater => "Priority",
         }
     }
 
     /// Get value for the field at the given index
+    #[must_use]
     pub fn field_value(&self, index: usize) -> String {
         let conn_fields = self.source.connection.field_names();
-        if index < conn_fields.len() {
-            self.source.connection.field_value(index)
-        } else if index == conn_fields.len() {
-            self.source.display_name.clone()
-        } else {
-            self.source.priority.to_string()
+        match index.cmp(&conn_fields.len()) {
+            std::cmp::Ordering::Less => self.source.connection.field_value(index),
+            std::cmp::Ordering::Equal => self.source.display_name.clone(),
+            std::cmp::Ordering::Greater => self.source.priority.to_string(),
         }
     }
 

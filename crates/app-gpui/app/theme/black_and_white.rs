@@ -6,95 +6,100 @@ use gpui::Rgba;
 
 impl Theme {
     /// Black & White theme (monochrome high contrast)
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
     pub fn black_and_white() -> Self {
         Self {
-            background: rgb(0x000000),
-            background_secondary: rgb(0x0a0a0a),
-            background_tertiary: rgb(0x141414),
-            surface: rgb(0x141414),
-            surface_hover: rgb(0x222222),
-            surface_selected: rgb(0x333333),
-            text_primary: rgb(0xffffff),
-            text_secondary: rgb(0xffffff),
-            text_muted: rgb(0xb0b0b0),
-            text_disabled: rgb(0x595959),
-            border: rgb(0xdddddd),
-            border_focused: rgb(0xffffff),
-            accent: rgb(0xffffff),
-            accent_hover: rgb(0xeeeeee),
-            accent_muted: rgb(0x888888),
-            text_on_accent: rgb(0x000000),
-            text_on_accent_muted: rgb(0x333333),
-            icon_on_accent: rgb(0x000000),
-            success: rgb(0xaaaaaa),
-            warning: rgb(0x888888),
-            error: rgb(0x666666),
-            info: rgb(0x999999),
-            button_mute_active: rgb(0x666666),
-            button_solo_active: rgb(0xaaaaaa),
-            button_dim_active: rgb(0x333333),
+            background: rgb(0x0000_0000),
+            background_secondary: rgb(0x000a_0a0a),
+            background_tertiary: rgb(0x0014_1414),
+            surface: rgb(0x0014_1414),
+            surface_hover: rgb(0x0022_2222),
+            surface_selected: rgb(0x0033_3333),
+            text_primary: rgb(0x00ff_ffff),
+            text_secondary: rgb(0x00ff_ffff),
+            text_muted: rgb(0x00b0_b0b0),
+            text_disabled: rgb(0x0059_5959),
+            border: rgb(0x00dd_dddd),
+            border_focused: rgb(0x00ff_ffff),
+            accent: rgb(0x00ff_ffff),
+            accent_hover: rgb(0x00ee_eeee),
+            accent_muted: rgb(0x0088_8888),
+            text_on_accent: rgb(0x0000_0000),
+            text_on_accent_muted: rgb(0x0033_3333),
+            icon_on_accent: rgb(0x0000_0000),
+            success: rgb(0x00aa_aaaa),
+            warning: rgb(0x0088_8888),
+            error: rgb(0x0066_6666),
+            info: rgb(0x0099_9999),
+            button_mute_active: rgb(0x0066_6666),
+            button_solo_active: rgb(0x00aa_aaaa),
+            button_dim_active: rgb(0x0033_3333),
             plugin_palette: ThemePluginPalette {
                 plugin_colors: PluginColorMap {
-                    eq: rgb(0xcccccc),
-                    gain: rgb(0xaaaaaa),
-                    upmixer: rgb(0x888888),
-                    compressor: rgb(0x666666),
-                    limiter: rgb(0x777777),
-                    gate: rgb(0x999999),
-                    loudness: rgb(0xbbbbbb),
-                    binaural: rgb(0x808080),
-                    convolution: rgb(0x909090),
-                    monitor: rgb(0xababab),
-                    spectrum: rgb(0x8a8a8a),
-                    mute_solo: rgb(0x999999),
+                    eq: rgb(0x00cc_cccc),
+                    gain: rgb(0x00aa_aaaa),
+                    upmixer: rgb(0x0088_8888),
+                    compressor: rgb(0x0066_6666),
+                    limiter: rgb(0x0077_7777),
+                    gate: rgb(0x0099_9999),
+                    loudness: rgb(0x00bb_bbbb),
+                    binaural: rgb(0x0080_8080),
+                    convolution: rgb(0x0090_9090),
+                    monitor: rgb(0x00ab_abab),
+                    spectrum: rgb(0x008a_8a8a),
+                    mute_solo: rgb(0x0099_9999),
                 },
                 graph_colors: GraphLineColors {
-                    input: rgb(0x5c77a5),           // Blue
-                    target: rgb(0x71a152),          // Green
-                    filter_response: rgb(0xdc842a), // Orange
-                    corrected: rgb(0x76b7b2),       // Teal-cyan
-                    error: rgb(0xc85857),           // Red
-                    deviation: rgb(0xb07aa1),       // Purple
+                    input: rgb(0x005c_77a5),           // Blue
+                    target: rgb(0x0071_a152),          // Green
+                    filter_response: rgb(0x00dc_842a), // Orange
+                    corrected: rgb(0x0076_b7b2),       // Teal-cyan
+                    error: rgb(0x00c8_5857),           // Red
+                    deviation: rgb(0x00b0_7aa1),       // Purple
                     grid: Rgba {
                         r: 1.0,
                         g: 1.0,
                         b: 1.0,
                         a: 0.083,
                     }, // rgba(0xffffff15) = 21/255 ≈ 8.3%
-                    secondary_line: rgb(0xbab0ac),  // Gray
-                    directivity_er: rgb(0xe15759),  // Red-pink
-                    directivity_sp: rgb(0x89b5b1),  // Teal
+                    secondary_line: rgb(0x00ba_b0ac),  // Gray
+                    directivity_er: rgb(0x00e1_5759),  // Red-pink
+                    directivity_sp: rgb(0x0089_b5b1),  // Teal
                 },
                 band_colors: vec![
-                    rgb(0x5c77a5), // Blue
-                    rgb(0xdc842a), // Orange
-                    rgb(0xc85857), // Red
-                    rgb(0x89b5b1), // Teal
-                    rgb(0x71a152), // Green
-                    rgb(0xbab0ac), // Gray
-                    rgb(0xe15759), // Red-pink
-                    rgb(0xb07aa1), // Purple
-                    rgb(0x76b7b2), // Teal-cyan
-                    rgb(0xff9da7), // Pink
+                    rgb(0x005c_77a5), // Blue
+                    rgb(0x00dc_842a), // Orange
+                    rgb(0x00c8_5857), // Red
+                    rgb(0x0089_b5b1), // Teal
+                    rgb(0x0071_a152), // Green
+                    rgb(0x00ba_b0ac), // Gray
+                    rgb(0x00e1_5759), // Red-pink
+                    rgb(0x00b0_7aa1), // Purple
+                    rgb(0x0076_b7b2), // Teal-cyan
+                    rgb(0x00ff_9da7), // Pink
                 ],
                 channel_colors: vec![
-                    rgb(0x5c77a5), // Blue
-                    rgb(0xc44e52), // Red
-                    rgb(0x55a868), // Green
-                    rgb(0xccb974), // Yellow
-                    rgb(0xb07aa1), // Purple
-                    rgb(0x76b7b2), // Teal
+                    rgb(0x005c_77a5), // Blue
+                    rgb(0x00c4_4e52), // Red
+                    rgb(0x0055_a868), // Green
+                    rgb(0x00cc_b974), // Yellow
+                    rgb(0x00b0_7aa1), // Purple
+                    rgb(0x0076_b7b2), // Teal
                 ],
                 eq_curve_colors: EQCurveColors {
-                    background: rgb(0x000000),
+                    background: rgb(0x0000_0000),
                     grid: Rgba {
                         r: 1.0,
                         g: 1.0,
                         b: 1.0,
                         a: 0.063,
                     }, // rgba(0xffffff10) = 16/255 ≈ 6.3%
-                    curve_boost: rgb(0xbbbbbb),
-                    curve_cut: rgb(0x666666),
+                    curve_boost: rgb(0x00bb_bbbb),
+                    curve_cut: rgb(0x0066_6666),
                     fill_boost: Rgba {
                         r: 0.733,
                         g: 0.733,
@@ -115,47 +120,47 @@ impl Theme {
                     }, // rgba(0xffffff30) ≈ 19%
                 },
                 spectrum_colors: SpectrumColors {
-                    background: rgb(0x000000),
-                    bass: rgb(0xbbbbbb),
-                    mids: rgb(0x888888),
-                    treble: rgb(0x444444),
+                    background: rgb(0x0000_0000),
+                    bass: rgb(0x00bb_bbbb),
+                    mids: rgb(0x0088_8888),
+                    treble: rgb(0x0044_4444),
                 },
                 meter_colors: MeterColors {
-                    background: rgb(0x000000),
-                    normal: rgb(0x888888),
-                    warning: rgb(0xaaaaaa),
-                    clip: rgb(0xffffff),
-                    peak: rgb(0xffffff),
-                    text: rgb(0x888888),
+                    background: rgb(0x0000_0000),
+                    normal: rgb(0x0088_8888),
+                    warning: rgb(0x00aa_aaaa),
+                    clip: rgb(0x00ff_ffff),
+                    peak: rgb(0x00ff_ffff),
+                    text: rgb(0x0088_8888),
                 },
             },
             feedback: ThemeFeedback {
-                meter_normal: rgb(0x666666),
-                meter_warning: rgb(0xaaaaaa),
-                meter_clip: rgb(0xffffff),
-                progress_bar_bg: rgb(0x222222),
-                progress_bar_fill: rgb(0xffffff),
-                toast_success_bg: rgb(0x111111),
-                toast_error_bg: rgb(0x111111),
-                toast_info_bg: rgb(0x111111),
-                toast_warning_bg: rgb(0x111111),
-                peak_indicator: rgb(0xffffff),
+                meter_normal: rgb(0x0066_6666),
+                meter_warning: rgb(0x00aa_aaaa),
+                meter_clip: rgb(0x00ff_ffff),
+                progress_bar_bg: rgb(0x0022_2222),
+                progress_bar_fill: rgb(0x00ff_ffff),
+                toast_success_bg: rgb(0x0011_1111),
+                toast_error_bg: rgb(0x0011_1111),
+                toast_info_bg: rgb(0x0011_1111),
+                toast_warning_bg: rgb(0x0011_1111),
+                peak_indicator: rgb(0x00ff_ffff),
                 drag_over_highlight: Rgba {
                     r: 1.0,
                     g: 1.0,
                     b: 1.0,
                     a: 0.251,
                 },
-                drag_over_border: rgb(0xffffff),
-                neutral_indicator: rgb(0xcccccc),
+                drag_over_border: rgb(0x00ff_ffff),
+                neutral_indicator: rgb(0x00cc_cccc),
                 warning_background: Rgba {
                     r: 0.667,
                     g: 0.667,
                     b: 0.667,
                     a: 0.2,
                 },
-                knob_color: rgb(0xffffff),
-                optimization_color: rgb(0xbbbbbb),
+                knob_color: rgb(0x00ff_ffff),
+                optimization_color: rgb(0x00bb_bbbb),
                 grid_color: Rgba {
                     r: 1.0,
                     g: 1.0,
@@ -172,7 +177,7 @@ impl Theme {
             layout: ThemeLayout {
                 separator_size: 20.0,
                 font_family: None,
-                design_tokens: Default::default(),
+                design_tokens: gpui_audio_kit::AudioDesignTokens::default(),
             },
         }
     }

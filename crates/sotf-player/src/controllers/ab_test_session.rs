@@ -10,6 +10,7 @@ use sotf_plugins::plugin_ab_compare::{
     ABComparePluginParams, GraphEdgeConfig, GraphNodeConfig, MixMode, PathConfig, PluginInRack,
 };
 use sotf_plugins::{LoudnessData, LoudnessMonitor};
+use std::fmt::Write as _;
 
 const SESSION_SCHEMA_VERSION: u32 = 1;
 
@@ -62,6 +63,10 @@ pub struct ChainSnapshot {
 }
 
 impl ChainSnapshot {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn new(label: impl Into<String>, config: PathConfig) -> Result<Self, AbTestError> {
         let sha256 = hash_path_config(&config)?;
         Ok(Self {
@@ -71,6 +76,10 @@ impl ChainSnapshot {
         })
     }
 
+    /// Verify.
+    ///
+    /// # Errors
+    /// Returns an error if the stored chain snapshot hash differs from its contents.
     pub fn verify(&self) -> Result<(), AbTestError> {
         if hash_path_config(&self.config)? == self.sha256 {
             Ok(())
@@ -101,6 +110,7 @@ pub enum LevelMatchMetric {
 }
 
 impl LevelMatchMetric {
+    #[must_use]
     pub const fn minimum_window_ms(self) -> u64 {
         match self {
             Self::MomentaryLufs => 400,
@@ -130,6 +140,10 @@ impl Default for LevelMatchConfig {
 }
 
 impl LevelMatchConfig {
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn validate(self) -> Result<(), AbTestError> {
         if self.window_ms == 0
             || self.window_ms < self.metric.minimum_window_ms()
@@ -162,10 +176,14 @@ const fn default_level_match_tolerance_db() -> f64 {
 }
 
 impl LevelMatchMeasurement {
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn validate(&self) -> Result<(), AbTestError> {
         self.config()
             .validate()
-            .map_err(|_| AbTestError::InvalidLevelMatch)?;
+            .map_err(|_error| AbTestError::InvalidLevelMatch)?;
         let values = [
             self.path_a_db,
             self.path_b_db,
@@ -185,6 +203,7 @@ impl LevelMatchMeasurement {
         Ok(())
     }
 
+    #[must_use]
     pub fn config(&self) -> LevelMatchConfig {
         LevelMatchConfig {
             metric: self.metric,
@@ -194,10 +213,12 @@ impl LevelMatchMeasurement {
         }
     }
 
+    #[must_use]
     pub fn residual_error_db(&self) -> f64 {
         (self.path_a_db - (self.path_b_db + self.correction_b_db)).abs()
     }
 
+    #[must_use]
     pub fn within_tolerance(&self) -> bool {
         self.residual_error_db() <= self.tolerance_db + f64::EPSILON
     }
@@ -209,6 +230,9 @@ impl LevelMatchMeasurement {
 /// LUFS measurements use the same EBU R128 implementation as the runtime
 /// loudness monitor. The correction is deliberately measured once and saved
 /// in the session instead of adapting during a blind trial.
+///
+/// # Errors
+/// Returns an error for invalid sample data, configuration, or a measurement window that is too short.
 pub fn measure_level_match(
     config: LevelMatchConfig,
     sample_rate: u32,
@@ -237,13 +261,15 @@ pub fn measure_level_match(
     let frames = path_a.len() / channels;
     let metric = config.metric;
     let minimum_window_ms = metric.minimum_window_ms();
-    let minimum_frames = (u64::from(sample_rate) * minimum_window_ms).div_ceil(1_000) as usize;
+    let minimum_frames =
+        usize::try_from((u64::from(sample_rate) * minimum_window_ms).div_ceil(1_000))
+            .map_err(|_error| AbTestError::InvalidLevelMatchInput)?;
     if frames < minimum_frames {
         return Err(AbTestError::LevelMatchWindowTooShort);
     }
     let window_ms: u64 = ((frames as u128 * 1_000) / u128::from(sample_rate))
         .try_into()
-        .map_err(|_| AbTestError::InvalidLevelMatchInput)?;
+        .map_err(|_error| AbTestError::InvalidLevelMatchInput)?;
     if window_ms.abs_diff(config.window_ms) > 1 {
         return Err(AbTestError::InvalidLevelMatchInput);
     }
@@ -264,6 +290,10 @@ pub fn measure_level_match(
     Ok(measurement)
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Level measurements and validated gain corrections use floating-point approximations"
+)]
 fn measure_path_level(
     metric: LevelMatchMetric,
     sample_rate: u32,
@@ -283,8 +313,11 @@ fn measure_path_level(
             10.0 * mean_square.log10()
         }
         LevelMatchMetric::MomentaryLufs | LevelMatchMetric::ShortTermLufs => {
-            let mut monitor = LoudnessMonitor::new(channels as u32, sample_rate)
-                .map_err(AbTestError::LevelMatchMeasurement)?;
+            let mut monitor = LoudnessMonitor::new(
+                u32::try_from(channels).map_err(|_error| AbTestError::InvalidLevelMatchInput)?,
+                sample_rate,
+            )
+            .map_err(AbTestError::LevelMatchMeasurement)?;
             monitor
                 .add_frames(samples)
                 .map_err(AbTestError::LevelMatchMeasurement)?;
@@ -318,6 +351,9 @@ pub struct ListeningTestSetup {
 }
 
 impl ListeningTestSetup {
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn validate(&self) -> Result<(), AbTestError> {
         self.path_a.verify()?;
         self.path_b.verify()?;
@@ -366,6 +402,9 @@ pub struct TrialRecord {
 
 impl TrialRecord {
     /// Reveal the assignment only after the trial has been committed.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn path_for_cue(&self, cue: TrialCue) -> Result<PathSelection, AbTestError> {
         route_for_assignment(self.assignment, cue)
     }
@@ -395,6 +434,9 @@ pub struct AbTestSession {
 }
 
 impl AbTestSession {
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn new(
         session_id: impl Into<String>,
         setup: ListeningTestSetup,
@@ -416,6 +458,10 @@ impl AbTestSession {
         })
     }
 
+    /// Start trial.
+    ///
+    /// # Errors
+    /// Returns an error if a trial is already pending or level matching is outside tolerance.
     pub fn start_trial(&mut self, mode: TrialMode) -> Result<u32, AbTestError> {
         if !self.setup.level_match.within_tolerance() {
             return Err(AbTestError::LevelMatchOutsideTolerance);
@@ -423,7 +469,8 @@ impl AbTestSession {
         if self.pending.is_some() {
             return Err(AbTestError::TrialAlreadyPending);
         }
-        let index = u32::try_from(self.trials.len()).map_err(|_| AbTestError::TooManyTrials)?;
+        let index =
+            u32::try_from(self.trials.len()).map_err(|_error| AbTestError::TooManyTrials)?;
         self.pending = Some(PendingTrial {
             index,
             mode,
@@ -432,6 +479,7 @@ impl AbTestSession {
         Ok(index)
     }
 
+    #[must_use]
     pub fn pending_mode(&self) -> Option<TrialMode> {
         self.pending.as_ref().map(|trial| trial.mode)
     }
@@ -447,6 +495,9 @@ impl AbTestSession {
     /// The saved level-match correction is baked into path B as a final gain
     /// stage. AB-Compare's adaptive auto-gain is disabled so repeated trials
     /// use identical DSP rather than a programme-dependent learned state.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn runtime_config_for_pending_cue(
         &self,
         cue: TrialCue,
@@ -459,10 +510,16 @@ impl AbTestSession {
     ///
     /// Cue activation subsequently changes only `selected_path`, avoiding
     /// control-thread destruction and reconstruction of both hosted paths.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn runtime_setup_config(&self) -> Result<ABComparePluginParams, AbTestError> {
         self.setup.runtime_config(PathSelection::A)
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if no trial is pending or confidence is invalid.
     pub fn commit_trial(
         &mut self,
         answer: TrialAnswer,
@@ -492,6 +549,7 @@ impl AbTestSession {
         self.pending.take().is_some()
     }
 
+    #[must_use]
     pub fn abx_score(&self) -> (usize, usize) {
         self.trials
             .iter()
@@ -503,6 +561,7 @@ impl AbTestSession {
     }
 
     /// Committed preference totals for paths A and B, excluding ABX trials.
+    #[must_use]
     pub fn preference_counts(&self) -> (usize, usize) {
         self.trials
             .iter()
@@ -513,6 +572,10 @@ impl AbTestSession {
             })
     }
 
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if session configuration, trial state, or measurement values fail validation.
     pub fn validate(&self) -> Result<(), AbTestError> {
         if self.schema_version != SESSION_SCHEMA_VERSION {
             return Err(AbTestError::UnsupportedSchema(self.schema_version));
@@ -534,6 +597,10 @@ impl AbTestSession {
 }
 
 impl ListeningTestSetup {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Validated level-match gains are quantized to the engine single-precision parameter interface"
+    )]
     fn runtime_config(
         &self,
         selected: PathSelection,
@@ -702,11 +769,10 @@ fn hash_path_config(config: &PathConfig) -> Result<String, AbTestError> {
     let encoded = serde_json::to_vec(config)
         .map_err(|error| AbTestError::Serialization(error.to_string()))?;
     let digest = Sha256::digest(encoded);
-    Ok(digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join(""))
+    Ok(digest.iter().fold(String::new(), |mut output, byte| {
+        let _ = write!(output, "{byte:02x}");
+        output
+    }))
 }
 
 fn assignment_for(seed: u64, index: u32, mode: TrialMode) -> TrialAssignment {

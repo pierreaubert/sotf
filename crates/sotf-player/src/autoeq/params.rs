@@ -1,7 +1,7 @@
 //! Optimization parameter types and UI helpers
 //!
 //! This module provides:
-//! - Re-export of autoeq_optim_types::OptimizationConfig for optimization parameters
+//! - Re-export of `autoeq_optim_types::OptimizationConfig` for optimization parameters
 //! - UI dropdown options for algorithm selection, loss functions, etc.
 //! - Parameter limits for UI validation
 
@@ -14,7 +14,7 @@ fn default_bo_acquisition() -> String {
     "qei".to_string()
 }
 
-/// Wrapper around autoeq_optim_types::OptimizationConfig with serde support for UI state persistence
+/// Wrapper around `autoeq_optim_types::OptimizationConfig` with serde support for UI state persistence
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptimizationParamsSerializable {
     pub num_filters: usize,
@@ -101,7 +101,8 @@ impl From<&autoeq_optim_types::OptimizationConfig> for OptimizationParamsSeriali
 }
 
 impl OptimizationParamsSerializable {
-    /// Convert to autoeq_optim_types::OptimizationConfig
+    /// Convert to `autoeq_optim_types::OptimizationConfig`
+    #[must_use]
     pub fn to_args(&self) -> autoeq_optim_types::OptimizationConfig {
         let mut args = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         args.num_filters = self.num_filters;
@@ -123,10 +124,10 @@ impl OptimizationParamsSerializable {
         };
         args.min_spacing_oct = self.min_spacing_oct;
         args.spacing_weight = self.spacing_weight;
-        args.algo = self.algo.clone();
+        args.algo.clone_from(&self.algo);
         args.population = self.population;
         args.maxeval = self.maxeval;
-        args.strategy = self.strategy.clone();
+        args.strategy.clone_from(&self.strategy);
         args.recombination = self.de_cr;
         args.adaptive_weight_f = self.adaptive_weight_f;
         args.adaptive_weight_cr = self.adaptive_weight_cr;
@@ -135,14 +136,14 @@ impl OptimizationParamsSerializable {
         args.bo_initial_samples = self.bo_initial_samples;
         args.bo_batch_size = self.bo_batch_size;
         args.bo_posterior_std_threshold = self.bo_posterior_std_threshold;
-        args.bo_acquisition = self.bo_acquisition.clone();
+        args.bo_acquisition.clone_from(&self.bo_acquisition);
         args.bo_ehvi = self.bo_ehvi;
         args.refine = self.refine;
-        args.local_algo = self.local_algo.clone();
+        args.local_algo.clone_from(&self.local_algo);
         args.smooth = self.smooth;
         args.smooth_n = self.smooth_n;
         args.loss = parse_loss_type(&self.loss);
-        args.curve_name = self.curve_name.clone();
+        args.curve_name.clone_from(&self.curve_name);
         args
     }
 }
@@ -152,6 +153,7 @@ impl OptimizationParamsSerializable {
 // ============================================================================
 
 /// Parameter limits for UI validation
+#[derive(Debug)]
 pub struct ParamLimits {
     pub min: f64,
     pub max: f64,
@@ -166,7 +168,7 @@ impl ParamLimits {
     };
     pub const SAMPLE_RATE: Self = Self {
         min: 8000.0,
-        max: 192000.0,
+        max: 192_000.0,
         step: 1000.0,
     };
     pub const DB: Self = Self {
@@ -191,7 +193,7 @@ impl ParamLimits {
     };
     pub const MAXEVAL: Self = Self {
         min: 100.0,
-        max: 100000.0,
+        max: 100_000.0,
         step: 100.0,
     };
     pub const DE_FACTOR: Self = Self {
@@ -295,17 +297,20 @@ pub const EQ_EXPORT_FORMAT_OPTIONS: &[(&str, &str, &str)] = &[
 ];
 
 /// Get file extension for export format
+#[must_use]
 pub fn get_export_extension(format: &str) -> &'static str {
     EQ_EXPORT_FORMAT_OPTIONS
         .iter()
         .find(|(id, _, _)| *id == format)
-        .map(|(_, _, ext)| *ext)
-        .unwrap_or(".json")
+        .map_or(".json", |(_, _, ext)| *ext)
 }
 
 /// Format biquad filters in the specified export format.
 ///
 /// Returns `(content, suggested_filename)` or an error.
+///
+/// # Errors
+/// Returns an error if the requested export format is unsupported.
 pub fn format_peq_export(
     format: &str,
     comment: &str,
@@ -333,7 +338,7 @@ pub fn format_peq_export(
         "wavelet" => Ok(math_audio_iir_fir::peq_format_wavelet(
             comment,
             &peq,
-            sample_rate as f64,
+            f64::from(sample_rate),
         )),
         "roon" => Ok(math_audio_iir_fir::peq_format_roon(comment, &peq)),
         _ => Err(format!("Unknown export format: {format}")),
@@ -344,10 +349,10 @@ pub fn format_peq_export(
 // Helper Functions for UI Config Conversion
 // ============================================================================
 
-/// Convert loss string to LossType
+/// Convert loss string to `LossType`
+#[must_use]
 pub fn parse_loss_type(loss: &str) -> autoeq_optim::LossType {
     match loss {
-        "speaker-flat" | "speakerflat" => autoeq_optim::LossType::SpeakerFlat,
         "speaker-flat-asymmetric" | "speakerflatasymmetric" => {
             autoeq_optim::LossType::SpeakerFlatAsymmetric
         }
@@ -361,15 +366,16 @@ pub fn parse_loss_type(loss: &str) -> autoeq_optim::LossType {
 
 /// Look up the user-facing label for a value in an options array.
 /// Falls back to the raw value if not found.
+#[must_use]
 pub fn label_for<'a>(options: &[(&str, &'a str)], value: &'a str) -> &'a str {
     options
         .iter()
         .find(|(id, _)| *id == value)
-        .map(|(_, label)| *label)
-        .unwrap_or(value)
+        .map_or(value, |(_, label)| *label)
 }
 
-/// Convert PEQ model string to PeqModel
+/// Convert PEQ model string to `PeqModel`
+#[must_use]
 pub fn parse_peq_model(model: &str) -> autoeq_core::PeqModel {
     match model {
         "hp-pk" | "hppk" => autoeq_core::PeqModel::HpPk,

@@ -40,6 +40,7 @@ pub(super) fn map_target_timeout(error: TargetError) -> TargetError {
     }
 }
 
+#[derive(Debug)]
 pub struct UnsupportedTarget {
     target: TargetId,
     reason_code: String,

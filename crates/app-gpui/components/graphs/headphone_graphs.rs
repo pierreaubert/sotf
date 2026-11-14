@@ -4,7 +4,7 @@ use crate::components::graphs::common::{colors, rgba_to_u32, theme_to_chart_them
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Div, div, px};
 use gpui_px::{ScaleType, line};
 
 impl PlayerView {
@@ -64,7 +64,7 @@ impl PlayerView {
 /// Helper to unzip response data
 fn unzip_response(data: Option<&Vec<(f64, f64)>>) -> (Vec<f64>, Vec<f64>) {
     if let Some(data) = data {
-        data.iter().cloned().unzip()
+        data.iter().copied().unzip()
     } else {
         (Vec::new(), Vec::new())
     }
@@ -95,8 +95,8 @@ fn render_filter_response_plot(
     // Add individual filter responses as additional series
     if let Some(individual) = &result.individual_responses {
         for (i, curve_data) in individual.iter().enumerate() {
-            let (_, curve): (Vec<f64>, Vec<f64>) = curve_data.iter().cloned().unzip();
-            let freq = result.biquads.get(i).map(|b| b.freq).unwrap_or(0.0);
+            let (_, curve): (Vec<f64>, Vec<f64>) = curve_data.iter().copied().unzip();
+            let freq = result.biquads.get(i).map_or(0.0, |b| b.freq);
             let label = format!("F{} {}", i + 1, freq.floor());
             chart_builder = chart_builder.add_series(
                 &curve,
@@ -114,7 +114,7 @@ fn render_filter_response_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render Plot 2: Filter response vs deviation from target using gpui-px
@@ -152,7 +152,7 @@ fn render_filter_vs_deviation_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render Plot 3: Error curve (deviation - filter) using gpui-px
@@ -197,7 +197,7 @@ fn render_error_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render Plot 4: Response comparison (input, corrected, target) using gpui-px
@@ -242,5 +242,5 @@ fn render_response_comparison_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }

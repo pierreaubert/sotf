@@ -1,8 +1,10 @@
 use super::Language;
 
+#[derive(Debug)]
 pub struct AudioPreferencesPersistenceTranslations;
 
 impl AudioPreferencesPersistenceTranslations {
+    #[must_use]
     pub fn recovery_stopped(language: Language, stopped: bool) -> &'static str {
         let messages = match language {
             Language::French => [
@@ -60,6 +62,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn inactive_systemwide_format(language: Language) -> &'static str {
         let message = match language {
             Language::French => {
@@ -82,6 +85,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn system_default(language: Language) -> &'static str {
         let message = match language {
             Language::French => "Sortie par défaut du système",
@@ -96,6 +100,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn unnamed_device(language: Language) -> &'static str {
         let message = match language {
             Language::French => "Périphérique sans nom",
@@ -110,6 +115,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn device_details(language: Language) -> &'static str {
         let message = match language {
             Language::French => "Détails des périphériques",
@@ -124,6 +130,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn applying(language: Language) -> &'static str {
         let message = match language {
             Language::French => "Application des réglages audio…",
@@ -138,6 +145,7 @@ impl AudioPreferencesPersistenceTranslations {
         }
     }
 
+    #[must_use]
     pub fn save_failed(language: Language, active: bool) -> &'static str {
         let messages = match language {
             Language::French => [
@@ -166,6 +174,7 @@ impl AudioPreferencesPersistenceTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct PreferencesCloseTranslations;
 impl PreferencesCloseTranslations {
     pub fn for_language(language: Language) -> [&'static str; 4] {
@@ -203,6 +212,7 @@ impl PreferencesCloseTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct PlaylistCompositionTranslations;
 impl PlaylistCompositionTranslations {
     pub fn for_language(language: Language) -> [&'static str; 2] {
@@ -232,6 +242,7 @@ impl PlaylistCompositionTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct FlatQueueTranslations;
 impl FlatQueueTranslations {
     pub fn for_language(language: Language) -> [&'static str; 9] {
@@ -289,6 +300,7 @@ impl FlatQueueTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct LibraryToolbarTranslations;
 impl LibraryToolbarTranslations {
     pub fn for_language(language: Language) -> [&'static str; 10] {
@@ -350,6 +362,7 @@ impl LibraryToolbarTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct NowPlayingTranslations;
 impl NowPlayingTranslations {
     pub fn for_language(language: Language) -> [&'static str; 14] {
@@ -427,6 +440,7 @@ impl NowPlayingTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct HomeShelfTranslations;
 impl HomeShelfTranslations {
     pub fn for_language(language: Language) -> [&'static str; 3] {
@@ -448,6 +462,7 @@ impl HomeShelfTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct HomeEntryTranslations;
 
 impl HomeEntryTranslations {
@@ -490,6 +505,7 @@ impl HomeEntryTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct HeadphoneAuditionTranslations {
     pub original: &'static str,
     pub corrected: &'static str,
@@ -563,6 +579,7 @@ impl HeadphoneAuditionTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct TakeReviewTranslations {
     pub title: &'static str,
     pub accept: &'static str,
@@ -593,6 +610,7 @@ impl TakeReviewTranslations {
         }
     }
 
+    #[must_use]
     pub fn dimensions_warning(language: Language) -> &'static str {
         let message = match language {
             Language::French => {
@@ -613,6 +631,7 @@ impl TakeReviewTranslations {
         }
     }
 
+    #[must_use]
     pub fn references_help(language: Language) -> &'static str {
         let message = match language {
             Language::French => {
@@ -635,6 +654,7 @@ impl TakeReviewTranslations {
         }
     }
 
+    #[must_use]
     pub fn save_status(
         language: Language,
         status: sotf_audio_player::ui_models::take_review::RecordingSaveStatus,
@@ -755,6 +775,7 @@ impl TakeReviewTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct DesktopTranslations {
     pub preferences: &'static str,
     pub search: &'static str,
@@ -795,7 +816,6 @@ impl DesktopTranslations {
 
     pub fn matrix_routes(language: Language) -> [&'static str; 2] {
         let labels = match language {
-            Language::French => ["Source", "Destination"],
             Language::German => ["Quelle", "Ziel"],
             Language::Spanish => ["Origen", "Destino"],
             _ => ["Source", "Destination"],
@@ -833,6 +853,10 @@ impl DesktopTranslations {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::French => Self {
@@ -988,7 +1012,8 @@ impl DesktopTranslations {
     }
 }
 
-/// Navigation and contextual guidance for the shared AutoEQ decisions.
+/// Navigation and contextual guidance for the shared `AutoEQ` decisions.
+#[derive(Debug)]
 pub struct AutoEqStageTranslations {
     pub mode_labels: [&'static str; 4],
     pub mode_descriptions: [&'static str; 4],
@@ -1000,6 +1025,10 @@ pub struct AutoEqStageTranslations {
 }
 
 impl AutoEqStageTranslations {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub fn for_language(language: Language) -> Self {
         let labels = match language {
             Language::French => [
@@ -1135,6 +1164,7 @@ impl AutoEqStageTranslations {
 }
 
 /// Context and inspection labels for the fullscreen spectrum.
+#[derive(Debug)]
 pub struct SpectrumInspectionTranslations {
     pub title: &'static str,
     pub output_rate: &'static str,
@@ -1220,6 +1250,7 @@ impl SpectrumInspectionTranslations {
 }
 
 /// Album browsing actions, shared by the album header and track rows.
+#[derive(Debug)]
 pub struct AlbumDetailTranslations;
 impl AlbumDetailTranslations {
     pub fn for_language(language: Language) -> [&'static str; 9] {
@@ -1278,7 +1309,7 @@ impl AlbumDetailTranslations {
 }
 
 /// Copy for the capability preview; these choices do not install software updates.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct FeatureAvailabilityTranslations {
     pub preview: &'static str,
     pub levels: [&'static str; 3],
@@ -1368,6 +1399,7 @@ impl FeatureAvailabilityTranslations {
             copy
         }
     }
+    #[must_use]
     pub fn summary(self, channel: sotf_audio_player::ReleaseChannel) -> &'static str {
         self.levels[match channel {
             sotf_audio_player::ReleaseChannel::Prod => 0,
@@ -1377,9 +1409,11 @@ impl FeatureAvailabilityTranslations {
     }
 }
 
+#[derive(Debug)]
 pub struct LibraryAnalysisTranslations;
 
 impl LibraryAnalysisTranslations {
+    #[must_use]
     pub fn title(language: Language) -> &'static str {
         let message = match language {
             Language::French => "Analyse et maintenance",
@@ -1395,7 +1429,7 @@ impl LibraryAnalysisTranslations {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct LibraryMaintenanceTranslations {
     pub review: &'static str,
     pub retry_refresh: &'static str,
@@ -1410,6 +1444,7 @@ pub struct LibraryMaintenanceTranslations {
     pub unavailable: &'static str,
 }
 impl LibraryMaintenanceTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         let copy = match language {
             Language::French => Self {
@@ -1485,7 +1520,7 @@ impl LibraryMaintenanceTranslations {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct HeadphoneIdentityTranslations {
     pub title: &'static str,
     pub model: &'static str,
@@ -1498,6 +1533,7 @@ pub struct HeadphoneIdentityTranslations {
     pub compatibility: &'static str,
 }
 impl HeadphoneIdentityTranslations {
+    #[must_use]
     pub fn target_label(language: Language, target: &str, fallback: &'static str) -> &'static str {
         let label = match (language, target) {
             (Language::French, "flat") => "Plat",
@@ -1515,10 +1551,12 @@ impl HeadphoneIdentityTranslations {
         }
     }
 
+    #[must_use]
     pub fn file_message(&self, detail: &str) -> String {
         format!("{}: {detail}", self.source)
     }
 
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         let copy = match language {
             Language::French => Self {
@@ -1585,7 +1623,7 @@ impl HeadphoneIdentityTranslations {
 }
 
 /// Export history is independent of calculation and playback application.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CorrectionDeliveryTranslations {
     pub title: &'static str,
     pub calculated: &'static str,
@@ -1595,6 +1633,7 @@ pub struct CorrectionDeliveryTranslations {
 }
 
 impl CorrectionDeliveryTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         let copy = match language {
             Language::French => Self {
@@ -1640,7 +1679,7 @@ impl CorrectionDeliveryTranslations {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct CorrectionApplicationTranslations {
     pub title: &'static str,
     pub not_applied: &'static str,
@@ -1651,6 +1690,7 @@ pub struct CorrectionApplicationTranslations {
     pub failed: &'static str,
 }
 impl CorrectionApplicationTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         let copy = match language {
             Language::French => Self {
@@ -1707,6 +1747,7 @@ impl CorrectionApplicationTranslations {
 }
 
 /// Presentation copy for guided ear-training course cards.
+#[derive(Debug)]
 pub struct EarTrainingCourseTranslations {
     pub titles: [&'static str; 5],
     pub bands: &'static str,
@@ -1715,6 +1756,7 @@ pub struct EarTrainingCourseTranslations {
 }
 
 impl EarTrainingCourseTranslations {
+    #[must_use]
     pub fn change(language: Language, mode: sotf_audio_player::EqChangeMode) -> &'static str {
         use sotf_audio_player::EqChangeMode;
         let labels = match language {
@@ -1739,6 +1781,7 @@ impl EarTrainingCourseTranslations {
         }
     }
 
+    #[must_use]
     pub fn new(language: Language) -> Self {
         let (titles, labels) = match language {
             Language::French => (
@@ -1797,6 +1840,7 @@ impl EarTrainingCourseTranslations {
         }
     }
 
+    #[must_use]
     pub fn title(&self, course: sotf_audio_player::EarTrainingCourse) -> &'static str {
         use sotf_audio_player::EarTrainingCourse;
         self.titles[match course {
@@ -1810,6 +1854,7 @@ impl EarTrainingCourseTranslations {
 }
 
 /// Localized history labels; missing legacy difficulty is explicit.
+#[derive(Debug)]
 pub struct EarTrainingHistoryTranslations {
     pub heading: &'static str,
     pub empty: &'static str,
@@ -1821,6 +1866,7 @@ pub struct EarTrainingHistoryTranslations {
     pub streak: &'static str,
 }
 impl EarTrainingHistoryTranslations {
+    #[must_use]
     pub fn recommendation(
         language: Language,
         recommendation: sotf_audio_player::ear_training::EarTrainingRecommendation,
@@ -1866,6 +1912,7 @@ impl EarTrainingHistoryTranslations {
         }
     }
 
+    #[must_use]
     pub fn new(language: Language) -> Self {
         let (labels, exercises) = match language {
             Language::French => (
@@ -1939,6 +1986,7 @@ impl EarTrainingHistoryTranslations {
             streak: localize(labels[6]),
         }
     }
+    #[must_use]
     pub fn exercise(&self, exercise: sotf_audio_player::EqTrainingExercise) -> &'static str {
         use sotf_audio_player::EqTrainingExercise;
         self.exercises[match exercise {

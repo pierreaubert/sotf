@@ -13,9 +13,14 @@ pub trait TuiEditablePlugin {
         Vec::new()
     }
     /// Set a parameter to an absolute value.
-    /// For Float/Int: computes the delta from current value and calls adjust_param.
+    /// For Float/Int: computes the delta from current value and calls `adjust_param`.
     /// For Bool: value > 0.5 = true.
     /// For Choice: value is the option index.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "TUI parameter setters quantize bounded descriptor values"
+    )]
     fn set_param(&mut self, index: usize, value: f64) -> bool {
         let current_str = self.get_value_as_string(index);
         let current = current_str.parse::<f64>().unwrap_or(0.0);
@@ -30,7 +35,7 @@ pub trait TuiEditablePlugin {
                     }
                 }
                 TuiParamType::Int { step, .. } => {
-                    let delta = (value - current) / step as f64;
+                    let delta = (value - current) / f64::from(step);
                     if delta.abs() > 0.001 {
                         return self.adjust_param(index, delta);
                     }

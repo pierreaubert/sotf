@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{App, Entity};
 use gpui_ui_kit::workflow::{NodeId, WorkflowCanvas};
 
 /// Resolve a stable plugin UUID in the routing draft, including non-linear graphs.

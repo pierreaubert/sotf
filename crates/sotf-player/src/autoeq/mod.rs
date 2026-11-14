@@ -1,4 +1,4 @@
-//! AutoEQ optimization modules
+//! `AutoEQ` optimization modules
 //!
 //! This module provides thin wrappers around the `autoeq` library for:
 //! - Headphone EQ optimization with target curve matching
@@ -7,7 +7,7 @@
 //! # Architecture
 //!
 //! Most functionality is delegated to the `autoeq` library. This module provides:
-//! - [`types`] - CrossoverType and SpeakerConfigType
+//! - [`types`] - `CrossoverType` and `SpeakerConfigType`
 //! - [`params`] - UI helpers (dropdown options, parameter limits)
 //! - [`headphone`] - Headphone EQ optimization entry point
 //! - [`speaker`] - Speaker EQ optimization entry point

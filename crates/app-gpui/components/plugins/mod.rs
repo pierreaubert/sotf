@@ -71,7 +71,10 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use custom_view_registry::{CustomViewRenderContext, GpuiViewRegistry};
-use gpui::*;
+use gpui::{
+    AnyElement, Context, Entity, FocusHandle, InteractiveElement, IntoElement, ParentElement,
+    Styled, div,
+};
 use sotf_audio_player::{PluginGraph, PluginSettings};
 use std::sync::OnceLock;
 
@@ -81,6 +84,7 @@ fn gpui_view_registry() -> &'static GpuiViewRegistry {
 }
 
 #[doc(hidden)]
+#[must_use]
 pub fn plugin_instance_id_for_render(
     input_mode: crate::app::InputMode,
     editing_node_id: Option<sotf_audio_player::GraphNodeId>,
@@ -100,6 +104,21 @@ pub fn plugin_instance_id_for_render(
 ///
 /// Uses the `GpuiViewRegistry` for plugins with custom UIs (EQ, Spectrum, etc.)
 /// and falls back to the declarative `PluginLayout` renderer for everything else.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "Independent presentation flags preserve the existing renderer interface"
+)]
+#[cfg_attr(
+    not(feature = "dev-api"),
+    expect(
+        unused_variables,
+        reason = "Selector identifiers are read by optional developer instrumentation"
+    )
+)]
 pub fn render_plugin_content(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -339,7 +358,7 @@ pub fn render_plugin_content(
                 .values()
                 .find(|node| node.plugin.id == id)
         }) {
-            let (_status_key, label) = match settings {
+            let (status_key, label) = match settings {
                 PluginSettings::BandMerge { bands, .. } => (
                     "band_merge",
                     format!(
@@ -399,7 +418,7 @@ pub fn render_plugin_content(
             let status = {
                 use crate::app::dev_api::{DevElementState, DevTrackExt};
                 status.dev_track_with_state(
-                    format!("plugin.layout.{_status_key}.channel_status.{plugin_idx}"),
+                    format!("plugin.layout.{status_key}.channel_status.{plugin_idx}"),
                     DevElementState::default().text(label),
                 )
             };
@@ -454,6 +473,22 @@ pub fn render_plugin_content(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(crate) fn render_app_plugin_shell(
     d: &Ds,
     cx: &gpui::App,

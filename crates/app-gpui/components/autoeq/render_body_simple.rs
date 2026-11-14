@@ -61,18 +61,18 @@
                 .theme(theme.select_theme.clone());
 
             if let Some(ref h) = on_preset_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 preset_select = preset_select.on_change(move |value, w, cx| {
                     h(value.as_ref(), w, cx);
                 });
             }
             if let Some(ref h) = on_preset_toggle_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 preset_select = preset_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
             form = form.child(preset_select);
-        }
+        };
 
         // ================================================================
         // Target Curve (Simple + Intermediate)
@@ -111,12 +111,12 @@
                 .theme(theme.select_theme.clone());
 
             if let Some(ref h) = on_target_curve_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 target_select =
                     target_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
             }
             if let Some(ref h) = on_target_curve_toggle_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 target_select = target_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
@@ -164,12 +164,12 @@
                 .theme(theme.select_theme.clone());
 
             if let Some(ref h) = on_loss_type_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 loss_select =
                     loss_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
             }
             if let Some(ref h) = on_loss_type_toggle_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 loss_select = loss_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
@@ -218,7 +218,7 @@
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref h) = on_num_filters_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 num_filters_input =
                     num_filters_input.on_change(move |v, w, cx| h(v as usize, w, cx));
             }
@@ -260,11 +260,11 @@
                 .theme(theme.select_theme.clone());
 
             if let Some(ref h) = on_peq_model_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 peq_select = peq_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
             }
             if let Some(ref h) = on_peq_model_toggle_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 peq_select = peq_select.on_toggle(move |open, w, cx| h(open, w, cx));
             }
 
@@ -299,7 +299,7 @@
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref h) = on_min_freq_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -315,7 +315,7 @@
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref h) = on_max_freq_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -348,7 +348,7 @@
             );
 
             // Compute current quality level from population
-            let current_quality = population_to_quality(config.algorithm.population) as f64;
+            let current_quality = f64::from(population_to_quality(config.algorithm.population));
 
             let quality_label_text = quality_label(current_quality as f32);
 

@@ -22,7 +22,10 @@ use crate::ui::{
     DEFAULT_MAX_FONT_SIZE_PX, DEFAULT_MIN_FONT_SIZE_PX, MIN_CONFIGURABLE_FONT_SIZE_PX,
 };
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    ClickEvent, ElementId, FontWeight, KeyDownEvent, MouseButton, MouseUpEvent, SharedString,
+    Window, WindowAppearance, div, rems,
+};
 use gpui_design::{DesignLanguage, DesignSystem, DesignSystemState};
 use gpui_themes::{AccessibilityPalette, ThemeAppearance, ThemeModePreference, ThemeSchedule};
 use gpui_ui_kit::accessibility::{
@@ -100,6 +103,14 @@ impl PlayerView {
         cx.notify();
     }
     /// Render theme settings content
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+    )]
     pub(crate) fn render_theme_settings_content(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -178,9 +189,10 @@ impl PlayerView {
                             })
                             .on_change(move |value, _window, cx| {
                                 if let Some(selection) = design_language_from_value(value) {
-                                    let system = selection
-                                        .map(DesignSystem::for_language)
-                                        .unwrap_or_else(DesignSystem::platform_default);
+                                    let system = selection.map_or_else(
+                                        DesignSystem::platform_default,
+                                        DesignSystem::for_language,
+                                    );
                                     cx.set_global(DesignSystemState::with_system(system));
                                     state_entity.update(cx, |state, cx| {
                                         state.app.ui_state.design_language =
@@ -281,7 +293,7 @@ impl PlayerView {
                                 let state_entity = self.state.clone();
                                 dev_track!(
                                     NumberInput::new("appearance-text-size")
-                                        .value((font_scale * 100.0) as f64)
+                                        .value(f64::from(font_scale * 100.0))
                                         .range(50.0, 200.0)
                                         .step(5.0)
                                         .decimals(0)
@@ -322,15 +334,15 @@ impl PlayerView {
                                     .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
                                     .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX + 1.0, 48.0);
                                 NumberInput::new("appearance-min-font-size")
-                                    .value(
-                                        min_font_px
-                                            .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
-                                            .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, current_max - 1.0)
-                                            as f64,
-                                    )
+                                    .value(f64::from(
+                                        min_font_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX).clamp(
+                                            MIN_CONFIGURABLE_FONT_SIZE_PX,
+                                            current_max - 1.0,
+                                        ),
+                                    ))
                                     .range(
-                                        MIN_CONFIGURABLE_FONT_SIZE_PX as f64,
-                                        (current_max - 1.0) as f64,
+                                        f64::from(MIN_CONFIGURABLE_FONT_SIZE_PX),
+                                        f64::from(current_max - 1.0),
                                     )
                                     .step(1.0)
                                     .decimals(0)
@@ -367,13 +379,12 @@ impl PlayerView {
                                     .unwrap_or(DEFAULT_MIN_FONT_SIZE_PX)
                                     .clamp(MIN_CONFIGURABLE_FONT_SIZE_PX, 47.0);
                                 NumberInput::new("appearance-max-font-size")
-                                    .value(
+                                    .value(f64::from(
                                         max_font_px
                                             .unwrap_or(DEFAULT_MAX_FONT_SIZE_PX)
-                                            .clamp(current_min + 1.0, 48.0)
-                                            as f64,
-                                    )
-                                    .range((current_min + 1.0) as f64, 48.0)
+                                            .clamp(current_min + 1.0, 48.0),
+                                    ))
+                                    .range(f64::from(current_min + 1.0), 48.0)
                                     .step(1.0)
                                     .decimals(0)
                                     .unit("px max")
@@ -671,7 +682,7 @@ impl PlayerView {
                     .child({
                         let mut container = div().flex().flex_wrap().gap(d.section);
 
-                        for id in CommunityThemeId::all().iter() {
+                        for id in CommunityThemeId::all() {
                             let is_selected = community_theme_id == Some(*id);
                             let preview_theme =
                                 id.theme().with_accent_preference(theme_accent_preference);
@@ -785,7 +796,7 @@ impl PlayerView {
                     .child({
                         let mut container = div().flex().flex_wrap().gap(d.section);
 
-                        for id in ThemeId::all().iter() {
+                        for id in ThemeId::all() {
                             let is_selected = community_theme_id.is_none() && theme_id == *id;
                             let preview_theme = crate::theme::Theme::from_id(*id);
 
@@ -805,6 +816,10 @@ impl PlayerView {
     }
 
     /// Render language settings content
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
     pub(crate) fn render_language_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -933,6 +948,14 @@ impl PlayerView {
     }
 
     /// Render a visual preview card for a theme showing its color scheme
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_theme_preview_card(
         &self,
         theme_id: ThemeId,
@@ -1191,13 +1214,21 @@ impl PlayerView {
                                 .text_size(d.text_xs)
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(current_theme.text_on_accent)
-                                .child(format!("✓ {}", active_label)),
+                                .child(format!("✓ {active_label}")),
                         ),
                 )
             });
         dev_track!(card, format!("settings.appearance.theme.{theme_id:?}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_community_theme_preview_card(
         &self,
         theme_id: CommunityThemeId,
@@ -1372,6 +1403,10 @@ impl PlayerView {
     }
 
     /// Render a small color swatch with label
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_color_swatch(
         &self,
         d: &Ds,

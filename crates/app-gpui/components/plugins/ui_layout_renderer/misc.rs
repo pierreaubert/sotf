@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// Extract file path strings from PluginSettings for FilePath params.
 #[doc(hidden)]
+#[must_use]
 pub fn extract_file_paths(
     params: &[ParamSpec],
     settings: &PluginSettings,

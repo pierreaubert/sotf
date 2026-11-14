@@ -5,7 +5,7 @@ use super::consts::NODE_MENU_REMOVE;
 use super::consts::NODE_MENU_SOLO;
 use crate::i18n::PluginGraphTranslations;
 use crate::theme::Theme;
-use gpui::*;
+use gpui::Rgba;
 use gpui_ui_kit::MenuItem;
 use sotf_audio_player::PluginType;
 
@@ -21,10 +21,10 @@ pub(super) fn plugin_max_ports(plugin_type: &PluginType) -> (Option<usize>, Opti
         PluginType::Upmixer | PluginType::AAE => (Some(2), Some(MAX_WORKFLOW_PORTS)),
         PluginType::BinauralDecoder | PluginType::Downmix => (Some(MAX_WORKFLOW_PORTS), Some(2)),
         PluginType::MonoToStereo => (Some(1), Some(2)),
-        PluginType::Crossover => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
-        PluginType::BandSplit => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
-        PluginType::BandMerge => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
-        PluginType::Matrix => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
+        PluginType::Crossover
+        | PluginType::BandSplit
+        | PluginType::BandMerge
+        | PluginType::Matrix => (Some(MAX_WORKFLOW_PORTS), Some(MAX_WORKFLOW_PORTS)),
         PluginType::AmbisonicsDecoder => (Some(4), Some(MAX_WORKFLOW_PORTS)),
         PluginType::XTC
         | PluginType::Crossfeed
@@ -46,6 +46,38 @@ pub(super) fn plugin_max_ports(plugin_type: &PluginType) -> (Option<usize>, Opti
 pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) {
     match plugin_type {
         // Most plugins are 2-in, 2-out (stereo passthrough)
+        // Upmixer/AAE: stereo in, multi-channel out
+        PluginType::Upmixer | PluginType::AAE => (2, 5),
+        // Binaural decoder: multi-channel in, stereo out
+        PluginType::BinauralDecoder => (5, 2),
+        // Convolution: stereo in/out
+        // Matrix: variable in/out (default to 2x2)
+        // A/B Compare: stereo in/out
+        // Crossover: stereo in, stereo/frequency-band out depending on mode.
+        PluginType::Crossover | PluginType::BandSplit => (2, 4),
+        // Band Split: 2 in, 4 out (2 bands x 2 channels)
+        // Band Merge: 4 in, 2 out (2 bands x 2 channels merged back)
+        PluginType::BandMerge => (4, 2),
+        // Downmix: multi-channel in, stereo out
+        PluginType::Downmix => (6, 2),
+        // Mono to Stereo: mono in, stereo out
+        PluginType::MonoToStereo => (1, 2),
+        // Crossfeed: stereo in/out
+        // AEC: 2 in (mic + ref), 1 out
+        PluginType::Aec | PluginType::Beamformer => (2, 1),
+        // Beamformer: M in, 1 out (default 2 mics)
+        // Ambisonics decoder: 4ch (FOA) in, multi-channel out
+        PluginType::AmbisonicsDecoder => (4, 6),
+        // Stereo imager: stereo only
+        // De-esser: stereo in/out
+        // Transient shaper: in-place processing
+        // Saturation: in-place processing
+        // Dynamic EQ: in-place processing
+        // FIR EQ: in-place processing
+        // FIR Designer: in-place processing
+        // Spectral compressor: in-place processing
+        // Concrete external graph nodes carry descriptor-specific counts in
+        // PluginGraphNode; this fallback is only used by type-only palettes.
         PluginType::EQ
         | PluginType::Gain
         | PluginType::Dither
@@ -68,57 +100,27 @@ pub(super) fn plugin_channel_counts(plugin_type: &PluginType) -> (usize, usize) 
         | PluginType::Pnd
         | PluginType::AnalogEq
         | PluginType::AnalogLimiter
-        | PluginType::AnalogCompressor => (2, 2),
-        // Upmixer/AAE: stereo in, multi-channel out
-        PluginType::Upmixer | PluginType::AAE => (2, 5),
-        // Binaural decoder: multi-channel in, stereo out
-        PluginType::BinauralDecoder => (5, 2),
-        // Convolution: stereo in/out
-        PluginType::Convolution => (2, 2),
-        // Matrix: variable in/out (default to 2x2)
-        PluginType::Matrix => (2, 2),
-        // A/B Compare: stereo in/out
-        PluginType::ABCompare => (2, 2),
-        // Crossover: stereo in, stereo/frequency-band out depending on mode.
-        PluginType::Crossover => (2, 4),
-        // Band Split: 2 in, 4 out (2 bands x 2 channels)
-        PluginType::BandSplit => (2, 4),
-        // Band Merge: 4 in, 2 out (2 bands x 2 channels merged back)
-        PluginType::BandMerge => (4, 2),
-        // Downmix: multi-channel in, stereo out
-        PluginType::Downmix => (6, 2),
-        // Mono to Stereo: mono in, stereo out
-        PluginType::MonoToStereo => (1, 2),
-        // Crossfeed: stereo in/out
-        PluginType::Crossfeed => (2, 2),
-        PluginType::Delay => (2, 2),
-        // AEC: 2 in (mic + ref), 1 out
-        PluginType::Aec => (2, 1),
-        // Beamformer: M in, 1 out (default 2 mics)
-        PluginType::Beamformer => (2, 1),
-        // Ambisonics decoder: 4ch (FOA) in, multi-channel out
-        PluginType::AmbisonicsDecoder => (4, 6),
-        // Stereo imager: stereo only
-        PluginType::StereoImager => (2, 2),
-        // De-esser: stereo in/out
-        PluginType::DeEsser => (2, 2),
-        // Transient shaper: in-place processing
-        PluginType::TransientShaper => (2, 2),
-        // Saturation: in-place processing
-        PluginType::Saturation => (2, 2),
-        // Dynamic EQ: in-place processing
-        PluginType::DynamicEq => (2, 2),
-        // FIR EQ: in-place processing
-        PluginType::LinearPhaseEq => (2, 2),
-        // FIR Designer: in-place processing
-        // Spectral compressor: in-place processing
-        PluginType::SpectralCompressor => (2, 2),
-        // Concrete external graph nodes carry descriptor-specific counts in
-        // PluginGraphNode; this fallback is only used by type-only palettes.
-        PluginType::External => (2, 2),
+        | PluginType::AnalogCompressor
+        | PluginType::Convolution
+        | PluginType::Matrix
+        | PluginType::ABCompare
+        | PluginType::Crossfeed
+        | PluginType::Delay
+        | PluginType::StereoImager
+        | PluginType::DeEsser
+        | PluginType::TransientShaper
+        | PluginType::Saturation
+        | PluginType::DynamicEq
+        | PluginType::LinearPhaseEq
+        | PluginType::SpectralCompressor
+        | PluginType::External => (2, 2),
     }
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(super) fn plugin_node_menu_items(text: PluginGraphTranslations) -> Vec<MenuItem> {
     vec![
         MenuItem::new(NODE_MENU_EDIT, text.edit_parameters),

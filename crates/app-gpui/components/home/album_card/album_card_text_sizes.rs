@@ -1,6 +1,6 @@
 use super::misc::text_size_at_least;
 use crate::components::design::Ds;
-use gpui::*;
+use gpui::Rems;
 
 #[derive(Clone, Copy)]
 pub(super) struct AlbumCardTextSizes {

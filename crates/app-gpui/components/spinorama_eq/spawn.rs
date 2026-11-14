@@ -1,5 +1,5 @@
 use super::misc::spinorama_runtime;
-use gpui::*;
+use gpui::Result;
 
 /// Spawn a background thread that loads CEA2034 spinorama curves for the
 /// plot, returning a oneshot receiver. If the receiver is dropped (wizard
@@ -10,11 +10,7 @@ pub(super) fn spawn_spinorama_curves_thread(
 ) -> smol::channel::Receiver<Result<crate::app::types::SpinoramaCurves, String>> {
     let (tx, rx) = smol::channel::bounded::<Result<crate::app::types::SpinoramaCurves, String>>(1);
     std::thread::spawn(move || {
-        log::info!(
-            "Loading spinorama CEA2034 curves for {} / {}",
-            speaker,
-            version
-        );
+        log::info!("Loading spinorama CEA2034 curves for {speaker} / {version}");
         let result = spinorama_runtime().and_then(|runtime| {
             runtime.block_on(async {
                 // Fetch CEA2034 measurement data
@@ -22,13 +18,13 @@ pub(super) fn spawn_spinorama_curves_thread(
                     &speaker, &version, "CEA2034",
                 )
                 .await
-                .map_err(|e| format!("API error: {}", e))?;
+                .map_err(|e| format!("API error: {e}"))?;
 
                 // Extract curves using original frequency grid
                 let curves = autoeq_measurements::read::extract_cea2034_curves_original(
                     &plot_data, "CEA2034",
                 )
-                .map_err(|e| format!("Extraction error: {}", e))?;
+                .map_err(|e| format!("Extraction error: {e}"))?;
 
                 // Convert to our SpinoramaCurves format
                 let on_axis = curves.get("On Axis").ok_or("On Axis curve not found")?;
@@ -38,8 +34,7 @@ pub(super) fn spawn_spinorama_curves_thread(
                 // Get PIR (Estimated In-Room Response)
                 let estimated_in_room = curves
                     .get("Estimated In-Room Response")
-                    .map(|c| c.spl.to_vec())
-                    .unwrap_or_else(|| vec![0.0; frequencies.len()]);
+                    .map_or_else(|| vec![0.0; frequencies.len()], |c| c.spl.to_vec());
 
                 // Try to fetch directivity data (SPL Horizontal and SPL Vertical)
                 let directivity =
@@ -69,11 +64,7 @@ pub(super) fn spawn_spinorama_curves_thread(
                         .collect();
                     (horizontal, vertical)
                 } else {
-                    log::warn!(
-                        "Directivity data not available for {} / {}",
-                        speaker,
-                        version
-                    );
+                    log::warn!("Directivity data not available for {speaker} / {version}");
                     (Vec::new(), Vec::new())
                 };
 
@@ -81,24 +72,19 @@ pub(super) fn spawn_spinorama_curves_thread(
                     on_axis: on_axis.spl.to_vec(),
                     listening_window: curves
                         .get("Listening Window")
-                        .map(|c| c.spl.to_vec())
-                        .unwrap_or_else(|| vec![0.0; frequency_count]),
+                        .map_or_else(|| vec![0.0; frequency_count], |c| c.spl.to_vec()),
                     early_reflections: curves
                         .get("Early Reflections")
-                        .map(|c| c.spl.to_vec())
-                        .unwrap_or_else(|| vec![0.0; frequency_count]),
+                        .map_or_else(|| vec![0.0; frequency_count], |c| c.spl.to_vec()),
                     sound_power: curves
                         .get("Sound Power")
-                        .map(|c| c.spl.to_vec())
-                        .unwrap_or_else(|| vec![0.0; frequency_count]),
+                        .map_or_else(|| vec![0.0; frequency_count], |c| c.spl.to_vec()),
                     early_reflections_di: curves
                         .get("Early Reflections DI")
-                        .map(|c| c.spl.to_vec())
-                        .unwrap_or_else(|| vec![0.0; frequency_count]),
+                        .map_or_else(|| vec![0.0; frequency_count], |c| c.spl.to_vec()),
                     sound_power_di: curves
                         .get("Sound Power DI")
-                        .map(|c| c.spl.to_vec())
-                        .unwrap_or_else(|| vec![0.0; frequency_count]),
+                        .map_or_else(|| vec![0.0; frequency_count], |c| c.spl.to_vec()),
                     estimated_in_room,
                     horizontal_directivity,
                     vertical_directivity,
@@ -119,7 +105,7 @@ pub(super) fn spawn_spinorama_curves_thread(
                 );
             }
             Err(e) => {
-                log::error!("Failed to load spinorama curves: {}", e);
+                log::error!("Failed to load spinorama curves: {e}");
             }
         }
         let _ = tx.send_blocking(result);
@@ -151,13 +137,13 @@ pub(super) fn spawn_phase_data_check_thread(
                 {
                     Ok(curve) => curve.phase.is_some(),
                     Err(e) => {
-                        log::warn!("Failed to fetch curve for phase check: {}", e);
+                        log::warn!("Failed to fetch curve for phase check: {e}");
                         false
                     }
                 }
             }),
             Err(error) => {
-                log::warn!("Failed to start phase-data check: {}", error);
+                log::warn!("Failed to start phase-data check: {error}");
                 false
             }
         };

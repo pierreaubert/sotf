@@ -5524,6 +5524,26 @@ fn first_party_toast_templates_are_in_the_runtime_translation_catalog() {
 }
 
 #[test]
+fn runtime_message_catalog_matches_captured_format_arguments() {
+    use sotf_audio_player_gpui::i18n::RuntimeMessageTranslations;
+    assert!(RuntimeMessageTranslations::is_catalogued(
+        "Playback error: {error}"
+    ));
+    assert!(RuntimeMessageTranslations::is_catalogued(
+        "Playback error: {}"
+    ));
+    assert!(RuntimeMessageTranslations::is_catalogued(
+        "Optimization complete! Score: {before:.2} -> {after:.2}"
+    ));
+    assert!(!RuntimeMessageTranslations::is_catalogued(
+        "Playback error in decoder: {error}"
+    ));
+    assert!(!RuntimeMessageTranslations::is_catalogued(
+        "Playback error: {error}!"
+    ));
+}
+
+#[test]
 fn runtime_message_translations_preserve_dynamic_values_and_external_fallbacks() {
     use sotf_audio_player_gpui::i18n::RuntimeMessageTranslations;
 

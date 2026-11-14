@@ -43,11 +43,13 @@ pub struct FuzzConfig {
 }
 
 impl FuzzConfig {
+    #[must_use]
     pub fn worker_seed(&self) -> u64 {
         derive_worker_seed(self.seed, self.worker)
     }
 }
 
+#[derive(Debug)]
 pub struct LaunchContext<'a> {
     pub run_id: &'a RunId,
     pub run_dir: &'a Path,
@@ -57,17 +59,45 @@ pub struct LaunchContext<'a> {
 
 pub trait FuzzTarget {
     fn target_id(&self) -> TargetId;
+    /// Launches the target.
+    ///
+    /// # Errors
+    /// Returns an error if target startup or configuration fails.
     fn launch(&mut self, context: &LaunchContext<'_>) -> Result<TargetSpec, TargetError>;
+    /// Returns the target capabilities.
+    ///
+    /// # Errors
+    /// Returns an error if capability negotiation fails.
     fn capabilities(&mut self) -> Result<Capabilities, TargetError>;
+    /// Captures the target state.
+    ///
+    /// # Errors
+    /// Returns an error if the target cannot provide a snapshot.
     fn snapshot(&mut self) -> Result<Snapshot, TargetError>;
+    /// Executes an action on the target.
+    ///
+    /// # Errors
+    /// Returns an error if action delivery or execution fails.
     fn execute(&mut self, action: &Action) -> Result<Observation, TargetError>;
+    /// Checks whether the target is responsive.
+    ///
+    /// # Errors
+    /// Returns an error if the liveness probe fails.
     fn live(&mut self) -> Result<bool, TargetError>;
     fn pid(&self) -> Option<u32> {
         None
     }
+    /// Captures diagnostics for an unresponsive target.
+    ///
+    /// # Errors
+    /// Returns an error if diagnostic capture fails.
     fn capture_hang(&mut self, _directory: &Path) -> Result<Vec<PathBuf>, TargetError> {
         Ok(Vec::new())
     }
+    /// Shuts down the target.
+    ///
+    /// # Errors
+    /// Returns an error if target shutdown fails.
     fn shutdown(&mut self) -> Result<(), TargetError>;
 }
 
@@ -77,6 +107,14 @@ pub struct FuzzRunResult {
     pub summary: RunSummary,
 }
 
+/// Runs a target under the fuzz supervisor.
+///
+/// # Errors
+/// Returns an error for inconsistent target configuration, target failures, or artifact I/O failures.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The supervisor owns ordered launch, trace, execution, and shutdown phases"
+)]
 pub fn run_fuzz<T: FuzzTarget + ?Sized>(
     config: &FuzzConfig,
     manifest: &SurfaceManifest,
@@ -127,7 +165,7 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
                 seed: config.seed,
                 outcome: "skipped".into(),
                 steps: 0,
-                duration_ms: started.elapsed().as_millis() as u64,
+                duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
                 failures: vec![],
                 skip: Some(skip),
                 coverage_keys: 0,
@@ -145,14 +183,14 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         // Shut down any half-launched process so it does not leak.
         Err(error) => {
             let _ = target.shutdown();
-            return startup_failure(config, &store, &run_id, &started, error);
+            return startup_failure(config, &store, &run_id, &started, &error);
         }
     };
     let capabilities = match target.capabilities() {
         Ok(capabilities) => capabilities,
         Err(error) => {
             let _ = target.shutdown();
-            return startup_failure(config, &store, &run_id, &started, error);
+            return startup_failure(config, &store, &run_id, &started, &error);
         }
     };
     target_spec.capability_fingerprint = capabilities.fingerprint()?;
@@ -220,7 +258,7 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
         Ok(snapshot) => snapshot,
         Err(error) => {
             let _ = target.shutdown();
-            return startup_failure(config, &store, &run_id, &started, error);
+            return startup_failure(config, &store, &run_id, &started, &error);
         }
     };
     // Pin the first snapshot outside the bounded ring so ring eviction can
@@ -497,7 +535,7 @@ pub fn run_fuzz<T: FuzzTarget + ?Sized>(
             "failed".into()
         },
         steps: completed_steps,
-        duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         failures,
         skip: None,
         coverage_keys: generator.coverage.counters().len(),
@@ -594,7 +632,10 @@ fn collect_observation_failures(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Replay and failure classification require the complete run context"
+)]
 fn check_revisions_and_invariants<T: FuzzTarget + ?Sized>(
     target: &mut T,
     manifest: &SurfaceManifest,
@@ -664,9 +705,8 @@ pub(crate) fn classify_timeout<T: FuzzTarget + ?Sized>(
         }
         live_result = match target.live() {
             Ok(true) => ProbeResult::Responsive,
-            Ok(false) | Err(TargetError::Timeout(_)) => ProbeResult::TimedOut,
             Err(TargetError::ProcessExited(_)) => ProbeResult::ProcessExited,
-            Err(_) => ProbeResult::TimedOut,
+            Ok(false) | Err(_) => ProbeResult::TimedOut,
         };
         snapshot_result = match target.snapshot() {
             Ok(_) => ProbeResult::Responsive,
@@ -742,7 +782,7 @@ fn startup_failure(
     store: &ArtifactStore,
     run_id: &RunId,
     started: &Instant,
-    error: TargetError,
+    error: &TargetError,
 ) -> Result<FuzzRunResult, SupervisorError> {
     let class = match &error {
         TargetError::Timeout(_) => FailureClass::CommandTimeout,
@@ -784,7 +824,7 @@ fn startup_failure(
         seed: config.seed,
         outcome: "failed".into(),
         steps: 0,
-        duration_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+        duration_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
         failures: vec![failure],
         skip: None,
         coverage_keys: 0,
@@ -837,7 +877,7 @@ fn error_observation(action: &Action, failure: Failure) -> Observation {
         resource: None,
         new_logs: vec![],
         crash_files: vec![],
-        coverage: Default::default(),
+        coverage: super::model::CoverageDelta::default(),
         screenshot: None,
         failure_candidate: Some(failure),
     }

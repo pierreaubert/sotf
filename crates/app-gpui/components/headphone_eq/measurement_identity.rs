@@ -5,11 +5,22 @@ use crate::app::types::headphone_eq::HeadphoneMeasurementSource;
 use crate::components::autoeq::HEADPHONE_TARGET_CURVE_OPTIONS;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+use gpui::div;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{Button, ButtonVariant, Text};
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[cfg_attr(
+        not(feature = "dev-api"),
+        expect(
+            unused_variables,
+            reason = "Selector identifiers are read by optional developer instrumentation"
+        )
+    )]
     pub(super) fn render_headphone_measurement_identity(
         &self,
         cx: &mut Context<Self>,
@@ -92,19 +103,18 @@ impl PlayerView {
                     HEADPHONE_TARGET_CURVE_OPTIONS
                         .iter()
                         .find(|(value, _)| *value == headphone.target_preset)
-                        .map(|(value, label)| {
+                        .map_or(headphone.target_preset.as_str(), |(value, label)| {
                             HeadphoneIdentityTranslations::target_label(
                                 state.app.ui_state.language,
                                 value,
                                 label,
                             )
                         })
-                        .unwrap_or(&headphone.target_preset)
                 };
-                let bounds = headphone
-                    .measurement_frequency_bounds()
-                    .map(|(low, high)| format!("{low:.1}–{high:.1} Hz"))
-                    .unwrap_or_else(|| text.unknown.to_string());
+                let bounds = headphone.measurement_frequency_bounds().map_or_else(
+                    || text.unknown.to_string(),
+                    |(low, high)| format!("{low:.1}–{high:.1} Hz"),
+                );
                 content
                     .children(
                         [
@@ -120,7 +130,7 @@ impl PlayerView {
                             ),
                         ]
                         .into_iter()
-                        .map(|(_key, label, value)| {
+                        .map(|(key, label, value)| {
                             let row = div()
                                 .flex()
                                 .flex_col()
@@ -128,7 +138,7 @@ impl PlayerView {
                                 .child(Text::label(label))
                                 .child(Text::body(value));
                             #[cfg(feature = "dev-api")]
-                            let row = row.dev_track(format!("headphone.identity.{_key}"));
+                            let row = row.dev_track(format!("headphone.identity.{key}"));
                             row
                         }),
                     )

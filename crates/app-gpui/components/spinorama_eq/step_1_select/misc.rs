@@ -6,7 +6,7 @@ use crate::components::graphs::speaker_graphs::{
 };
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, Spinner,
     SpinnerSize, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
@@ -31,6 +31,10 @@ impl PlayerView {
     // Step 1: Select Speaker
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_spinorama_select_speaker(
         &self,
         cx: &mut Context<Self>,
@@ -172,7 +176,7 @@ impl PlayerView {
                                     })
                                     .on_text_change({
                                         move |text, _window, cx| {
-                                            log::info!("[SPINORAMA] on_text_change: {}", text);
+                                            log::info!("[SPINORAMA] on_text_change: {text}");
                                             state_for_text.update(cx, |state, _cx| {
                             state.app.measurement_state.spinorama_eq_state.speaker_search = text.to_string();
                                                 state.app.measurement_state.spinorama_eq_state.update_suggestions();
@@ -279,8 +283,7 @@ impl PlayerView {
 
                                 dev_track!(div()
                                     .id(SharedString::from(format!(
-                                        "speaker-option-{}",
-                                        speaker_name
+                                        "speaker-option-{speaker_name}"
                                     )))
                                     .px(d.pad_x)
                                     .py(d.pad_y)
@@ -382,8 +385,7 @@ impl PlayerView {
                                                                 div()
                                                                     .id(SharedString::from(
                                                                         format!(
-                                                                            "version-{}",
-                                                                            version
+                                                                            "version-{version}"
                                                                         ),
                                                                     ))
                                                                     .px(d.pad_x)
@@ -525,8 +527,8 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
-                                    .when(two_columns, |row| row.flex_row())
-                                    .when(!two_columns, |row| row.flex_col())
+                                    .when(two_columns, gpui::Styled::flex_row)
+                                    .when(!two_columns, gpui::Styled::flex_col)
                                     .w_full()
                                     .gap(d.section)
                                     // Left: CEA2034 Spinorama
@@ -577,8 +579,8 @@ impl PlayerView {
                             .child(
                                 div()
                                     .flex()
-                                    .when(two_columns, |row| row.flex_row())
-                                    .when(!two_columns, |row| row.flex_col())
+                                    .when(two_columns, gpui::Styled::flex_row)
+                                    .when(!two_columns, gpui::Styled::flex_col)
                                     .w_full()
                                     .gap(d.section)
                                     // Left: Horizontal reflections

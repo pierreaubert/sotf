@@ -1,4 +1,7 @@
-#![allow(clippy::collapsible_if)]
+#![allow(
+    clippy::collapsible_if,
+    reason = "Separate checks preserve the existing fallback and validation flow"
+)]
 pub mod album_art_generation;
 pub mod audio_device;
 pub mod autoeq;

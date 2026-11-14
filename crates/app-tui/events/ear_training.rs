@@ -82,22 +82,22 @@ fn handle_practice_command(
         EarTrainingCommand::AdjustBandCount => {
             if key.code == KeyCode::Char('b') {
                 adjust_config(app, |config| {
-                    config.band_count = config.band_count.saturating_sub(1).max(2)
+                    config.band_count = config.band_count.saturating_sub(1).max(2);
                 });
             } else {
                 adjust_config(app, |config| {
-                    config.band_count = (config.band_count + 1).min(25)
+                    config.band_count = (config.band_count + 1).min(25);
                 });
             }
         }
         EarTrainingCommand::AdjustGain => {
             if key.code == KeyCode::Char('g') {
                 adjust_config(app, |config| {
-                    config.gain_db = (config.gain_db - 1.0).max(1.0)
+                    config.gain_db = (config.gain_db - 1.0).max(1.0);
                 });
             } else {
                 adjust_config(app, |config| {
-                    config.gain_db = (config.gain_db + 1.0).min(15.0)
+                    config.gain_db = (config.gain_db + 1.0).min(15.0);
                 });
             }
         }
@@ -111,11 +111,11 @@ fn handle_practice_command(
         EarTrainingCommand::AdjustTrialCount => {
             if key.code == KeyCode::Char('t') {
                 adjust_config(app, |config| {
-                    config.trial_count = config.trial_count.saturating_sub(5).max(5)
+                    config.trial_count = config.trial_count.saturating_sub(5).max(5);
                 });
             } else {
                 adjust_config(app, |config| {
-                    config.trial_count = (config.trial_count + 5).min(500)
+                    config.trial_count = (config.trial_count + 5).min(500);
                 });
             }
         }
@@ -129,7 +129,7 @@ fn handle_practice_command(
         }
         EarTrainingCommand::NextTrial => app.advance_ear_training(),
         EarTrainingCommand::Audition => {
-            app.activate_ear_training_path(key.code == KeyCode::Char('2'))
+            app.activate_ear_training_path(key.code == KeyCode::Char('2'));
         }
         EarTrainingCommand::AddSource => app.add_current_ear_training_source(),
         EarTrainingCommand::NavigateSource if key.code == KeyCode::Char(',') => {
@@ -141,7 +141,7 @@ fn handle_practice_command(
             return app.navigate_ear_training_source(1).map(PlayerCommand::Play);
         }
         EarTrainingCommand::SetLoopBoundary => {
-            app.set_ear_training_loop_boundary(key.code == KeyCode::Char('['))
+            app.set_ear_training_loop_boundary(key.code == KeyCode::Char('['));
         }
         EarTrainingCommand::ToggleLoop => app.toggle_ear_training_loop(),
         EarTrainingCommand::SwitchTab
@@ -157,11 +157,11 @@ fn navigate_course(app: &mut App, key: KeyEvent) {
     match key.code {
         KeyCode::Up | KeyCode::Char('k') => {
             app.ui.ear_training.course_selection =
-                app.ui.ear_training.course_selection.saturating_sub(1)
+                app.ui.ear_training.course_selection.saturating_sub(1);
         }
         KeyCode::Down | KeyCode::Char('j') => {
             app.ui.ear_training.course_selection =
-                (app.ui.ear_training.course_selection + 1).min(EarTrainingCourse::ALL.len() - 1)
+                (app.ui.ear_training.course_selection + 1).min(EarTrainingCourse::ALL.len() - 1);
         }
         _ => {}
     }

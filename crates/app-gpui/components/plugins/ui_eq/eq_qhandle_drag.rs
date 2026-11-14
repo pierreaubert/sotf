@@ -1,12 +1,15 @@
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Rgba, Window, div, px};
 
 /// Drag data for Q handle manipulation
 #[derive(Clone)]
 pub(crate) struct EqQHandleDrag {
     pub(super) band_idx: usize,
     pub(super) plugin_idx: usize,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) is_right_handle: bool, // true = right handle (increase Q), false = left handle (decrease Q)
     pub(super) start_x: f32,
     pub(super) start_q: f64,

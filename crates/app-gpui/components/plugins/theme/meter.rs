@@ -1,9 +1,10 @@
-//! Meter / LUFS / TruePeak styling — derives from the global app `Theme`.
+//! Meter / LUFS / `TruePeak` styling — derives from the global app `Theme`.
 
-use gpui::*;
+use gpui::{Pixels, Rems, Rgba};
 use gpui_audio_kit::HorizontalMeterTheme;
 
 /// Meter styling parameters for LUFS and True Peak displays
+#[derive(Debug)]
 pub struct MeterTheme {
     /// Base color for meter (green)
     pub color_normal: Rgba,
@@ -48,6 +49,7 @@ pub struct MeterTheme {
 impl MeterTheme {
     /// Create meter theme from the current app theme.
     /// Always use this instead of constructing manually — ensures theme consistency.
+    #[must_use]
     pub fn from_theme(theme: &crate::theme::Theme, layout_scale: f32) -> Self {
         let layout_scale = if layout_scale.is_finite() && layout_scale > 0.0 {
             layout_scale
@@ -76,6 +78,7 @@ impl MeterTheme {
     }
 
     /// Get color for a given fill ratio (0.0 to 1.0)
+    #[must_use]
     pub fn color_for_ratio(&self, ratio: f32) -> Rgba {
         if ratio >= self.critical_threshold {
             self.color_critical
@@ -87,6 +90,7 @@ impl MeterTheme {
     }
 
     /// Convert to the toolkit-owned horizontal meter renderer theme.
+    #[must_use]
     pub fn to_horizontal_meter_theme(&self, text_size: Rems, gap: Pixels) -> HorizontalMeterTheme {
         HorizontalMeterTheme {
             color_normal: self.color_normal,
@@ -111,6 +115,7 @@ impl MeterTheme {
 }
 
 /// True Peak meter configuration
+#[derive(Debug)]
 pub struct TruePeakConfig {
     /// Minimum dB value
     pub min_db: f64,
@@ -121,7 +126,11 @@ pub struct TruePeakConfig {
 }
 
 impl TruePeakConfig {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "Preserve the existing named UI operation as an inherent API"
+    )]
+    #[must_use]
     pub fn default() -> Self {
         Self {
             min_db: -60.0,
@@ -131,6 +140,11 @@ impl TruePeakConfig {
     }
 
     /// Convert dB value to fill ratio (0.0 to 1.0)
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+    )]
     pub fn db_to_ratio(&self, db: f64) -> f32 {
         let normalized = (db - self.min_db) / (self.max_db - self.min_db);
         normalized.clamp(0.0, 1.0) as f32
@@ -138,6 +152,7 @@ impl TruePeakConfig {
 }
 
 /// LUFS meter configuration
+#[derive(Debug)]
 pub struct LufsConfig {
     /// Minimum dB value
     pub min_db: f64,
@@ -150,7 +165,11 @@ pub struct LufsConfig {
 }
 
 impl LufsConfig {
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "Preserve the existing named UI operation as an inherent API"
+    )]
+    #[must_use]
     pub fn default() -> Self {
         Self {
             min_db: -60.0,
@@ -161,6 +180,11 @@ impl LufsConfig {
     }
 
     /// Convert dB value to fill ratio (0.0 to 1.0)
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+    )]
     pub fn db_to_ratio(&self, db: f64) -> f32 {
         let normalized = (db - self.min_db) / (self.max_db - self.min_db);
         normalized.clamp(0.0, 1.0) as f32

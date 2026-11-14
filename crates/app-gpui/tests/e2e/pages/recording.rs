@@ -3,6 +3,7 @@ use sotf_audio_player_gpui::app::types::{
     ChannelRecordingState, CtcMatrixExportStrategy, RecordingSignalType, SpeakerConfiguration,
 };
 
+#[derive(Debug)]
 pub struct RecordingPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

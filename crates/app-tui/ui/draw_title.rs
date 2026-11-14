@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Alignment, App, Block, Borders, Constraint, Direction, Frame, Layout, Modifier, Paragraph,
+    Rect, Style, draw_screen_boxes,
+};
 
 pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
     // Split title area into three parts: SOTF title, screen boxes, output device
@@ -34,7 +37,7 @@ pub(crate) fn draw_title(f: &mut Frame, area: Rect, app: &App) {
 
     // Device selector on the right
     let device_text = if let Some(device) = app.get_selected_output_device() {
-        device.name.to_string()
+        device.name.clone()
     } else {
         crate::tui_text!(app, "Default")
     };

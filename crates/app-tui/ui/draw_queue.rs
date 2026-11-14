@@ -1,5 +1,13 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Constraint, Direction, Frame, Layout, Line, List, ListItem,
+    ListState, Modifier, Paragraph, Rect, Screen, Span, Style, Wrap, clean_text, clean_track_name,
+    draw_help_box, draw_transport, format_channel_count, truncate_with_ellipsis,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
     let is_focused = app.current_screen == Screen::Queue;
 
@@ -52,7 +60,7 @@ pub(crate) fn draw_queue_screen(f: &mut Frame, area: Rect, app: &mut App) {
         let raw_display = entry.item.album.display_name();
         let cleaned_display = clean_text(&raw_display);
         let truncated_display = truncate_with_ellipsis(&cleaned_display, 90);
-        let mut content = format!("{} {}", expand_indicator, truncated_display);
+        let mut content = format!("{expand_indicator} {truncated_display}");
 
         if is_current {
             let track_info = crate::tui_text!(
@@ -273,11 +281,10 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                 .path
                 .extension()
                 .and_then(|e| e.to_str())
-                .map(|e| e.to_uppercase())
-                .unwrap_or_else(|| crate::tui_text!(app, "Unknown"));
-            let sr_khz = sample_rate as f64 / 1000.0;
+                .map_or_else(|| crate::tui_text!(app, "Unknown"), str::to_uppercase);
+            let sr_khz = f64::from(sample_rate) / 1000.0;
             let ch_str = format_channel_count(channels);
-            format!("{} {}-bit/{:.1}kHz {}", ext, bit_depth, sr_khz, ch_str)
+            format!("{ext} {bit_depth}-bit/{sr_khz:.1}kHz {ch_str}")
         } else {
             crate::tui_text!(app, "Unknown")
         };
@@ -292,7 +299,7 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
         // Track ReplayGain
         if let Some(gain) = track.replay_gain {
             let peak_str = if let Some(peak) = track.replay_peak {
-                format!(" (peak: {:.3})", peak)
+                format!(" (peak: {peak:.3})")
             } else {
                 String::new()
             };
@@ -302,7 +309,7 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(app.theme.title_color),
                 ),
                 Span::styled(
-                    format!("{:+.2} dB{}", gain, peak_str),
+                    format!("{gain:+.2} dB{peak_str}"),
                     Style::default().fg(app.theme.accent_success),
                 ),
             ]));
@@ -322,7 +329,7 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
         // Album ReplayGain
         if let Some(gain) = track.album_gain {
             let peak_str = if let Some(peak) = track.album_peak {
-                format!(" (peak: {:.3})", peak)
+                format!(" (peak: {peak:.3})")
             } else {
                 String::new()
             };
@@ -332,7 +339,7 @@ pub(crate) fn draw_replay_gain_info(f: &mut Frame, area: Rect, app: &App) {
                     Style::default().fg(app.theme.title_color),
                 ),
                 Span::styled(
-                    format!("{:+.2} dB{}", gain, peak_str),
+                    format!("{gain:+.2} dB{peak_str}"),
                     Style::default().fg(app.theme.accent_success),
                 ),
             ]));

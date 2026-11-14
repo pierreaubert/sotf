@@ -12,6 +12,10 @@ pub struct ArtifactStore {
 }
 
 impl ArtifactStore {
+    /// Creates an isolated artifact directory.
+    ///
+    /// # Errors
+    /// Returns an error for unsafe paths, symlinks, or filesystem failures.
     pub fn create(root: &Path, run_id: &str) -> Result<Self, ArtifactError> {
         validate_relative(Path::new(run_id))?;
         fs::create_dir_all(root)?;
@@ -22,6 +26,10 @@ impl ArtifactStore {
         Ok(Self { root, run_dir })
     }
 
+    /// Opens an existing artifact directory.
+    ///
+    /// # Errors
+    /// Returns an error if paths escape the root, contain symlinks, or cannot be resolved.
     pub fn open_existing(root: &Path, run_dir: &Path) -> Result<Self, ArtifactError> {
         let root = root.canonicalize()?;
         let run_dir = run_dir.canonicalize()?;
@@ -32,6 +40,10 @@ impl ArtifactStore {
         Ok(Self { root, run_dir })
     }
 
+    /// Resolves a relative artifact path.
+    ///
+    /// # Errors
+    /// Returns an error for unsafe paths or symlink ancestors.
     pub fn path(&self, relative: impl AsRef<Path>) -> Result<PathBuf, ArtifactError> {
         let relative = relative.as_ref();
         validate_relative(relative)?;
@@ -40,16 +52,22 @@ impl ArtifactStore {
         Ok(path)
     }
 
+    /// Creates a directory within this artifact store.
+    ///
+    /// # Errors
+    /// Returns an error for unsafe paths or filesystem failures.
     pub fn create_dir(&self, relative: impl AsRef<Path>) -> Result<PathBuf, ArtifactError> {
         let path = self.path(relative)?;
         fs::create_dir_all(&path)?;
         Ok(path)
     }
 
+    #[must_use]
     pub fn run_dir(&self) -> &Path {
         &self.run_dir
     }
 
+    #[must_use]
     pub fn root(&self) -> &Path {
         &self.root
     }
@@ -132,12 +150,14 @@ impl Redactor {
         }
     }
 
+    #[must_use]
     pub fn text(&self, text: &str) -> String {
         self.replacements
             .iter()
             .fold(text.to_owned(), |value, (from, to)| value.replace(from, to))
     }
 
+    #[must_use]
     pub fn json(&self, value: &Value) -> Value {
         match value {
             Value::Object(map) => Value::Object(

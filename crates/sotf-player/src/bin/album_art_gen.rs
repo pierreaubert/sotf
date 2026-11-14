@@ -59,12 +59,16 @@ impl From<ImageApiArg> for ImageApi {
                   prompt, asks an image model for square cover art, and writes cover.png into \
                   the album directory."
 )]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "CLI flags are independent generation and output options"
+)]
 struct Args {
     /// Album directory or recursive music directory to scan
     #[arg(value_name = "PATH")]
     path: PathBuf,
 
-    /// API base URL. OpenAI modes append /v1; lm-studio-chat derives /api/v1/chat.
+    /// API base URL. `OpenAI` modes append /v1; lm-studio-chat derives /api/v1/chat.
     #[arg(long, default_value = "https://api.openai.com/v1")]
     api_base_url: String,
 
@@ -88,7 +92,7 @@ struct Args {
     #[arg(long, default_value = "OPENAI_API_KEY")]
     api_key_env: String,
 
-    /// Environment variable containing the image API key. Official GLM uses ZHIPU_API_KEY.
+    /// Environment variable containing the image API key. Official GLM uses `ZHIPU_API_KEY`.
     #[arg(long, default_value = "ZHIPU_API_KEY")]
     image_api_key_env: String,
 
@@ -112,7 +116,7 @@ struct Args {
     #[arg(long)]
     no_image_watermark: bool,
 
-    /// Optional GLM user_id, 6 to 128 characters.
+    /// Optional GLM `user_id`, 6 to 128 characters.
     #[arg(long)]
     image_user_id: Option<String>,
 
@@ -153,6 +157,10 @@ async fn main() -> anyhow::Result<()> {
     run(args).await
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The command owns album enumeration, generation, and output reporting"
+)]
 async fn run(args: Args) -> anyhow::Result<()> {
     if !args.path.is_dir() {
         return Err(anyhow!("{} is not a directory", args.path.display()));

@@ -11,7 +11,10 @@ use crate::components::plugins::actions::{
 };
 use crate::components::plugins::editing::PluginEditingManager;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    Bounds, Entity, FocusHandle, KeyDownEvent, Pixels, Point, ScrollHandle, Task, WeakEntity,
+    Window,
+};
 use sotf_audio_player::QueuePlaybackEffect;
 use std::cell::RefCell;
 use std::time::Duration;
@@ -132,8 +135,8 @@ impl ViewScrollHandles {
 
 /// `PlayerView` is GPUI's view type. The code-review (`reviews/review-app-gpui.md`)
 /// flags `impl PlayerView { … }` as a god-class spread across ~12 files (ui/mod.rs,
-/// components/recording/capture.rs, components/plugins/ui_rack.rs,
-/// components/room_eq/step_3_configure.rs, components/spinorama_eq/mod.rs, etc.).
+/// components/recording/capture.rs, `components/plugins/ui_rack.rs`,
+/// `components/room_eq/step_3_configure.rs`, `components/spinorama_eq/mod.rs`, etc.).
 /// The long-term fix is to extract `RoomEqController`, `SpinoramaEqController`,
 /// `RecordingController`, and `PluginRackController` as `Entity<>` sub-views.
 ///
@@ -176,6 +179,10 @@ pub struct PlayerView {
     /// cache validity; inner `Option<usize>` is the lookup result (`None`
     /// when the rack has no compressor). Invalidated on structural plugin
     /// graph changes.
+    #[expect(
+        clippy::option_option,
+        reason = "The outer option distinguishes an uninitialized or unhandled value from an initialized absent value"
+    )]
     pub(super) compressor_engine_idx_cache: Option<Option<usize>>,
     /// Memoized derived Evaluating series (group delay, RT60, clarity),
     /// keyed by a fingerprint of the borrowed result inputs so steady
@@ -192,7 +199,7 @@ pub struct PlayerView {
     pub(super) qa_performance_clock_active: bool,
     #[cfg(feature = "dev-api")]
     pub(super) qa_performance_position_secs: f64,
-    /// OS media controls (MPRIS / MediaPlayer) — not available on iOS/tvOS
+    /// OS media controls (MPRIS / `MediaPlayer`) — not available on iOS/tvOS
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
     pub(super) media_controls: Option<crate::media_controls::GpuiMediaControls>,
     /// Optional MIDI hardware bridge. Set when a supported controller was
@@ -295,6 +302,14 @@ impl PlayerView {
         self.window_state.interface_model_highlight = highlight;
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn new_with_runtime(
         state: Entity<AppState>,
         cx: &mut Context<Self>,
@@ -378,7 +393,7 @@ impl PlayerView {
                     Some(mc)
                 }
                 Err(e) => {
-                    log::warn!("Failed to initialize OS media controls: {}", e);
+                    log::warn!("Failed to initialize OS media controls: {e}");
                     None
                 }
             }
@@ -388,7 +403,7 @@ impl PlayerView {
 
         // Subscribe to layout changes for granular re-renders
         let layout = state.read(cx).layout.clone();
-        cx.subscribe(&layout, |_view, _, _, cx| {
+        cx.subscribe(&layout, |_view, _, (), cx| {
             cx.notify();
         })
         .detach();
@@ -410,9 +425,7 @@ impl PlayerView {
                         view.update_frame_count = view.update_frame_count.wrapping_add(1);
 
                         // Collect data needed for infinite scroll check before state update
-                        let scroll_check_data = if view.state.read(cx).app.ui_state.current_screen
-                            == Screen::Library
-                        {
+                        let scroll_check_data = (view.state.read(cx).app.ui_state.current_screen == Screen::Library).then(|| {
                             let scroll_y: f32 = view.scroll.library_grid.offset().y.into();
                             let state = view.state.read(cx);
                             let item_count = state.app.library_state.items_per_page;
@@ -427,12 +440,9 @@ impl PlayerView {
                             let remaining_scroll = scrollable_distance - scroll_position;
                             let needs_more_content = estimated_height < window_height * 2.0;
                             let near_bottom = remaining_scroll < 1000.0;
-                            let should_load =
-                                item_count < total_albums && (needs_more_content || near_bottom);
-                            Some(should_load)
-                        } else {
-                            None
-                        };
+
+                            item_count < total_albums && (needs_more_content || near_bottom)
+                        });
 
                         // Collect pending media control events (before state borrow)
                         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
@@ -441,8 +451,7 @@ impl PlayerView {
                         > = view
                             .media_controls
                             .as_ref()
-                            .map(|mc| std::iter::from_fn(|| mc.poll_event()).collect())
-                            .unwrap_or_default();
+                            .map_or_default(|mc| std::iter::from_fn(|| mc.poll_event()).collect());
                         #[cfg(any(target_os = "ios", target_os = "tvos"))]
                         let media_events: Vec<()> = vec![];
 
@@ -470,7 +479,7 @@ impl PlayerView {
                         let compressor_cache = &mut view.compressor_engine_idx_cache;
                         let mut plugin_update_applied = false;
                         let mut capture_updated = false;
-                        view.state.update(cx, |state, _cx| {
+                        view.state.update(cx, |state, cx| {
                             let (playback_state, was_playing) =
                                 Self::sync_playback_data(state, frame_count, compressor_cache);
 
@@ -519,8 +528,7 @@ impl PlayerView {
                                     .take()
                             {
                                 log::warn!(
-                                    "[GPUI] Applying pending plugin update: {:?}",
-                                    update_type
+                                    "[GPUI] Applying pending plugin update: {update_type:?}"
                                 );
                                 // Structural plugin graph changes invalidate
                                 // the compressor index cache.
@@ -574,7 +582,7 @@ impl PlayerView {
                             Self::handle_gapless_prequeue(state, &playback_state);
                             Self::tick_background_tasks(state);
                             capture_updated = state.app.measurement_state.poll_capture();
-                            if Self::finish_pending_audio_apply(state, _cx) {
+                            if Self::finish_pending_audio_apply(state, cx) {
                                 plugin_update_applied = true;
                             }
                             state.app.refresh_scheduled_theme();
@@ -698,7 +706,7 @@ impl PlayerView {
             geometry_save_sequence: 0,
             pending_geometry_save: std::sync::Arc::new(parking_lot::Mutex::new(None)),
             compressor_engine_idx_cache: None,
-            evaluating_derived_cache: Default::default(),
+            evaluating_derived_cache: std::cell::RefCell::default(),
             last_tick_snapshot: None,
             #[cfg(feature = "dev-api")]
             qa_performance_clock_active: false,
@@ -724,7 +732,7 @@ impl PlayerView {
             let state = self.state.read(cx);
             (
                 state.app.library_state.library.albums.clone(),
-                state.app.library_view.pending_stats.clone(),
+                std::sync::Arc::clone(&state.app.library_view.pending_stats),
             )
         };
 
@@ -743,10 +751,7 @@ impl PlayerView {
                 let stats = crate::app::App::compute_library_stats_static(&albums);
 
                 let duration = start.elapsed();
-                log::info!(
-                    "[Stats] Background stats computation complete in {:?}",
-                    duration
-                );
+                log::info!("[Stats] Background stats computation complete in {duration:?}");
 
                 // Store result for main loop to pick up
                 *pending_stats.lock() = Some(stats);
@@ -818,11 +823,13 @@ impl PlayerView {
                     // we notice if a future controller surfaces them.
                     log::debug!("MIDI: AdjustParam dropped (relative encoders unsupported)");
                 }
-                MappingAction::PagePrev | MappingAction::PageNext => {
+                MappingAction::PagePrev
+                | MappingAction::PageNext
+                | MappingAction::LearnComplete { .. }
+                | MappingAction::Unmapped => {
                     // Engine has already mutated `mapping.current_page`.
                     // Re-render is implicit via cx.notify() in the tick.
                 }
-                MappingAction::LearnComplete { .. } | MappingAction::Unmapped => {}
             }
         }
 
@@ -1044,7 +1051,7 @@ impl PlayerView {
             let layout = state.layout.read(cx);
             // Save configuration
             if let Err(e) = state.app.save_config_with_geometry(layout, Some(geometry)) {
-                log::error!("Failed to save config on quit: {}", e);
+                log::error!("Failed to save config on quit: {e}");
             }
 
             // Stop background managers
@@ -1052,7 +1059,7 @@ impl PlayerView {
 
             // Stop audio playback - this stops the audio engine threads
             if let Err(e) = state.player.stop() {
-                log::error!("Failed to stop player on quit: {}", e);
+                log::error!("Failed to stop player on quit: {e}");
             }
         });
 
@@ -1091,7 +1098,7 @@ impl PlayerView {
             state.app.set_theme(action.theme_id);
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -1107,7 +1114,7 @@ impl PlayerView {
             state.app.set_community_theme(action.theme_id);
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -1118,7 +1125,7 @@ impl PlayerView {
             state.app.next_theme();
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -1130,10 +1137,10 @@ impl PlayerView {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let system = action
-            .language
-            .map(gpui_design::DesignSystem::for_language)
-            .unwrap_or_else(gpui_design::DesignSystem::platform_default);
+        let system = action.language.map_or_else(
+            gpui_design::DesignSystem::platform_default,
+            gpui_design::DesignSystem::for_language,
+        );
         cx.set_global(gpui_design::DesignSystemState::with_system(system));
         self.state.update(cx, |state, cx| {
             state.app.ui_state.design_language =
@@ -1159,7 +1166,7 @@ impl PlayerView {
             state.app.ui_state.design_language = Some(name.to_string());
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -1221,7 +1228,7 @@ impl PlayerView {
             state.app.next_language();
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -1238,7 +1245,7 @@ impl PlayerView {
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale * 1.1).min(2.0);
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         self.recalculate_pagination(cx, true);
@@ -1256,7 +1263,7 @@ impl PlayerView {
             state.app.ui_state.font_scale = (state.app.ui_state.font_scale / 1.1).max(0.5);
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         self.recalculate_pagination(cx, true);
@@ -1273,7 +1280,7 @@ impl PlayerView {
             state.app.ui_state.font_scale = 1.0;
             let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::error!("Failed to save config: {}", e);
+                log::error!("Failed to save config: {e}");
             }
         });
         self.recalculate_pagination(cx, true);
@@ -1347,8 +1354,7 @@ impl PlayerView {
         let query = self
             .command_palette
             .as_ref()
-            .map(|palette| palette.query.as_str())
-            .unwrap_or_default();
+            .map_or_default(|palette| palette.query.as_str());
         let text = crate::app::i18n::KeybindingTranslations::for_language(language);
         crate::app::keybindings::search_command_palette_commands(
             preset,
@@ -1458,6 +1464,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn cancel(&mut self, _: &Cancel, window: &mut Window, cx: &mut Context<Self>) {
         if self.state.read(cx).app.ui_state.current_screen == Screen::Studio
             && self.state.read(cx).app.ui_state.input_mode == crate::app::InputMode::Normal
@@ -1728,6 +1738,10 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn toggle_library_view(
         &mut self,
         _: &ToggleLibraryView,
@@ -1850,7 +1864,7 @@ impl PlayerView {
                         }
                         QueuePlaybackEffect::Stop => {
                             if let Err(e) = state.player.stop() {
-                                log::warn!("[UI] Failed to stop player after queue removal: {}", e);
+                                log::warn!("[UI] Failed to stop player after queue removal: {e}");
                             }
                         }
                         QueuePlaybackEffect::None => {}
@@ -1882,10 +1896,10 @@ impl PlayerView {
         self.state
             .update(cx, |state, _cx| match state.app.fill_queue_magic() {
                 Ok(count) => {
-                    log::info!("[UI] fill_queue_magic added {} tracks", count);
+                    log::info!("[UI] fill_queue_magic added {count} tracks");
                 }
                 Err(e) => {
-                    log::error!("[UI] fill_queue_magic error: {}", e);
+                    log::error!("[UI] fill_queue_magic error: {e}");
                 }
             });
         cx.notify();
@@ -1921,7 +1935,7 @@ impl PlayerView {
             .update(cx, |state, _cx| match state.app.add_album_to_queue() {
                 Ok(Some(path)) => Self::play_track(state, path),
                 Err(e) => {
-                    log::warn!("[UI] Cannot add to queue: {}", e);
+                    log::warn!("[UI] Cannot add to queue: {e}");
                     state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
                 }
                 _ => {}
@@ -1935,7 +1949,7 @@ impl PlayerView {
             .update(cx, |state, _cx| match state.app.play_album_now() {
                 Ok(Some(path)) => Self::play_track(state, path),
                 Err(e) => {
-                    log::warn!("[UI] Cannot play album: {}", e);
+                    log::warn!("[UI] Cannot play album: {e}");
                     state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(e));
                 }
                 _ => {}
@@ -1980,7 +1994,7 @@ impl PlayerView {
     }
 
     pub(super) fn scan_library(&mut self, _: &ScanLibrary, _: &mut Window, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             if Self::is_text_input_mode(state.app.ui_state.input_mode)
                 || state.app.settings.library.picker_open
             {
@@ -1988,16 +2002,14 @@ impl PlayerView {
             }
             // Start scan (this will be async in reality, but for now we do it synchronously)
             if let Err(e) = state.app.scan_library() {
-                log::error!("Library scan failed: {}", e);
-                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
-                    "Scan failed: {}",
-                    e
-                )));
+                log::error!("Library scan failed: {e}");
+                state.app.ui_state.toast_message =
+                    Some(crate::app::ToastMessage::error(format!("Scan failed: {e}")));
             }
             // Save directories to config after successful scan
-            let layout = state.layout.read(_cx);
+            let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::warn!("Failed to save config: {}", e);
+                log::warn!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -2005,18 +2017,16 @@ impl PlayerView {
 
     /// Helper method to start library scan from settings screen
     pub(crate) fn start_library_scan(&mut self, cx: &mut Context<Self>) {
-        self.state.update(cx, |state, _cx| {
+        self.state.update(cx, |state, cx| {
             if let Err(e) = state.app.scan_library() {
-                log::error!("Library scan failed: {}", e);
-                state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
-                    "Scan failed: {}",
-                    e
-                )));
+                log::error!("Library scan failed: {e}");
+                state.app.ui_state.toast_message =
+                    Some(crate::app::ToastMessage::error(format!("Scan failed: {e}")));
             }
             // Save directories to config after successful scan
-            let layout = state.layout.read(_cx);
+            let layout = state.layout.read(cx);
             if let Err(e) = state.app.save_config(layout) {
-                log::warn!("Failed to save config: {}", e);
+                log::warn!("Failed to save config: {e}");
             }
         });
         cx.notify();
@@ -2137,8 +2147,8 @@ impl PlayerView {
         );
     }
 
-    /// Inner play logic after conflict resolution. Called by both play_track_at and
-    /// play_track_auto_advance after suspensions are handled.
+    /// Inner play logic after conflict resolution. Called by both `play_track_at` and
+    /// `play_track_auto_advance` after suspensions are handled.
     pub(super) fn play_track_at_inner(
         state: &mut AppState,
         source: sotf_audio::decoder::AudioSource,
@@ -2205,7 +2215,18 @@ impl PlayerView {
         true
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPUI rendering and callback interfaces accept the complete UI context"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::float_cmp,
+        reason = "Sample rates are exact integer-valued configuration identities"
+    )]
     fn play_track_at_inner_with_format(
         state: &mut AppState,
         source: sotf_audio::decoder::AudioSource,
@@ -2263,9 +2284,7 @@ impl PlayerView {
             && output_channels > max_ch
         {
             log::info!(
-                "[GPUI] Clamping output from {} to {} channels (device limit)",
-                output_channels,
-                max_ch
+                "[GPUI] Clamping output from {output_channels} to {max_ch} channels (device limit)"
             );
             output_channels = max_ch;
         }
@@ -2313,11 +2332,11 @@ impl PlayerView {
 
         Self::acknowledge_headphone_audition(state, play_result.is_ok());
         if let Err(e) = play_result {
-            log::error!("Failed to play track: {}", e);
+            log::error!("Failed to play track: {e}");
             state.app.playback.is_playing = false;
             state
                 .app
-                .record_playback_error(format!("Play track failed: {}", e));
+                .record_playback_error(format!("Play track failed: {e}"));
         } else {
             state.app.playback.is_playing = true;
             if state
@@ -2446,7 +2465,7 @@ impl PlayerView {
                             .app
                             .set_plugin_param_string(plugin_idx, param_idx, path)
                         {
-                            log::error!("[GPUI] Invalid SOFA file path: {}", e);
+                            log::error!("[GPUI] Invalid SOFA file path: {e}");
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));
                         }
@@ -2498,7 +2517,7 @@ impl PlayerView {
                             .app
                             .set_plugin_param_string(plugin_idx, param_idx, path)
                         {
-                            log::error!("[GPUI] Invalid HRTF database directory: {}", e);
+                            log::error!("[GPUI] Invalid HRTF database directory: {e}");
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));
                         }
@@ -2551,7 +2570,7 @@ impl PlayerView {
                             .app
                             .set_plugin_param_string(plugin_idx, param_idx, path)
                         {
-                            log::error!("[GPUI] Invalid IR file path: {}", e);
+                            log::error!("[GPUI] Invalid IR file path: {e}");
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(e));
                         }
@@ -2563,6 +2582,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn on_open_ab_config_file(
         &mut self,
         action: &OpenAbConfigFile,
@@ -2889,5 +2912,14 @@ pub(crate) fn recalculate_pagination_for_state(
     let new_items_per_page = columns * rows * 3;
     if force_reset || app.library_state.items_per_page < new_items_per_page {
         app.library_state.items_per_page = new_items_per_page;
+    }
+}
+
+impl std::fmt::Debug for PlayerView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlayerView")
+            .field("state", &self.state)
+            .field("spectrum_plot_size", &self.spectrum_plot_size)
+            .finish_non_exhaustive()
     }
 }

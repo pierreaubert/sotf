@@ -2,6 +2,10 @@ pub use sotf_audio_player::room_eq_types::AutoEqField;
 
 /// UI state for Room EQ dropdowns
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RoomEqDropdowns {
     pub data_source_open: bool,
     pub opt_mode_open: bool,
@@ -36,9 +40,9 @@ pub struct RoomEqDropdowns {
 
     /// Review step smoothing dropdown
     pub review_smoothing_open: bool,
-    /// AutoEQ form editing state
+    /// `AutoEQ` form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
-    /// AutoEQ form edit text
+    /// `AutoEQ` form edit text
     pub autoeq_edit_text: String,
     /// Custom target curve editor modal open
     pub custom_target_modal_open: bool,

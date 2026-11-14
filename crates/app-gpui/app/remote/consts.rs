@@ -61,6 +61,9 @@ impl App {
         self.start_remote_server_discovery_with_timeout(DEFAULT_DISCOVERY_TIMEOUT);
     }
 
+    ///
+    /// # Panics
+    /// Panics if the remote worker thread cannot be spawned.
     pub fn start_remote_server_discovery_with_timeout(&mut self, timeout: Duration) {
         if self.remote.discovery_running {
             return;
@@ -125,6 +128,9 @@ impl App {
         }
     }
 
+    ///
+    /// # Panics
+    /// Panics if the remote worker thread cannot be spawned.
     pub fn start_remote_server_probe(&mut self, server_id: &str) -> bool {
         if self.remote.server_probe_receiver.is_some() {
             self.ui_state.toast_message = Some(ToastMessage::warning(
@@ -198,6 +204,10 @@ impl App {
         }
     }
 
+    /// Adds manual remote server.
+    ///
+    /// # Errors
+    /// Returns an error if connection or QR data are invalid, tokens cannot be stored, or server-store persistence fails.
     pub fn add_manual_remote_server(
         &mut self,
         friendly_name: impl Into<String>,
@@ -213,6 +223,10 @@ impl App {
         Ok(id)
     }
 
+    /// Adds manual remote server from inputs.
+    ///
+    /// # Errors
+    /// Returns an error if connection or QR data are invalid, tokens cannot be stored, or server-store persistence fails.
     pub fn add_manual_remote_server_from_inputs(&mut self) -> Result<String, String> {
         let id = self.remote.add_manual_server_from_inputs()?;
         if !self.save_remote_server_store("save manual SOTF server") {
@@ -230,6 +244,10 @@ impl App {
         Ok(id)
     }
 
+    /// Adds remote server from qr payload.
+    ///
+    /// # Errors
+    /// Returns an error if connection or QR data are invalid, tokens cannot be stored, or server-store persistence fails.
     pub fn add_remote_server_from_qr_payload(&mut self, payload: &str) -> Result<String, String> {
         let parsed = sotf_audio_player::server::parse_sotf_api_connection_qr_payload(payload)?;
         let id = self
@@ -253,6 +271,10 @@ impl App {
     }
 
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    /// Adds remote server from qr image file.
+    ///
+    /// # Errors
+    /// Returns an error if connection or QR data are invalid, tokens cannot be stored, or server-store persistence fails.
     pub fn add_remote_server_from_qr_image_file(
         &mut self,
         path: &std::path::Path,
@@ -362,19 +384,21 @@ impl App {
     }
 
     /// Start consuming the live SSE event stream from the selected remote server.
+    ///
+    /// # Panics
+    /// Panics if the remote worker thread cannot be spawned.
     pub fn start_remote_event_stream(&mut self) {
         let Some(server) = self.remote.server_store.selected_server().cloned() else {
             return;
         };
-        let token = match self.remote.server_tokens.get(&server.id) {
-            Some(token) => token.clone(),
-            None => {
-                log::warn!(
-                    "No bearer token cached for remote server {}; event stream not started",
-                    server.id
-                );
-                return;
-            }
+        let token = if let Some(token) = self.remote.server_tokens.get(&server.id) {
+            token.clone()
+        } else {
+            log::warn!(
+                "No bearer token cached for remote server {}; event stream not started",
+                server.id
+            );
+            return;
         };
         let api_base_url = server.api_base_url.clone();
 
@@ -481,9 +505,7 @@ impl App {
                                     self.remote.refresh_requests.state = true;
                                 }
                             }
-                            sotf_audio_player::sotf_server_event::SotfServerEvent::LibraryChanged {
-                                library_version: _,
-                            } => {
+                            sotf_audio_player::sotf_server_event::SotfServerEvent::LibraryChanged { .. } => {
                                 if let Some(server_id) =
                                     self.remote.server_store.selected_server_id.as_deref()
                                 {
@@ -526,6 +548,9 @@ impl App {
         }
     }
 
+    ///
+    /// # Panics
+    /// Panics if the remote worker thread cannot be spawned.
     pub fn start_remote_add_album_to_queue(
         &mut self,
         album_id: impl Into<String>,
@@ -637,6 +662,9 @@ impl App {
     ///
     /// This never emits user-visible toasts: it is a performance cache, and
     /// unstable network conditions simply disable it until the remote is reset.
+    ///
+    /// # Panics
+    /// Panics if the remote worker thread cannot be spawned.
     pub fn update_remote_cache_refresh(&mut self) {
         if let Some(rx) = self.remote.cache_refresh_receiver.as_ref() {
             match rx.try_recv() {
@@ -675,23 +703,22 @@ impl App {
 
         let requests = self.remote.refresh_requests;
         self.remote.refresh_requests = RemoteRefreshRequests::default();
-        let page_request = if requests.visible_album_page {
+        let page_request = requests.visible_album_page.then(|| {
             let query = self.library_state.search_query.trim().to_string();
             let (offset, limit) = self
                 .remote
                 .current_album_page
                 .as_ref()
                 .filter(|_| self.remote.current_album_page_query == query)
-                .map(|page| (page.offset, page.limit.max(1)))
-                .unwrap_or((0, DEFAULT_REMOTE_ALBUM_PAGE_LIMIT));
-            Some((
+                .map_or((0, DEFAULT_REMOTE_ALBUM_PAGE_LIMIT), |page| {
+                    (page.offset, page.limit.max(1))
+                });
+            (
                 offset,
                 limit.min(self.remote.album_cache.max_albums()),
                 query,
-            ))
-        } else {
-            None
-        };
+            )
+        });
 
         let (tx, rx) = std::sync::mpsc::channel();
         self.remote.cache_refresh_receiver = Some(rx);
@@ -862,6 +889,10 @@ impl App {
         save_persisted_remote_server_token(server, token)
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn reconcile_ios_remote_library_identity(
         &mut self,
         server_id: &str,
@@ -917,9 +948,10 @@ fn decode_sotf_api_qr_image_file(path: &std::path::Path) -> Result<String, Strin
         }
     }
 
-    Err(last_error
-        .map(|err| format!("Could not decode the QR code: {err}"))
-        .unwrap_or_else(|| "Could not decode the QR code.".to_string()))
+    Err(last_error.map_or_else(
+        || "Could not decode the QR code.".to_string(),
+        |err| format!("Could not decode the QR code: {err}"),
+    ))
 }
 
 fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
@@ -950,7 +982,7 @@ fn probe_remote_server_public(api_base_url: &str) -> RemoteServerProbeStatus {
                     })
                 })
                 .await
-                .map_err(|_| {
+                .map_err(|_error| {
                     format!(
                         "SOTF server test timed out after {} seconds",
                         DEFAULT_REMOTE_PROBE_TIMEOUT.as_secs()

@@ -5,7 +5,7 @@ use crate::components::autoeq::HEADPHONE_TARGET_CURVE_OPTIONS;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{SharedString, div};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption, Text};
 
 impl PlayerView {

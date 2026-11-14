@@ -3,7 +3,7 @@ use crate::app::i18n::{DialogTranslations, TutorialTranslations};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{KeyDownEvent, ObjectFit, div, img, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Checkbox, CheckboxSize, Dialog, DialogSize, HStack,
     StackAlign, StackJustify, StackSize, StackSpacing, Text, TextSize, VStack,
@@ -44,6 +44,10 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_tutorial_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -152,8 +156,7 @@ impl PlayerView {
                                                 let layout = state.layout.read(cx);
                                                 if let Err(e) = state.app.save_config(layout) {
                                                     log::warn!(
-                                                        "Failed to save tutorial config: {}",
-                                                        e
+                                                        "Failed to save tutorial config: {e}"
                                                     );
                                                 }
                                             });
@@ -265,13 +268,13 @@ impl PlayerView {
                 if dont_show {
                     let layout = state.layout.read(cx);
                     if let Err(e) = state.app.save_config(layout) {
-                        log::warn!("Failed to save tutorial config: {}", e);
+                        log::warn!("Failed to save tutorial config: {e}");
                     }
                 }
 
                 // Load library from database (SQLite I/O)
                 if let Err(e) = state.app.load_library_from_database() {
-                    log::warn!("Failed to load library from database: {}", e);
+                    log::warn!("Failed to load library from database: {e}");
                 }
                 if state.app.library_state.library.albums.is_empty() {
                     state.app.ui_state.input_mode = crate::app::InputMode::EmptyLibraryPrompt;

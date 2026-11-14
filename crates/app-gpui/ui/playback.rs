@@ -35,6 +35,10 @@ impl PlayerView {
     /// Handle an OS media control event (MPRIS play/pause/next/etc.).
     /// Called from the timer loop inside a `state.update()` closure.
     #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn handle_media_control_event(state: &mut AppState, event: &MediaControlEvent) {
         match event {
             MediaControlEvent::Play => {

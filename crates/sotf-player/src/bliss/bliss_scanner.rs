@@ -10,7 +10,7 @@ use std::thread;
 /// Scanner with thread pool for background processing
 #[derive(Debug)]
 pub struct BlissScanner {
-    pub(super) _workers: Vec<thread::JoinHandle<()>>,
+    pub(super) workers: Vec<thread::JoinHandle<()>>,
     pub(super) task_tx: Sender<PathBuf>,
     pub(super) message_rx: Receiver<BlissScanMessage>,
     pub(super) stop_tx: Sender<()>,
@@ -18,6 +18,14 @@ pub struct BlissScanner {
 
 impl BlissScanner {
     /// Create a new scanner with the given number of worker threads
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The constructor owns worker startup and each worker lifecycle"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public worker constructor owns its configuration and clones handles for each worker "
+    )]
     pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
         let (task_tx, task_rx) = channel::unbounded::<PathBuf>();
         let (message_tx, message_rx) = channel::unbounded::<BlissScanMessage>();
@@ -36,23 +44,19 @@ impl BlissScanner {
             let pause_flag = Arc::clone(&pause_flag);
 
             let worker = thread::spawn(move || {
-                log::info!("[Bliss Worker {}] Started", worker_id);
+                log::info!("[Bliss Worker {worker_id}] Started");
 
                 let db = match MusicDatabase::open(&db_path) {
                     Ok(db) => db,
                     Err(e) => {
-                        log::error!(
-                            "[Bliss Worker {}] Failed to open database: {}",
-                            worker_id,
-                            e
-                        );
+                        log::error!("[Bliss Worker {worker_id}] Failed to open database: {e}");
                         return;
                     }
                 };
 
                 'worker_loop: loop {
                     if stop_rx.try_recv().is_ok() {
-                        log::info!("[Bliss Worker {}] Stopping", worker_id);
+                        log::info!("[Bliss Worker {worker_id}] Stopping");
                         break;
                     }
 
@@ -69,12 +73,9 @@ impl BlissScanner {
                     // Block on (task, stop) concurrently — N workers wait
                     // simultaneously without serializing on Mutex<Receiver>.
                     let path = channel::select! {
-                        recv(task_rx) -> msg => match msg {
-                            Ok(path) => path,
-                            Err(_) => {
-                                log::info!("[Bliss Worker {}] Task channel closed", worker_id);
-                                break;
-                            }
+                        recv(task_rx) -> msg => if let Ok(path) = msg { path } else {
+                            log::info!("[Bliss Worker {worker_id}] Task channel closed");
+                            break;
                         },
                         recv(stop_rx) -> _ => {
                             log::info!("[Bliss Worker {}] Stopping (select)", worker_id);
@@ -113,7 +114,7 @@ impl BlissScanner {
                             });
                         }
                         Err(e) => {
-                            let error_msg = e.to_string();
+                            let error_msg = e.clone();
                             log::debug!(
                                 "[Bliss Worker {}] Failed to analyze {}: {}",
                                 worker_id,
@@ -137,17 +138,17 @@ impl BlissScanner {
                 }
 
                 if let Err(e) = db.checkpoint_wal() {
-                    log::warn!("[Bliss Worker {}] WAL checkpoint failed: {}", worker_id, e);
+                    log::warn!("[Bliss Worker {worker_id}] WAL checkpoint failed: {e}");
                 }
 
-                log::info!("[Bliss Worker {}] Finished", worker_id);
+                log::info!("[Bliss Worker {worker_id}] Finished");
             });
 
             workers.push(worker);
         }
 
         Self {
-            _workers: workers,
+            workers,
             task_tx,
             message_rx,
             stop_tx,
@@ -155,19 +156,23 @@ impl BlissScanner {
     }
 
     /// Queue a file for analysis
+    ///
+    /// # Errors
+    /// Returns an error if the scan is already running or its database cannot be opened.
     pub fn queue(&self, path: PathBuf) -> Result<(), channel::SendError<PathBuf>> {
         self.task_tx.send(path)
     }
 
     /// Get a clone of the message receiver for progress updates.
     /// crossbeam Receivers are `Sync` and cloneable.
+    #[must_use]
     pub fn messages(&self) -> Receiver<BlissScanMessage> {
         self.message_rx.clone()
     }
 
     /// Signal all workers to stop
     pub fn stop(&self) {
-        for _ in 0..self._workers.len() {
+        for _ in 0..self.workers.len() {
             let _ = self.stop_tx.send(());
         }
     }

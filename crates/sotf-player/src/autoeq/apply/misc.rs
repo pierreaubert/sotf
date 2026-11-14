@@ -13,6 +13,7 @@ use sotf_audio::plugins::{PluginSettings, PluginType};
 /// `"broadband"` (see `roomeq_workflow::spectral_align::create_alignment_plugins`),
 /// and other stages (`cea2034`, `user_preference`, `channel_matching`) are
 /// not user-editable and are filtered out.
+#[must_use]
 pub fn classify_channel_eq_filters(
     channel_dsp: &ChannelDspChain,
 ) -> (Vec<EQFilter>, Vec<EQFilter>) {
@@ -82,10 +83,7 @@ pub fn upsert_named_room_eq_plugins(
         && let Some(p) = graph.get_plugin_mut(existing_idx)
     {
         p.name = Some("Room EQ".to_string());
-        log::info!(
-            "Adopted pre-existing unnamed EQ at index {} as 'Room EQ'",
-            existing_idx
-        );
+        log::info!("Adopted pre-existing unnamed EQ at index {existing_idx} as 'Room EQ'");
     }
 
     // Step 2: name-keyed upsert helper. Tracks new nodes by stable
@@ -96,7 +94,7 @@ pub fn upsert_named_room_eq_plugins(
             if let Some(p) = graph.get_plugin_mut(idx) {
                 p.settings = settings;
                 p.name = Some(name.to_string());
-                log::info!("Updated existing '{}' EQ at index {}", name, idx);
+                log::info!("Updated existing '{name}' EQ at index {idx}");
             }
             return;
         }
@@ -108,15 +106,10 @@ pub fn upsert_named_room_eq_plugins(
                     node.plugin.settings = settings;
                     node.plugin.name = Some(name.to_string());
                 }
-                log::info!(
-                    "Inserted '{}' EQ at linear index {} (node {:?})",
-                    name,
-                    insert_idx,
-                    node_id
-                );
+                log::info!("Inserted '{name}' EQ at linear index {insert_idx} (node {node_id:?})");
             }
             Err(e) => {
-                log::error!("Failed to insert '{}' EQ: {}", name, e);
+                log::error!("Failed to insert '{name}' EQ: {e}");
             }
         }
     };

@@ -29,6 +29,10 @@ pub(super) fn calculate_plot_width() -> f32 {
 }
 
 /// Convert frequency (Hz) to x pixel position
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
@@ -38,13 +42,17 @@ pub(super) fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
 
 /// Convert x pixel position to frequency (Hz)
 pub(super) fn x_to_freq(x: f32, plot_width: f32) -> f64 {
-    let t = ((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0) as f64;
+    let t = f64::from(((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0));
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
     (log_min + t * (log_max - log_min)).exp()
 }
 
 /// Convert level (dB) to y pixel position
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn level_to_y(level_db: f64) -> f32 {
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
     let t = (MAX_DB - level_db) / (MAX_DB - MIN_DB);
@@ -54,6 +62,6 @@ pub(super) fn level_to_y(level_db: f64) -> f32 {
 /// Convert y pixel position to level (dB)
 pub(super) fn y_to_level(y: f32) -> f64 {
     let plot_height = CHART_HEIGHT - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
-    let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
+    let t = f64::from(((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0));
     MAX_DB - t * (MAX_DB - MIN_DB)
 }

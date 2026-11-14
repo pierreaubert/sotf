@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 /// Album info for the DLNA server.
+#[derive(Debug)]
 pub struct MediaAlbum {
     pub id: String,
     pub title: String,
@@ -10,6 +11,7 @@ pub struct MediaAlbum {
 }
 
 /// Track info for the DLNA server.
+#[derive(Debug)]
 pub struct MediaTrack {
     pub id: String,
     pub album_id: String,
@@ -28,6 +30,7 @@ pub struct MediaTrack {
 }
 
 /// Resolved metadata for a `/media/{id}` request.
+#[derive(Debug)]
 pub struct MediaSource {
     /// Filesystem path to the audio file.
     pub path: PathBuf,

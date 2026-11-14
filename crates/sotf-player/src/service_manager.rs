@@ -282,6 +282,12 @@ impl Default for ServiceManager {
     }
 }
 
+impl std::fmt::Debug for ServiceManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServiceManager").finish_non_exhaustive()
+    }
+}
+
 impl ServiceManager {
     /// A manager with the production credential loader/persister. Services
     /// are not contacted until the first [`Self::resolve`] call.
@@ -309,6 +315,9 @@ impl ServiceManager {
 
     /// Resolve a service stream into something the engine can decode
     /// directly (a URL or a PCM stream).
+    ///
+    /// # Errors
+    /// Returns an error if the service is unavailable, authentication fails, or the stream cannot be resolved.
     pub fn resolve(
         &mut self,
         service: ServiceId,
@@ -329,7 +338,7 @@ impl ServiceManager {
         match state.service.start_stream(track_id, state.quality) {
             Ok(result) => Ok(map_service_stream_result(result)),
             Err(auth @ ServiceError::AuthError(_)) => {
-                self.refresh_tidal_once_and_retry(track_id, auth)
+                self.refresh_tidal_once_and_retry(track_id, &auth)
             }
             Err(e) => Err(ServiceManagerError::Service(format!(
                 "Tidal stream request failed: {e}"
@@ -346,7 +355,7 @@ impl ServiceManager {
     fn refresh_tidal_once_and_retry(
         &mut self,
         track_id: &str,
-        first_error: ServiceError,
+        first_error: &ServiceError,
     ) -> Result<ResolvedServiceStream, ServiceManagerError> {
         let Some(state) = self.tidal.as_mut() else {
             return Err(ServiceManagerError::Service(
@@ -383,6 +392,10 @@ impl ServiceManager {
     }
 
     #[cfg(not(feature = "tidal"))]
+    #[expect(
+        clippy::unused_self,
+        reason = "The disabled-service stub preserves the enabled implementation method signature"
+    )]
     fn resolve_tidal(
         &mut self,
         _track_id: &str,
@@ -406,6 +419,10 @@ impl ServiceManager {
     }
 
     #[cfg(not(feature = "spotify"))]
+    #[expect(
+        clippy::unused_self,
+        reason = "The disabled-service stub preserves the enabled implementation method signature"
+    )]
     fn resolve_spotify(
         &mut self,
         _track_id: &str,
@@ -686,6 +703,9 @@ pub fn reset_service_sessions() {
 /// resolver contract requires. The engine additionally wraps resolvers in
 /// its own `catch_unwind`; the one here keeps the legacy
 /// `resolve_service_stream_from_env` path panic-free too.
+///
+/// # Errors
+/// Returns an error if the service is unavailable, authentication fails, or the stream cannot be resolved.
 pub fn resolve_service_stream(
     service: ServiceId,
     track_id: &str,

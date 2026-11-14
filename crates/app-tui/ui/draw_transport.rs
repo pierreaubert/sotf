@@ -1,5 +1,14 @@
-use super::*;
+use super::{App, Block, BorderType, Borders, Frame, Line, Paragraph, Rect, Span, Style};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -78,7 +87,7 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
         0.0
     };
 
-    let mut spans = vec![Span::styled(format!("{} ", buttons), button_style)];
+    let mut spans = vec![Span::styled(format!("{buttons} "), button_style)];
 
     if waveform_width > 0 {
         if let Some(wf) = waveform {
@@ -90,7 +99,7 @@ pub(crate) fn draw_transport(f: &mut Frame, area: Rect, app: &App) {
                 let start = i * wf.len() / waveform_width;
                 let end = ((i + 1) * wf.len() / waveform_width).min(wf.len());
                 let avg = if end > start {
-                    wf[start..end].iter().map(|&s| s as u32).sum::<u32>() / (end - start) as u32
+                    wf[start..end].iter().map(|&s| u32::from(s)).sum::<u32>() / (end - start) as u32
                 } else {
                     0
                 };

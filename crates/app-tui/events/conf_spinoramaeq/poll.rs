@@ -25,9 +25,8 @@ pub fn poll_spinorama_speaker_load(app: &mut App) -> bool {
     if !app.spinorama_eq.model.loading_speakers {
         return false;
     }
-    let result_slot = SPEAKERS_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(SPEAKERS_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
     if let Ok(mut guard) = result_slot.lock()
         && let Some(result) = guard.take()
     {
@@ -56,12 +55,9 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
         return false;
     }
 
-    let result_slot = OPT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    let progress_slot = OPT_PROGRESS
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot = std::sync::Arc::clone(OPT_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
+    let progress_slot =
+        std::sync::Arc::clone(OPT_PROGRESS.get_or_init(|| Arc::new(Mutex::new(None))));
 
     if let Ok(mut guard) = result_slot.lock()
         && let Some(result) = guard.take()
@@ -80,11 +76,26 @@ pub fn poll_spinorama_optimization(app: &mut App) -> bool {
                         db_gain: b.db_gain,
                     })
                     .collect();
-                app.spinorama_eq.model.curve_frequencies = r.frequencies.clone();
-                app.spinorama_eq.model.curve_input = r.input_curve.clone();
-                app.spinorama_eq.model.curve_target = r.target_curve.clone();
-                app.spinorama_eq.model.curve_corrected = r.corrected_curve.clone();
-                app.spinorama_eq.model.curve_filter_response = r.filter_response.clone();
+                app.spinorama_eq
+                    .model
+                    .curve_frequencies
+                    .clone_from(&r.frequencies);
+                app.spinorama_eq
+                    .model
+                    .curve_input
+                    .clone_from(&r.input_curve);
+                app.spinorama_eq
+                    .model
+                    .curve_target
+                    .clone_from(&r.target_curve);
+                app.spinorama_eq
+                    .model
+                    .curve_corrected
+                    .clone_from(&r.corrected_curve);
+                app.spinorama_eq
+                    .model
+                    .curve_filter_response
+                    .clone_from(&r.filter_response);
                 // Keep the progress-based loss_history (which includes scores)
                 // Only override if empty (e.g. if the callback wasn't called)
                 if app.spinorama_eq.model.progress_history.is_empty() {

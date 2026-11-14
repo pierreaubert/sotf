@@ -1,3 +1,5 @@
+const MAX_LINES: usize = 2_000;
+
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom, Write};
@@ -35,6 +37,7 @@ pub struct ServerTargetConfig {
 }
 
 impl ServerTargetConfig {
+    #[must_use]
     pub fn new(executable: PathBuf) -> Self {
         Self {
             executable,
@@ -87,6 +90,7 @@ pub struct ServerTarget {
 }
 
 impl ServerTarget {
+    #[must_use]
     pub fn new(config: ServerTargetConfig) -> Self {
         Self {
             config,
@@ -115,7 +119,7 @@ impl ServerTarget {
             .ok_or_else(|| TargetError::Protocol("server target is not launched".into()))
     }
 
-    fn write_config(&self, qa_dir: &Path, endpoints: ServerEndpoints) -> Result<(), TargetError> {
+    fn write_config(qa_dir: &Path, endpoints: ServerEndpoints) -> Result<(), TargetError> {
         let config = json!({
             "mpd": {
                 "enabled": true,
@@ -273,7 +277,7 @@ impl ServerTarget {
     fn process_observation(&mut self) -> ProcessObservation {
         let observation = match self.child.as_mut() {
             Some(child) => match child.try_wait() {
-                Ok(Some(status)) => process_from_status(child.id(), &status),
+                Ok(Some(status)) => process_from_status(child.id(), status),
                 Ok(None) => ProcessObservation {
                     pid: Some(child.id()),
                     alive: true,
@@ -301,7 +305,6 @@ impl ServerTarget {
         if let Some(path) = self.stderr_path.clone() {
             lines.extend(read_appended(&path, &mut self.stderr_offset));
         }
-        const MAX_LINES: usize = 2_000;
         if lines.len() > MAX_LINES {
             lines.drain(..lines.len() - MAX_LINES);
         }
@@ -350,7 +353,7 @@ impl FuzzTarget for ServerTarget {
         };
         self.endpoints = Some(endpoints);
         self.run_dir = Some(context.run_dir.to_owned());
-        self.write_config(&qa_dir, endpoints)?;
+        Self::write_config(&qa_dir, endpoints)?;
 
         let stdout_path = log_dir.join("stdout.log");
         let stderr_path = log_dir.join("stderr.log");
@@ -587,7 +590,7 @@ impl FuzzTarget for ServerTarget {
             let deadline = Instant::now() + Duration::from_secs(5);
             while Instant::now() < deadline {
                 if let Some(status) = child.try_wait()? {
-                    self.last_process = process_from_status(pid, &status);
+                    self.last_process = process_from_status(pid, status);
                     return Ok(());
                 }
                 thread::sleep(Duration::from_millis(25));
@@ -595,7 +598,7 @@ impl FuzzTarget for ServerTarget {
             child.kill()?;
         }
         let status = child.wait()?;
-        self.last_process = process_from_status(pid, &status);
+        self.last_process = process_from_status(pid, status);
         Ok(())
     }
 }
@@ -759,7 +762,7 @@ fn read_appended(path: &Path, offset: &mut u64) -> Vec<String> {
         .collect()
 }
 
-fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
+fn process_from_status(pid: u32, status: ExitStatus) -> ProcessObservation {
     ProcessObservation {
         pid: Some(pid),
         alive: false,
@@ -769,13 +772,13 @@ fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
 }
 
 #[cfg(unix)]
-fn status_signal(status: &ExitStatus) -> Option<String> {
+fn status_signal(status: ExitStatus) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
     status.signal().map(|signal| format!("signal {signal}"))
 }
 
 #[cfg(not(unix))]
-fn status_signal(_status: &ExitStatus) -> Option<String> {
+fn status_signal(_status: ExitStatus) -> Option<String> {
     None
 }
 
@@ -857,5 +860,14 @@ mod tests {
         let response = b"HTTP/1.1 200 OK\r\nContent-Length: 11\r\n\r\n{\"ok\":true}";
         assert_eq!(parse_http_status(response), Some(200));
         assert_eq!(response_json_body(response), Some(json!({"ok": true})));
+    }
+}
+
+impl std::fmt::Debug for ServerTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ServerTarget")
+            .field("revision", &self.revision)
+            .field("request_count", &self.request_count)
+            .finish_non_exhaustive()
     }
 }

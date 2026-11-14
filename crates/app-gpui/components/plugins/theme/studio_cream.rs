@@ -7,6 +7,10 @@ use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
 use gpui_audio_kit::audio_design_tokens::AudioDesignTokens;
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+)]
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {
         r: ((hex >> 16) & 0xff) as f32 / 255.0,
@@ -16,34 +20,35 @@ const fn rgba(hex: u32, alpha: f32) -> Rgba {
     }
 }
 
+#[must_use]
 pub fn theme() -> PluginTheme {
     PluginTheme {
         // Surfaces — warm cream paper
-        chassis_bg_top: rgba(0xf5efe2, 1.0),
-        chassis_bg_bottom: rgba(0xeae3d2, 1.0),
-        chassis_border: rgba(0xd0c8b3, 1.0),
-        panel_bg: rgba(0xfaf5e9, 1.0),
-        panel_recess: rgba(0xe6dec7, 1.0),
-        section_divider: rgba(0xd9d1be, 1.0),
-        corner_bracket: rgba(0xb5ad94, 0.7),
+        chassis_bg_top: rgba(0x00f5_efe2, 1.0),
+        chassis_bg_bottom: rgba(0x00ea_e3d2, 1.0),
+        chassis_border: rgba(0x00d0_c8b3, 1.0),
+        panel_bg: rgba(0x00fa_f5e9, 1.0),
+        panel_recess: rgba(0x00e6_dec7, 1.0),
+        section_divider: rgba(0x00d9_d1be, 1.0),
+        corner_bracket: rgba(0x00b5_ad94, 0.7),
 
         // Ink — espresso brown scale
-        ink_hi: rgba(0x2a2620, 1.0),
-        ink: rgba(0x4a4239, 1.0),
-        ink_mid: rgba(0x7c7263, 1.0),
-        ink_low: rgba(0x6b6257, 1.0),
-        ink_faint: rgba(0x7c7263, 1.0),
+        ink_hi: rgba(0x002a_2620, 1.0),
+        ink: rgba(0x004a_4239, 1.0),
+        ink_mid: rgba(0x007c_7263, 1.0),
+        ink_low: rgba(0x006b_6257, 1.0),
+        ink_faint: rgba(0x007c_7263, 1.0),
 
         // Accent — terracotta tomato
-        accent: rgba(0xc94a32, 1.0),
-        accent_bright: rgba(0xe65b3f, 1.0),
-        accent_glow: rgba(0xc94a32, 0.18),
-        accent_arc: rgba(0xc94a32, 1.0),
-        accent_track: rgba(0xc94a32, 0.10),
+        accent: rgba(0x00c9_4a32, 1.0),
+        accent_bright: rgba(0x00e6_5b3f, 1.0),
+        accent_glow: rgba(0x00c9_4a32, 0.18),
+        accent_arc: rgba(0x00c9_4a32, 1.0),
+        accent_track: rgba(0x00c9_4a32, 0.10),
 
         // LED — soft viridian
-        led_active: rgba(0x4a8c5e, 1.0),
-        led_glow: rgba(0x4a8c5e, 0.40),
+        led_active: rgba(0x004a_8c5e, 1.0),
+        led_glow: rgba(0x004a_8c5e, 0.40),
 
         // Typography — serif heart, traditional sans + slab mono
         font_display: SharedString::from("Fraunces"),

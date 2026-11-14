@@ -20,7 +20,9 @@ pub(super) async fn stream_file_range(
     let mut remaining = len;
     let mut buf = vec![0u8; 64 * 1024];
     while remaining > 0 {
-        let to_read = remaining.min(buf.len() as u64) as usize;
+        let to_read = usize::try_from(remaining)
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
         let n = file
             .read(&mut buf[..to_read])
             .await
@@ -55,21 +57,24 @@ pub(super) fn parse_range_header(
     };
 
     let (start, end) = if start_raw.is_empty() {
-        let suffix_len = end_raw.parse::<u64>().map_err(|_| ())?;
+        let suffix_len = end_raw.parse::<u64>().map_err(|_error| ())?;
         if suffix_len == 0 {
             return Err(());
         }
         let start = file_len.saturating_sub(suffix_len);
         (start, file_len - 1)
     } else {
-        let start = start_raw.parse::<u64>().map_err(|_| ())?;
+        let start = start_raw.parse::<u64>().map_err(|_error| ())?;
         if start >= file_len {
             return Err(());
         }
         let end = if end_raw.is_empty() {
             file_len - 1
         } else {
-            end_raw.parse::<u64>().map_err(|_| ())?.min(file_len - 1)
+            end_raw
+                .parse::<u64>()
+                .map_err(|_error| ())?
+                .min(file_len - 1)
         };
         if end < start {
             return Err(());

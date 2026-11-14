@@ -46,7 +46,7 @@ impl App {
         #[cfg(feature = "dev-api")]
         {
             self.federation.qa_tidal_login_sender = None;
-        }
+        };
 
         if self.federation.tidal_login.is_some() {
             self.ui_state.toast_message = Some(ToastMessage::warning(
@@ -96,7 +96,7 @@ impl App {
         #[cfg(feature = "dev-api")]
         {
             self.federation.qa_tidal_login_sender = None;
-        }
+        };
         self.federation.service_login_error = None;
     }
 
@@ -548,6 +548,10 @@ fn tidal_device_login_worker(
 /// runtime. The browser is opened from here via the `open_url` callback; the
 /// URL is also forwarded to the UI as a clickable fallback.
 #[cfg(feature = "spotify")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The login worker owns its cache path and result sender for its lifecycle"
+)]
 fn spotify_oauth_login_worker(
     cache_dir: std::path::PathBuf,
     tx: std::sync::mpsc::Sender<SpotifyLoginMessage>,

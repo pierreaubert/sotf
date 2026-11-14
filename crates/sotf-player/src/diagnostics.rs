@@ -68,8 +68,7 @@ impl DiagnosticsBundle {
             library_scan: scan_summary,
             plugin_graph: player
                 .current_plugins()
-                .map(PluginGraphSummary::from)
-                .unwrap_or_default(),
+                .map_or_default(PluginGraphSummary::from),
             recent_errors: recent_errors
                 .into_iter()
                 .map(|e| redact_string(&e))
@@ -79,6 +78,9 @@ impl DiagnosticsBundle {
     }
 
     /// Serialize the bundle to a JSON string with all string fields redacted.
+    ///
+    /// # Errors
+    /// Returns an error if the redacted diagnostic report cannot be serialized or written.
     pub fn to_redacted_json(&self) -> Result<String, serde_json::Error> {
         let mut value = serde_json::to_value(self)?;
         redact_value(&mut value);
@@ -86,6 +88,9 @@ impl DiagnosticsBundle {
     }
 
     /// Serialize the bundle to a redacted JSON file.
+    ///
+    /// # Errors
+    /// Returns an error if the redacted diagnostic report cannot be serialized or written.
     pub fn write_redacted_json(&self, path: &Path) -> Result<(), DiagnosticsError> {
         let json = self.to_redacted_json()?;
         std::fs::write(path, json)?;
@@ -129,6 +134,7 @@ pub struct EngineStateSummary {
 }
 
 impl EngineStateSummary {
+    #[must_use]
     pub fn from_engine_and_playback(
         engine: &AudioEngineState,
         playback: &crate::player::PlaybackState,
@@ -146,12 +152,12 @@ impl EngineStateSummary {
                 playback.sample_rate
             },
             output_sample_rate: if engine.playback_effective_sample_rate > 0 {
-                Some(engine.playback_effective_sample_rate as u32)
+                u32::try_from(engine.playback_effective_sample_rate).ok()
             } else {
                 Some(engine.sample_rate)
             },
             output_channels: Some(engine.num_channels),
-            volume: engine.volume as f64,
+            volume: f64::from(engine.volume),
             muted: engine.muted,
             underruns: engine.underruns,
             last_error: engine.last_error.as_ref().map(|e| redact_string(e)),
@@ -180,6 +186,7 @@ impl LibraryScanSummary {
     }
 
     /// Mark the summary as having an active scan.
+    #[must_use]
     pub fn with_in_progress(mut self, in_progress: bool) -> Self {
         self.scan_in_progress = in_progress;
         self
@@ -296,16 +303,16 @@ impl std::fmt::Display for NoAudioReason {
             Self::QueueEmpty => write!(f, "Playback queue is empty."),
             Self::EngineNotRunning => write!(f, "Audio engine is not running."),
             Self::OutputDeviceUnavailable { name } => {
-                write!(f, "Selected output device '{}' is unavailable.", name)
+                write!(f, "Selected output device '{name}' is unavailable.")
             }
             Self::OutputDeviceNotSelected => write!(f, "No output device is selected."),
             Self::Muted => write!(f, "Output is muted."),
             Self::VolumeZero => write!(f, "Volume is set to zero."),
             Self::PluginGraphError { node_id, message } => {
-                write!(f, "Plugin graph error at node {}: {}", node_id, message)
+                write!(f, "Plugin graph error at node {node_id}: {message}")
             }
             Self::SourceLoadFailed { reason } => {
-                write!(f, "Source failed to load: {}", reason)
+                write!(f, "Source failed to load: {reason}")
             }
             Self::SystemwideNotInstalled => write!(f, "Systemwide audio is not installed."),
             Self::SystemwideDaemonDisconnected => {
@@ -344,14 +351,12 @@ pub fn diagnose_no_audio(
     }
 
     // 3. No output device selected.
-    let selected_name = device_state.current_device_name.as_deref();
-    if selected_name.is_none() {
+    let Some(selected_name) = device_state.current_device_name.as_deref() else {
         reasons.push(NoAudioReason::OutputDeviceNotSelected);
         return reasons;
-    }
+    };
 
     // 4. Selected device is not in the available device list.
-    let selected_name = selected_name.unwrap();
     let device_available = device_state.devices.iter().any(|d| d.name == selected_name);
     if !device_available {
         reasons.push(NoAudioReason::OutputDeviceUnavailable {
@@ -426,8 +431,7 @@ fn first_plugin_node_with_error(engine_state: &AudioEngineState) -> u64 {
         .isolated_external_plugin_worker_statuses
         .iter()
         .find(|s| s.error.is_some())
-        .map(|s| s.node_id as u64)
-        .unwrap_or(0)
+        .map_or(0, |s| s.node_id as u64)
 }
 
 /// Errors that can occur while producing diagnostics.
@@ -450,6 +454,7 @@ pub enum DiagnosticsError {
 /// - URL query values for sensitive keys (`token`, `secret`, `password`, etc.).
 /// - `Bearer <token>` credentials.
 /// - User home directory prefix (replaced with `~`).
+#[must_use]
 pub fn redact_string(input: &str) -> String {
     let s = redact_full_urls(input);
     let s = redact_url_query_values(&s);
@@ -485,7 +490,7 @@ fn redact_url_query_values(input: &str) -> String {
         if ch == '?' || ch == '&' || ch == '#' {
             output.push(ch);
             // Collect key until '=' or separator.
-            let key_start = chars.peek().map(|(i, _)| *i).unwrap_or(start + 1);
+            let key_start = chars.peek().map_or(start + 1, |(i, _)| *i);
             let mut key_end = key_start;
             let mut found_eq = false;
             while let Some(&(i, c)) = chars.peek() {
@@ -550,8 +555,7 @@ fn redact_inline_secrets(input: &str) -> String {
                         || c == '['
                         || c == '{'
                 })
-                .map(|p| p + 1)
-                .unwrap_or(0);
+                .map_or(0, |p| p + 1);
             let key_start = i + key_start_offset;
             let key = input[key_start..eq_pos].trim().to_lowercase();
             if !key.is_empty() && sensitive.iter().any(|s| key.contains(s)) {
@@ -560,14 +564,14 @@ fn redact_inline_secrets(input: &str) -> String {
                 output.push_str("<redacted>");
                 i = eq_pos + 1;
                 while i < input.len() && !is_inline_value_terminator(input.as_bytes()[i] as char) {
-                    let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+                    let ch_len = input[i..].chars().next().map_or(1, char::len_utf8);
                     i += ch_len;
                 }
                 continue;
             }
         }
         if i < input.len() {
-            let ch_len = input[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
+            let ch_len = input[i..].chars().next().map_or(1, char::len_utf8);
             output.push_str(&input[i..i + ch_len]);
             i += ch_len;
         }
@@ -643,8 +647,7 @@ fn redact_bearer_tokens(input: &str) -> String {
                     || c == ';'
                     || c == ')'
             })
-            .map(|i| token_start + i)
-            .unwrap_or(input.len());
+            .map_or(input.len(), |i| token_start + i);
         pos = token_end;
         search_from = pos;
     }
@@ -670,8 +673,8 @@ fn redact_home_dir(input: &str) -> String {
     // Log text may use either separator regardless of platform (e.g. a
     // Windows path printed with `/`), so match both forms and preserve
     // the separator style that was present.
-    let result = input.replace(&format!("{}/", home_normalized), "~/");
-    let result = result.replace(&format!("{}\\", home_normalized), "~\\");
+    let result = input.replace(&format!("{home_normalized}/"), "~/");
+    let result = result.replace(&format!("{home_normalized}\\"), "~\\");
 
     // Then replace any remaining exact home dir references at word boundaries.
     replace_word_boundary(&result, home_normalized, "~")
@@ -727,7 +730,7 @@ pub fn redact_value(value: &mut serde_json::Value) {
                             }
                             _ => v,
                         };
-                        map.insert(format!("{}_redacted", key), redacted_v);
+                        map.insert(format!("{key}_redacted"), redacted_v);
                     }
                 }
             }

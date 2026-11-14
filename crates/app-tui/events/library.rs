@@ -161,7 +161,7 @@ fn handle_undocumented_command(app: &mut App, key: KeyEvent) -> Option<PlayerCom
                         ) {
                             Ok(()) => {
                                 app.ui.status_message =
-                                    Some(format!("Added '{}' to playlist", album.title))
+                                    Some(format!("Added '{}' to playlist", album.title));
                             }
                             Err(error) => app.ui.status_message = Some(format!("Error: {error}")),
                         }

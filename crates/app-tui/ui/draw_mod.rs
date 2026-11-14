@@ -18,7 +18,7 @@ pub(crate) fn draw_help_box(f: &mut Frame, area: Rect, app: &App, screen: Screen
     let bindings = super::utilities::get_keybindings_for_screen(screen, app.ui.language);
     let help_text = bindings
         .iter()
-        .map(|(key, desc)| format!("{}={}", key, desc))
+        .map(|(key, desc)| format!("{key}={desc}"))
         .collect::<Vec<_>>()
         .join("  |  ");
 
@@ -144,7 +144,7 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
     for (key, description) in keybindings {
         lines.push(Line::from(vec![
             Span::styled(
-                format!("  {:<18}", key),
+                format!("  {key:<18}"),
                 Style::default().fg(app.theme.accent_primary),
             ),
             Span::raw(description),
@@ -159,6 +159,10 @@ pub(crate) fn draw_help_modal(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, inner);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
     let Some(editor) = &app.modal.metadata_editor else {
         return;
@@ -339,8 +343,7 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
                 artist,
                 candidate
                     .year
-                    .map(|year| year.to_string())
-                    .unwrap_or_else(|| crate::tui_text!(app, "unknown"))
+                    .map_or_else(|| crate::tui_text!(app, "unknown"), |year| year.to_string())
             )),
         ]));
     }
@@ -365,6 +368,10 @@ pub(crate) fn draw_metadata_editor_modal(f: &mut Frame, app: &App) {
     );
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
     if let Some(error_msg) = &app.ui.error_message {
         // Create a centered modal (60% width, auto height based on content)
@@ -462,6 +469,10 @@ pub(crate) fn draw_error_modal(f: &mut Frame, app: &App) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_channel_conflict_modal(f: &mut Frame, app: &App) {
     let area = f.area();
     // Dynamic height: 2 (header) + 1 (blank) + conflicts + 1 (blank) + 3 (options) + 1 (blank) + 1 (help) + 3 (border)

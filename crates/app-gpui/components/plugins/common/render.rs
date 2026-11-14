@@ -7,7 +7,10 @@ use crate::components::design::Ds;
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, Div, ElementId, Entity, FocusHandle, FontWeight, MouseButton, ScrollDelta,
+    SharedString, div, px, rems,
+};
 use gpui_audio_kit::PotentiometerSize;
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Slider, SliderSize,
@@ -25,6 +28,10 @@ struct SanitizedControlRange {
     max: f64,
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "Exact parameter choices and changed-value detection preserve control semantics"
+)]
 fn sanitize_audio_control_range(
     label: &str,
     value: f64,
@@ -69,6 +76,7 @@ fn sanitize_audio_control_range(
 ///
 /// When `range_hint` is `Some("0.0 — 100.0")` and the row is selected,
 /// the range is displayed as muted text beneath the value.
+#[must_use]
 pub fn render_param_row(
     d: &Ds,
     name: &str,
@@ -150,6 +158,7 @@ pub fn render_param_row(
 }
 
 /// Render a parameter row with name, value, and optional MIDI assignment badge
+#[must_use]
 pub fn render_param_row_with_midi(
     d: &Ds,
     name: &str,
@@ -234,6 +243,7 @@ pub fn render_param_row_with_midi(
 }
 
 /// Render a small MIDI control badge (e.g., "K1", "F3") next to a parameter name
+#[must_use]
 pub fn render_midi_badge(d: &Ds, assignment: &ParamAssignment, theme: &Theme) -> impl IntoElement {
     let icon = match assignment.control_kind {
         PhysicalControlKind::Fader => "▏",
@@ -273,6 +283,7 @@ pub fn render_midi_badge(d: &Ds, assignment: &ParamAssignment, theme: &Theme) ->
 }
 
 /// Render a MIDI page indicator (e.g., "Page 1/3")
+#[must_use]
 pub fn render_midi_page_indicator(
     d: &Ds,
     current_page: usize,
@@ -296,6 +307,7 @@ pub fn render_midi_page_indicator(
 }
 
 /// Render a section header (with bottom margin - use for bordered sections)
+#[must_use]
 pub fn render_section_header(d: &Ds, title: &str, theme: &Theme) -> impl IntoElement {
     div()
         .text_size(d.text_sm)
@@ -310,6 +322,7 @@ pub fn render_section_header(d: &Ds, title: &str, theme: &Theme) -> impl IntoEle
 /// ```text
 /// DYNAMICS ─────────────────
 /// ```
+#[must_use]
 pub fn render_section_title(d: &Ds, title: &str, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
@@ -327,6 +340,7 @@ pub fn render_section_title(d: &Ds, title: &str, theme: &Theme) -> impl IntoElem
 }
 
 /// Create a new parameter section container with flex column layout
+#[must_use]
 pub fn render_param_section(d: &Ds, theme: &Theme) -> Div {
     div()
         .flex()
@@ -336,6 +350,7 @@ pub fn render_param_section(d: &Ds, theme: &Theme) -> Div {
 }
 
 /// Create a new parameter section container with flex column layout and larger padding
+#[must_use]
 pub fn render_param_section_lg(d: &Ds, theme: &Theme) -> Div {
     div()
         .flex()
@@ -345,6 +360,7 @@ pub fn render_param_section_lg(d: &Ds, theme: &Theme) -> Div {
 }
 
 /// Render keyboard hints for edit mode
+#[must_use]
 pub fn render_edit_hints(d: &Ds, theme: &Theme) -> impl IntoElement {
     div()
         .mt(d.section)
@@ -365,6 +381,7 @@ pub fn render_edit_hints(d: &Ds, theme: &Theme) -> impl IntoElement {
 
 /// Render a toggle button using gpui-ui-kit Toggle component
 /// Uses `Entity<AppState>` for direct state updates
+#[must_use]
 pub fn render_toggle(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -391,7 +408,11 @@ pub fn render_toggle(
 }
 
 /// Render a toggle whose interaction can be disabled by layout metadata.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_toggle_enabled(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -442,6 +463,7 @@ pub fn render_toggle_enabled(
 }
 
 /// Render an unlabeled compact exclusive Off/On control.
+#[must_use]
 pub fn render_toggle_button(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -467,6 +489,7 @@ pub fn render_toggle_button(
 }
 
 /// Render a value with unit and color coding
+#[must_use]
 pub fn render_colored_value(
     d: &Ds,
     value: f64,
@@ -490,11 +513,12 @@ pub fn render_colored_value(
         .text_size(d.text_sm)
         .font_weight(FontWeight::BOLD)
         .text_color(color)
-        .child(format!("{:+.1}{}", value, unit))
+        .child(format!("{value:+.1}{unit}"))
 }
 
 /// Render a vertical slider with label, value, drag support and enhanced visual feedback
 /// Uses `Entity<AppState>` for direct state updates
+#[must_use]
 pub fn render_vertical_slider(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -528,7 +552,11 @@ pub fn render_vertical_slider(
 
 /// Render a vertical slider with custom height
 /// Uses `Entity<AppState>` for direct state updates
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_vertical_slider_sized(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -566,7 +594,11 @@ pub fn render_vertical_slider_sized(
 
 /// Render a vertical slider with tick marks, custom height, and enhanced visual feedback
 /// Uses `Entity<AppState>` for direct state updates
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_vertical_slider_with_ticks(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -601,7 +633,11 @@ pub fn render_vertical_slider_with_ticks(
 }
 
 /// Render a ticked slider whose interaction can be disabled by layout metadata.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_vertical_slider_with_ticks_enabled(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -639,6 +675,7 @@ pub fn render_vertical_slider_with_ticks_enabled(
 }
 
 /// Render a simple transfer curve visualization (input vs output)
+#[must_use]
 pub fn render_transfer_curve(
     d: &Ds,
     threshold_db: f64,
@@ -651,6 +688,7 @@ pub fn render_transfer_curve(
 }
 
 /// Render a transfer curve visualization with custom width
+#[must_use]
 pub fn render_transfer_curve_sized(
     d: &Ds,
     threshold_db: f64,
@@ -677,7 +715,11 @@ pub fn render_transfer_curve_sized(
 /// Uses a custom paint element for smooth curve rendering instead of bars.
 /// When `input_level_db` is provided, draws an animated operating point dot
 /// on the curve.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_transfer_curve_with_level(
     d: &Ds,
     threshold_db: f64,
@@ -740,7 +782,23 @@ pub fn render_transfer_curve_with_level(
 ///
 /// The curve itself is rendered by `TransferCurveElement` and wrapped in
 /// a div with drag event handlers.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn render_interactive_transfer_curve(
     d: &Ds,
     entity: Entity<AppState>,
@@ -794,7 +852,7 @@ pub fn render_interactive_transfer_curve(
                                 param_idx: 0,
                                 start_y,
                                 start_value: threshold_db,
-                                min: start_x as f64,
+                                min: f64::from(start_x),
                                 max: ratio,
                             });
                         });
@@ -823,8 +881,8 @@ pub fn render_interactive_transfer_curve(
                         let dx = current_x - start_x;
 
                         // Vertical drag → threshold (drag up = higher threshold)
-                        let new_threshold =
-                            (start_threshold - dy as f64 * 0.3).clamp(threshold_min, threshold_max);
+                        let new_threshold = (start_threshold - f64::from(dy) * 0.3)
+                            .clamp(threshold_min, threshold_max);
 
                         state
                             .app
@@ -833,7 +891,7 @@ pub fn render_interactive_transfer_curve(
                         // Horizontal drag → ratio (drag right = higher ratio)
                         if !is_limiter {
                             let new_ratio =
-                                (start_ratio + dx as f64 * 0.05).clamp(ratio_min, ratio_max);
+                                (start_ratio + f64::from(dx) * 0.05).clamp(ratio_min, ratio_max);
                             state
                                 .app
                                 .set_plugin_param(plugin_idx, ratio_param_idx, new_ratio);
@@ -860,7 +918,7 @@ pub fn render_interactive_transfer_curve(
                             ScrollDelta::Lines(d) => -(d.y) * 1.0,
                         };
                         let new_threshold =
-                            (threshold_db + delta as f64).clamp(threshold_min, threshold_max);
+                            (threshold_db + f64::from(delta)).clamp(threshold_min, threshold_max);
                         state
                             .app
                             .set_plugin_param(plugin_idx, threshold_param_idx, new_threshold);
@@ -939,6 +997,7 @@ pub fn render_dynamics_layout(
 
 /// Render a rotary knob control using gpui-audio-kit Potentiometer
 /// Uses `Entity<AppState>` for direct state updates
+#[must_use]
 pub fn render_knob(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -971,7 +1030,11 @@ pub fn render_knob(
 }
 
 /// Render a standard-size knob with an explicit interaction state.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_knob_enabled(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1006,6 +1069,7 @@ pub fn render_knob_enabled(
 }
 
 /// Render a rotary knob control with custom size
+#[must_use]
 pub fn render_knob_sized(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1041,7 +1105,11 @@ pub fn render_knob_sized(
 
 /// Render a custom-size knob whose selected exact editor owns a stable focus
 /// handle supplied by the parent view.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_knob_sized_with_focus(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1078,7 +1146,11 @@ pub fn render_knob_sized_with_focus(
 }
 
 /// Render a potentiometer whose interaction can be disabled by layout metadata.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_knob_sized_enabled(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1114,7 +1186,18 @@ pub fn render_knob_sized_enabled(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_knob_sized_enabled_with_focus(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1160,7 +1243,7 @@ fn render_knob_sized_enabled_with_focus(
         .on_change({
             let entity = entity.clone();
             move |value, _, cx| {
-                let value = value as f64;
+                let value = f64::from(value);
                 entity.update(cx, |state, cx| {
                     state
                         .app

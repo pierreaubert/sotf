@@ -2,7 +2,7 @@ use crate::app::i18n::DesktopTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, div, uniform_list};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 use std::sync::Arc;
 

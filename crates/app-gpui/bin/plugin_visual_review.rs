@@ -169,7 +169,9 @@ mod macos {
             "The previous protected import grant was revoked; activate again to restore access."
                 .to_string(),
         );
-        ui.runtime_summary = Some(Default::default());
+        ui.runtime_summary = Some(
+            sotf_audio_player_gpui::app::state::plugin::ExternalPluginRuntimeSummary::default(),
+        );
         Ok(())
     }
 
@@ -227,7 +229,10 @@ mod macos {
         })
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPUI rendering and callback interfaces accept the complete UI context"
+    )]
     fn seed_comparison_session(state: &mut AppState, results: bool) -> Result<()> {
         use sotf_audio_player::controllers::ab_test_session::{
             AbTestSession, ChainSnapshot, LevelMatchMeasurement, LevelMatchMetric,
@@ -291,6 +296,14 @@ mod macos {
         zoom: f32,
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme mapping or ordered application startup and capture workflow together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Viewport dimensions are represented by GPUI floating-point pixel coordinates"
+    )]
     fn capture_viewport(
         cx: &mut VisualTestAppContext,
         capture: ViewportCapture<'_>,
@@ -338,10 +351,10 @@ mod macos {
                         state.app.ui_state.current_screen = Screen::SettingsDetail;
                     } else if matches!(surface, ReviewSurface::Comparison | ReviewSurface::ComparisonListen | ReviewSurface::ComparisonResults | ReviewSurface::Training) {
                         state.app.ui_state.current_screen = Screen::ListeningTest;
-                        state.app.plugin_state.listening_test_state.surface = if !matches!(surface, ReviewSurface::Training) {
-                            sotf_audio_player_gpui::app::state::plugin::EarTrainingSurface::BlindComparison
-                        } else {
+                        state.app.plugin_state.listening_test_state.surface = if matches!(surface, ReviewSurface::Training) {
                             sotf_audio_player_gpui::app::state::plugin::EarTrainingSurface::EqBands
+                        } else {
+                            sotf_audio_player_gpui::app::state::plugin::EarTrainingSurface::BlindComparison
                         };
                         state.app.tutorial.listening_guide_open = false;
                         if matches!(surface, ReviewSurface::ComparisonListen | ReviewSurface::ComparisonResults) {
@@ -411,7 +424,7 @@ mod macos {
                     .to_bridge_snapshot();
                 let blocking = snapshot
                     .blocking_entries()
-                    .map(|node| node.element_key())
+                    .map(gpui_ui_kit::AccessibilityBridgeNode::element_key)
                     .collect::<Vec<_>>();
                 if !blocking.is_empty() {
                     return Err(anyhow!(
@@ -591,7 +604,7 @@ mod macos {
             }))?,
         )
         .with_context(|| format!("writing {}", manifest_path.display()))?;
-        cx.update(|cx| cx.shutdown());
+        cx.update(gpui::App::shutdown);
         cx.run_until_parked();
         drop(cx);
         drop(ref_counts);

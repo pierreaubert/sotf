@@ -18,12 +18,14 @@ pub struct EqPreset {
 
 impl EqPreset {
     /// Returns true if this is the "Custom" preset (no fixed params).
+    #[must_use]
     pub fn is_custom(&self) -> bool {
         self.params.is_none()
     }
 
     /// Apply this preset's parameters onto a serializable config.
     /// Returns None for the Custom preset (caller keeps existing params).
+    #[must_use]
     pub fn apply(&self) -> Option<OptimizationParamsSerializable> {
         let p = self.params.as_ref()?;
         let base = match self.workflow {
@@ -51,6 +53,7 @@ impl EqPreset {
 }
 
 /// Get all presets for a given workflow.
+#[must_use]
 pub fn presets_for(workflow: EqWorkflow) -> &'static [EqPreset] {
     match workflow {
         EqWorkflow::Headphone => HEADPHONE_PRESETS,
@@ -60,6 +63,7 @@ pub fn presets_for(workflow: EqWorkflow) -> &'static [EqPreset] {
 }
 
 /// Find a preset by id within a workflow.
+#[must_use]
 pub fn find_preset(workflow: EqWorkflow, id: &str) -> Option<&'static EqPreset> {
     presets_for(workflow).iter().find(|p| p.id == id)
 }

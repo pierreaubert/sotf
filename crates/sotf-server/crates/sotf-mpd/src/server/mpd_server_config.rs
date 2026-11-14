@@ -10,12 +10,24 @@ pub struct MpdServerConfig {
     pub tls_enabled: bool,
     /// Authentication mode (default: Certificate/mTLS).
     pub auth_mode: MpdAuthMode,
-    /// Optional password for MPD authentication (only used when auth_mode == Password).
+    /// Optional password for MPD authentication (only used when `auth_mode` == Password).
     pub password: Option<String>,
-    /// Trusted client certificate fingerprints (only used when auth_mode == Certificate).
+    /// Trusted client certificate fingerprints (only used when `auth_mode` == Certificate).
     #[cfg(feature = "tls")]
     pub trusted_client_fingerprints:
         std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+}
+
+impl std::fmt::Debug for MpdServerConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MpdServerConfig")
+            .field("bind_address", &self.bind_address)
+            .field("port", &self.port)
+            .field("tls_enabled", &self.tls_enabled)
+            .field("auth_mode", &self.auth_mode)
+            .field("password_configured", &self.password.is_some())
+            .finish_non_exhaustive()
+    }
 }
 
 impl Default for MpdServerConfig {

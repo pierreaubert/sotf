@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-/// Speaker layouts supported by the RoomEQ beginner workflow.
+/// Speaker layouts supported by the `RoomEQ` beginner workflow.
 ///
 /// The optimizer and graph builder continue to own DSP routing. This type only
 /// makes the beginner workflow's channel-role contract explicit.
@@ -26,6 +26,7 @@ pub enum RoomEqEasyLayout {
 impl RoomEqEasyLayout {
     pub const ALL: [Self; 3] = [Self::Stereo20, Self::Stereo21, Self::Surround51];
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             Self::Stereo20 => "2.0",
@@ -34,6 +35,7 @@ impl RoomEqEasyLayout {
         }
     }
 
+    #[must_use]
     pub fn expected_roles(self) -> &'static [&'static str] {
         match self {
             Self::Stereo20 => &["FL", "FR"],
@@ -42,6 +44,7 @@ impl RoomEqEasyLayout {
         }
     }
 
+    #[must_use]
     pub fn uses_bass_management(self) -> bool {
         !matches!(self, Self::Stereo20)
     }
@@ -56,6 +59,7 @@ impl RoomEqEasyLayout {
         }
     }
 
+    #[must_use]
     pub fn next(self) -> Self {
         match self {
             Self::Stereo20 => Self::Stereo21,
@@ -105,7 +109,7 @@ fn canonical_easy_channel_role(name: &str) -> Option<&'static str> {
     let normalized = name
         .trim()
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .flat_map(char::to_uppercase)
         .collect::<String>();
 
@@ -120,6 +124,10 @@ fn canonical_easy_channel_role(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Validate room eq easy layout.
+///
+/// # Errors
+/// Returns an error if the speaker layout is unsupported by the easy-mode configuration.
 pub fn validate_room_eq_easy_layout<I, S>(
     layout: RoomEqEasyLayout,
     channel_names: I,
@@ -169,6 +177,9 @@ where
 }
 
 /// Validate and apply a beginner layout and preset atomically.
+///
+/// # Errors
+/// Returns an error if the speaker layout is unsupported by the easy-mode configuration.
 pub fn apply_room_eq_easy_layout<I, S>(
     layout: RoomEqEasyLayout,
     channel_names: I,
@@ -277,6 +288,7 @@ pub enum RoomEqOptimizationMode {
 }
 
 impl RoomEqOptimizationMode {
+    #[must_use]
     pub fn all() -> &'static [RoomEqOptimizationMode] {
         &[
             RoomEqOptimizationMode::Iir,
@@ -286,6 +298,7 @@ impl RoomEqOptimizationMode {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             RoomEqOptimizationMode::Iir => "IIR (Parametric EQ)",
@@ -295,6 +308,7 @@ impl RoomEqOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn to_code(&self) -> &'static str {
         match self {
             RoomEqOptimizationMode::Iir => "iir",
@@ -304,6 +318,7 @@ impl RoomEqOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn from_code(code: &str) -> Self {
         match code {
             "fir" => RoomEqOptimizationMode::Fir,
@@ -313,6 +328,7 @@ impl RoomEqOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             RoomEqOptimizationMode::Iir => "Uses standard biquad filters. Low latency, efficient.",
@@ -328,15 +344,17 @@ impl RoomEqOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn maturity(&self) -> ReleaseChannel {
         match self {
             RoomEqOptimizationMode::Iir => ReleaseChannel::Beta,
-            RoomEqOptimizationMode::Fir => ReleaseChannel::Alpha,
-            RoomEqOptimizationMode::Mixed => ReleaseChannel::Alpha,
-            RoomEqOptimizationMode::MixedPhase => ReleaseChannel::Alpha,
+            RoomEqOptimizationMode::Fir
+            | RoomEqOptimizationMode::Mixed
+            | RoomEqOptimizationMode::MixedPhase => ReleaseChannel::Alpha,
         }
     }
 
+    #[must_use]
     pub fn available(channel: ReleaseChannel) -> Vec<Self> {
         Self::all()
             .iter()

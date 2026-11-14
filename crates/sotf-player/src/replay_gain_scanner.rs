@@ -12,10 +12,10 @@ mod types;
 pub use replay_gain_scan_manager::*;
 pub use types::*;
 
-/// ReplayGain scanner with thread pool for background processing
+/// `ReplayGain` scanner with thread pool for background processing
 #[derive(Debug)]
 pub struct ReplayGainScanner {
-    _workers: Vec<thread::JoinHandle<()>>,
+    workers: Vec<thread::JoinHandle<()>>,
     task_tx: Sender<PathBuf>,
     message_rx: Receiver<ScanMessage>,
     stop_tx: Sender<()>,
@@ -23,6 +23,14 @@ pub struct ReplayGainScanner {
 
 impl ReplayGainScanner {
     /// Create a new scanner with the given number of worker threads
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The constructor owns worker startup and each worker lifecycle"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public worker constructor owns its configuration and clones handles for each worker "
+    )]
     pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
         let (task_tx, task_rx) = channel::unbounded::<PathBuf>();
         let (message_tx, message_rx) = channel::unbounded::<ScanMessage>();
@@ -40,17 +48,13 @@ impl ReplayGainScanner {
             let pause_flag = Arc::clone(&pause_flag);
 
             let worker = thread::spawn(move || {
-                log::info!("[ReplayGain Worker {}] Started", worker_id);
+                log::info!("[ReplayGain Worker {worker_id}] Started");
 
                 // Open database once per worker thread (not per track)
                 let db = match MusicDatabase::open(&db_path) {
                     Ok(db) => db,
                     Err(e) => {
-                        log::error!(
-                            "[ReplayGain Worker {}] Failed to open database: {}",
-                            worker_id,
-                            e
-                        );
+                        log::error!("[ReplayGain Worker {worker_id}] Failed to open database: {e}");
                         return;
                     }
                 };
@@ -58,7 +62,7 @@ impl ReplayGainScanner {
                 'worker_loop: loop {
                     // Check if we should stop
                     if stop_rx.try_recv().is_ok() {
-                        log::info!("[ReplayGain Worker {}] Stopping", worker_id);
+                        log::info!("[ReplayGain Worker {worker_id}] Stopping");
                         break;
                     }
 
@@ -76,12 +80,9 @@ impl ReplayGainScanner {
                     // Block on (task, stop) concurrently — N workers wait at
                     // once without serializing through a Mutex<Receiver>.
                     let path = channel::select! {
-                        recv(task_rx) -> msg => match msg {
-                            Ok(path) => path,
-                            Err(_) => {
-                                log::info!("[ReplayGain Worker {}] Task channel closed", worker_id);
-                                break;
-                            }
+                        recv(task_rx) -> msg => if let Ok(path) = msg { path } else {
+                            log::info!("[ReplayGain Worker {worker_id}] Task channel closed");
+                            break;
                         },
                         recv(stop_rx) -> _ => {
                             log::info!("[ReplayGain Worker {}] Stopping (select)", worker_id);
@@ -117,7 +118,7 @@ impl ReplayGainScanner {
                                 );
                                 let _ = message_tx.send(ScanMessage::Error {
                                     path: path.clone(),
-                                    error: format!("Database error: {}", e),
+                                    error: format!("Database error: {e}"),
                                 });
                                 continue;
                             }
@@ -162,21 +163,17 @@ impl ReplayGainScanner {
 
                 // Checkpoint WAL before exiting to prevent unbounded growth
                 if let Err(e) = db.checkpoint_wal() {
-                    log::warn!(
-                        "[ReplayGain Worker {}] WAL checkpoint failed: {}",
-                        worker_id,
-                        e
-                    );
+                    log::warn!("[ReplayGain Worker {worker_id}] WAL checkpoint failed: {e}");
                 }
 
-                log::info!("[ReplayGain Worker {}] Finished", worker_id);
+                log::info!("[ReplayGain Worker {worker_id}] Finished");
             });
 
             workers.push(worker);
         }
 
         Self {
-            _workers: workers,
+            workers,
             task_tx,
             message_rx,
             stop_tx,
@@ -196,6 +193,7 @@ impl ReplayGainScanner {
     }
 
     /// Try to receive a message (non-blocking)
+    #[must_use]
     pub fn try_recv(&self) -> Option<ScanMessage> {
         self.message_rx.try_recv().ok()
     }
@@ -203,7 +201,7 @@ impl ReplayGainScanner {
     /// Stop all workers
     pub fn stop(&self) {
         // Send stop signal to all workers
-        for _ in 0..self._workers.len() {
+        for _ in 0..self.workers.len() {
             let _ = self.stop_tx.send(());
         }
     }

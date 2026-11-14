@@ -1,9 +1,9 @@
-//! Hosts the shared AutoEQ report without duplicating dashboard rendering.
+//! Hosts the shared `AutoEQ` report without duplicating dashboard rendering.
 //!
 //! Reports are served from an ephemeral loopback origin so embedded browsers
 //! can load the self-contained WASM assets offline. The server owns only one
 //! immutable document, never exposes arbitrary filesystem paths, and stops
-//! when its owner is dropped. Generation delegates to AutoEQ's bundled producer.
+//! when its owner is dropped. Generation delegates to `AutoEQ`'s bundled producer.
 
 // Rust guideline compliant 2026-02-21
 
@@ -83,11 +83,12 @@ pub fn parse_message(message: &str, report_id: &str) -> anyhow::Result<ReportAct
 }
 
 /// Build the viewer bridge without recomputing or rendering report content.
+#[must_use]
 pub fn initialization_script(report_id: &str, dark: bool) -> String {
-    let identity = serde_json::to_string(report_id).expect("A string is always JSON serializable");
+    let identity = serde_json::Value::String(report_id.to_owned()).to_string();
     let theme = if dark { "dark" } else { "light" };
     format!(
-        r#"(() => {{
+        r"(() => {{
       const reportId = {identity};
       window.sotfReportHost = Object.freeze({{
         version: 1, reportId,
@@ -97,7 +98,7 @@ pub fn initialization_script(report_id: &str, dark: bool) -> String {
         document.documentElement.style.colorScheme = '{theme}';
         window.dispatchEvent(new CustomEvent('sotf-report-host-ready', {{detail: {{version: 1, reportId, theme: '{theme}'}}}}));
       }});
-    }})();"#
+    }})();"
     )
 }
 

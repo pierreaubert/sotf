@@ -21,6 +21,14 @@ use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_ui_environment(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -120,6 +128,10 @@ pub(super) fn qa_ui_environment(
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_seed(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -164,6 +176,10 @@ pub(super) fn qa_seed(
 /// Register a remote SOTF server via the same manual-add path the settings
 /// UI uses (persist store + token, select server, start event stream), then
 /// probe it so scenarios can wait for reachability.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_remote_server(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -201,6 +217,10 @@ pub(super) fn qa_remote_server(
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_playback_output(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -219,6 +239,14 @@ pub(super) fn qa_playback_output(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_recording_fake_capture(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -226,7 +254,7 @@ pub(super) fn qa_recording_fake_capture(
 ) -> Result<()> {
     let channels = payload
         .get("channels")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| anyhow!("fake recording payload needs `channels` integer"))?;
     let channels = usize::try_from(channels)
         .ok()
@@ -234,7 +262,7 @@ pub(super) fn qa_recording_fake_capture(
         .ok_or_else(|| anyhow!("fake recording `channels` must be between 1 and 32"))?;
     let points = payload
         .get("points")
-        .and_then(|value| value.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .ok_or_else(|| anyhow!("fake recording payload needs `points` integer"))?;
     let points = usize::try_from(points)
         .ok()
@@ -369,6 +397,14 @@ pub(super) fn qa_recording_fake_capture(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_headphone_discovery_fixture(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -516,6 +552,14 @@ pub(super) fn qa_headphone_discovery_fixture(
     })
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_spinorama_discovery_fixture(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -755,6 +799,10 @@ pub(super) fn qa_spinorama_discovery_fixture(
     })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_room_eq(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -774,19 +822,19 @@ pub(super) fn qa_room_eq(
 
     let start = payload
         .get("start")
-        .and_then(|v| v.as_bool())
+        .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
     let num_filters = payload
         .get("num_filters")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v.clamp(1, 32) as usize);
     let max_iter = payload
         .get("max_iter")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v.clamp(1, 50_000) as usize);
     let population = payload
         .get("population")
-        .and_then(|v| v.as_u64())
+        .and_then(serde_json::Value::as_u64)
         .map(|v| v.clamp(1, 10_000) as usize);
     let target = payload
         .get("target")
@@ -869,9 +917,13 @@ pub(super) fn qa_room_eq(
     })
 }
 
-/// Arrange a hermetic recording fixture for RoomEQ UI E2E without loading
-/// measurements into the RoomEQ model. The subsequent visible Load from
+/// Arrange a hermetic recording fixture for `RoomEQ` UI E2E without loading
+/// measurements into the `RoomEQ` model. The subsequent visible Load from
 /// recording action owns the production conversion and wizard transition.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_room_eq_ui_fixture(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -903,7 +955,8 @@ pub(super) fn qa_room_eq_ui_fixture(
         return with_player_view(window, cx, |view, cx| {
             view.state.update(cx, |state, cx| {
                 state.app.measurement_state.recording_state = recording_state;
-                state.app.measurement_state.room_eq_state = Default::default();
+                state.app.measurement_state.room_eq_state =
+                    crate::app::types::room_eq::RoomEqState::default();
                 state.app.ui_state.current_screen = crate::app::Screen::RoomEq;
                 state.app.ui_state.input_mode = crate::app::InputMode::Normal;
                 cx.notify();
@@ -927,7 +980,8 @@ pub(super) fn qa_room_eq_ui_fixture(
     with_player_view(window, cx, |view, cx| {
         view.state.update(cx, |state, cx| {
             state.app.measurement_state.recording_state = recording_state;
-            state.app.measurement_state.room_eq_state = Default::default();
+            state.app.measurement_state.room_eq_state =
+                crate::app::types::room_eq::RoomEqState::default();
             state.app.ui_state.current_screen = crate::app::Screen::RoomEq;
             state.app.ui_state.input_mode = crate::app::InputMode::Normal;
             cx.notify();
@@ -966,6 +1020,10 @@ fn qa_done_recording(
     channel
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn qa_room_eq_export_json(
     payload: serde_json::Value,
     window: AnyWindowHandle,
@@ -974,8 +1032,7 @@ pub(super) fn qa_room_eq_export_json(
     let path = payload
         .get("path")
         .and_then(|v| v.as_str())
-        .map(PathBuf::from)
-        .unwrap_or_else(default_room_eq_export_path);
+        .map_or_else(default_room_eq_export_path, PathBuf::from);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

@@ -6,7 +6,7 @@ use crate::app::state::{
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Empty, div, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, HStack, StackSpacing, Text, VStack};
 use sotf_audio_player::{
     PluginSettings, UpmixerAmbientAnalysisSettings, UpmixerBypassSettings,
@@ -75,6 +75,10 @@ pub(super) fn render_eq(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerVi
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_compressor(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -133,8 +137,7 @@ pub(super) fn render_compressor(
     });
     let reduction = data
         .and_then(|data| data.gain_reduction_db.iter().copied().reduce(f32::max))
-        .map(f64::from)
-        .unwrap_or(0.0);
+        .map_or(0.0, f64::from);
     let feedback = div()
         .flex()
         .flex_col()
@@ -241,6 +244,10 @@ pub(super) fn render_compressor(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_external(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -365,7 +372,7 @@ pub(super) fn render_external(
             ))
             .color(theme.text_muted),
         )
-        .when_some(worker_status_view, |stack, status| stack.child(status))
+        .when_some(worker_status_view, gpui_ui_kit::VStack::child)
         .build();
     let instance_id = ctx.plugin_instance_id;
     let advanced_open = instance_id.is_some()
@@ -421,7 +428,7 @@ pub(super) fn render_external(
     VStack::new()
         .spacing(StackSpacing::Xs)
         .child(Text::label(descriptor.name.clone()).color(theme.text_primary))
-        .when_some(parameters, |stack, controls| stack.child(controls))
+        .when_some(parameters, gpui_ui_kit::VStack::child)
         .when_some(load_error, |stack, error| {
             stack.child(
                 div()
@@ -492,6 +499,10 @@ pub(super) fn render_dynamic_eq(
 /// Learn/Clear profile actions. This view only adds the monitoring surface
 /// that cannot be represented by `PluginLayout`: compact per-band noise-floor
 /// and SNR strips plus profile/reduction status.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_denoiser(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -652,6 +663,10 @@ fn render_denoiser_band_row(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_main_controls(
     ctx: &CustomViewRenderContext,
     d: &Ds,
@@ -831,6 +846,19 @@ pub(super) fn render_binaural(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn render_linear_phase_eq(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -849,7 +877,6 @@ pub(super) fn render_linear_phase_eq(
     {
         let fir_len_samples: usize = match *fir_length as usize {
             0 => 1024,
-            1 => 2048,
             2 => 4096,
             3 => 8192,
             _ => 2048,
@@ -1006,6 +1033,10 @@ pub(super) fn render_spectrum(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_upmixer(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -1177,8 +1208,9 @@ pub(super) fn render_mute_solo(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
-    let d = Ds::from_cx(cx);
     use super::super::ui_mute_solo;
+
+    let d = Ds::from_cx(cx);
     if let PluginSettings::ChannelMuteSolo {
         dim_gain_db,
         fade_ms,
@@ -1223,8 +1255,9 @@ pub(super) fn render_matrix(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
-    let d = Ds::from_cx(cx);
     use super::super::ui_matrix;
+
+    let d = Ds::from_cx(cx);
     if let PluginSettings::Matrix {
         input_channels,
         output_channels,
@@ -1291,6 +1324,7 @@ pub(super) fn render_matrix(
 /// Resolve a system monitor index from its snapshot identity.
 ///
 /// User-added monitors use their own selected-node telemetry and engine index.
+#[must_use]
 pub fn loudness_control_engine_index(
     graph: &sotf_audio_player::PluginGraph,
     displayed_instance_id: Option<u64>,
@@ -1354,15 +1388,20 @@ pub(super) fn render_loudness(
     .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_mb_compressor(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    use super::super::ui_mb_compressor;
+
     let d = Ds::from_cx(cx);
     let text = crate::app::i18n::PluginCommonTranslations::for_language(
         ctx.entity.read(cx).app.ui_state.language,
     );
-    use super::super::ui_mb_compressor;
     if let PluginSettings::MultibandCompressor {
         num_bands,
         crossover_preset,
@@ -1392,25 +1431,23 @@ pub(super) fn render_mb_compressor(
             .checked_sub(1)
             .and_then(|index| bands.get(index))
             .and_then(|band| band.range_db)
-            .map(f64::from)
-            .unwrap_or(*range_db);
+            .map_or(*range_db, f64::from);
         let band_hold_ms = selected_band_idx
             .checked_sub(1)
             .and_then(|index| bands.get(index))
             .and_then(|band| band.hold_ms)
-            .map(f64::from)
-            .unwrap_or(*hold_ms);
+            .map_or(*hold_ms, f64::from);
         let (dt, dr, da, drl, dk, dm, dam, dact, ds, db) = if let Some(b) = selected_band_idx
             .checked_sub(1)
             .and_then(|index| bands.get(index))
         {
             (
-                b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                b.makeup_gain_db as f64,
+                b.threshold_db.map_or(*threshold_db, f64::from),
+                b.ratio.map_or(*ratio, f64::from),
+                b.attack_ms.map_or(*attack_ms, f64::from),
+                b.release_ms.map_or(*release_ms, f64::from),
+                b.knee_db.map_or(*knee_db, f64::from),
+                f64::from(b.makeup_gain_db),
                 b.auto_makeup,
                 b.active,
                 b.solo,
@@ -1479,15 +1516,20 @@ pub(super) fn render_mb_compressor(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(super) fn render_mb_expander(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
 ) -> AnyElement {
+    use super::super::ui_mb_expander;
+
     let d = Ds::from_cx(cx);
     let text = crate::app::i18n::PluginCommonTranslations::for_language(
         ctx.entity.read(cx).app.ui_state.language,
     );
-    use super::super::ui_mb_expander;
     if let PluginSettings::MultibandExpander {
         num_bands,
         crossover_preset,
@@ -1517,14 +1559,14 @@ pub(super) fn render_mb_expander(
                 .and_then(|index| bands.get(index))
         {
             (
-                b.threshold_db.map(|v| v as f64).unwrap_or(*threshold_db),
-                b.ratio.map(|v| v as f64).unwrap_or(*ratio),
-                b.attack_ms.map(|v| v as f64).unwrap_or(*attack_ms),
-                b.release_ms.map(|v| v as f64).unwrap_or(*release_ms),
-                b.range_db.map(|v| v as f64).unwrap_or(*range_db),
-                b.knee_db.map(|v| v as f64).unwrap_or(*knee_db),
-                b.hysteresis_db.map(|v| v as f64).unwrap_or(*hysteresis_db),
-                b.hold_ms.map(|v| v as f64).unwrap_or(*hold_ms),
+                b.threshold_db.map_or(*threshold_db, f64::from),
+                b.ratio.map_or(*ratio, f64::from),
+                b.attack_ms.map_or(*attack_ms, f64::from),
+                b.release_ms.map_or(*release_ms, f64::from),
+                b.range_db.map_or(*range_db, f64::from),
+                b.knee_db.map_or(*knee_db, f64::from),
+                b.hysteresis_db.map_or(*hysteresis_db, f64::from),
+                b.hold_ms.map_or(*hold_ms, f64::from),
                 b.auto_makeup,
                 b.active,
                 b.solo,
@@ -1571,7 +1613,7 @@ pub(super) fn render_mb_expander(
                 bypass: db,
                 mix: *mix,
                 link_channels: *link_channels,
-                detection_mode: if detection_mode == "RMS" { 1 } else { 0 },
+                detection_mode: i32::from(detection_mode == "RMS"),
                 lookahead_ms: *lookahead_ms,
                 is_editing: ctx.is_editing,
                 selected_param: ctx.selected_param,

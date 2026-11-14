@@ -11,7 +11,6 @@
 //!   sotf-bliss-scan \<file\>       # Analyze a single file
 
 use clap::Parser;
-use crossbeam::channel::TryRecvError;
 use sotf_audio_player::bliss::{BlissScanManager, BlissScanMessage, analyze_file};
 use sotf_audio_player::config;
 use sotf_audio_player::database::MusicDatabase;
@@ -65,7 +64,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Batch analysis from database
     let db_path = config::get_music_db_path().ok_or("Could not determine database path")?;
 
-    log::info!("Opening database at: {:?}", db_path);
+    log::info!("Opening database at: {}", db_path.display());
     let db = MusicDatabase::open(&db_path)?;
 
     // Get tracks to analyze
@@ -86,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Determine number of worker threads
     let num_threads = args.jobs.unwrap_or_else(|| num_cpus::get().clamp(1, 4));
-    println!("Using {} worker threads", num_threads);
+    println!("Using {num_threads} worker threads");
 
     // Start scanning
     let mut manager = BlissScanManager::new();
@@ -117,31 +116,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         {
             let rx = scanner.messages();
 
-            loop {
-                match rx.try_recv() {
-                    Ok(msg) => match msg {
-                        BlissScanMessage::Started { path } => {
-                            println!("\n  Analyzing: {}", path.display());
-                        }
-                        BlissScanMessage::Success {
-                            path,
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    BlissScanMessage::Started { path } => {
+                        println!("\n  Analyzing: {}", path.display());
+                    }
+                    BlissScanMessage::Success {
+                        path,
+                        tempo,
+                        features_count,
+                    } => {
+                        println!(
+                            "\n  Done: {} (tempo={:.1} BPM, {} features)",
+                            path.display(),
                             tempo,
-                            features_count,
-                        } => {
-                            println!(
-                                "\n  Done: {} (tempo={:.1} BPM, {} features)",
-                                path.display(),
-                                tempo,
-                                features_count
-                            );
-                        }
-                        BlissScanMessage::Error { path, error } => {
-                            println!("\n  Error: {} - {}", path.display(), error);
-                        }
-                        BlissScanMessage::Complete { .. } => {}
-                    },
-                    Err(TryRecvError::Empty) => break,
-                    Err(TryRecvError::Disconnected) => break,
+                            features_count
+                        );
+                    }
+                    BlissScanMessage::Error { path, error } => {
+                        println!("\n  Error: {} - {}", path.display(), error);
+                    }
+                    BlissScanMessage::Complete { .. } => {}
                 }
             }
         }
@@ -162,8 +157,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Failed: {}", manager.failed);
 
     if manager.total > 0 {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Scan timing reports an approximate per-track average"
+        )]
         let avg_time = elapsed.as_secs_f64() / manager.total as f64;
-        println!("  Average: {:.2}s per track", avg_time);
+        println!("  Average: {avg_time:.2}s per track");
     }
 
     Ok(())
@@ -200,7 +199,7 @@ fn analyze_single_file(path: &Path, verbose: bool) -> Result<(), Box<dyn std::er
             analysis.features.len()
         );
         for (i, f) in analysis.features.iter().enumerate() {
-            println!("    [{:2}] {:.6}", i, f);
+            println!("    [{i:2}] {f:.6}");
         }
     }
 

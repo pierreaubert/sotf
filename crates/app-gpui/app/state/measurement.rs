@@ -35,6 +35,7 @@ pub struct MeasurementState {
 }
 
 impl MeasurementState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -44,7 +45,7 @@ impl MeasurementState {
         #[cfg(not(target_os = "ios"))]
         {
             self.multi_capture = MultiCaptureState::default();
-        }
+        };
         self.measure_state = None;
         self.recording_state = RecordingState::default();
         self.room_eq_state = RoomEqState::default();
@@ -54,6 +55,7 @@ impl MeasurementState {
     }
 
     /// Check if a generic measurement is in progress
+    #[must_use]
     pub fn has_active_measurement(&self) -> bool {
         self.measure_state.is_some()
     }
@@ -83,6 +85,7 @@ impl MeasurementState {
     }
 
     /// Check if room EQ has been applied
+    #[must_use]
     pub fn has_room_eq_applied(&self) -> bool {
         self.room_eq_applied_plugins.is_some()
     }

@@ -36,6 +36,7 @@ pub struct ToastMessage {
 }
 
 impl ToastMessage {
+    #[must_use]
     pub fn new(message: String, toast_type: ToastType) -> Self {
         Self {
             message,
@@ -80,11 +81,13 @@ impl ToastMessage {
     }
 
     /// Attach an action button (e.g., "Retry", "Details", "Undo").
+    #[must_use]
     pub fn with_action(mut self, action: ToastAction) -> Self {
         self.action = action.into();
         self
     }
 
+    #[must_use]
     pub fn should_dismiss(&self) -> bool {
         if let Some(dismiss_ms) = self.auto_dismiss_ms {
             self.created_at.elapsed() > Duration::from_millis(dismiss_ms)

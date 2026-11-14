@@ -32,6 +32,7 @@ pub enum TransportState {
 }
 
 impl TransportState {
+    #[must_use]
     pub fn as_str(&self) -> &str {
         match self {
             TransportState::Stopped => "STOPPED",
@@ -44,6 +45,7 @@ impl TransportState {
 }
 
 /// Status snapshot for DLNA transport info.
+#[derive(Debug)]
 pub struct RendererStatus {
     pub state: TransportState,
     pub current_uri: Option<String>,
@@ -56,21 +58,57 @@ pub struct RendererStatus {
 
 /// Trait for bridging DLNA renderer actions to the SOTF player.
 pub trait RendererAdapter: Send + Sync + 'static {
+    /// Apply the requested media URI.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn set_uri(&self, uri: &str, metadata: &str) -> Result<(), String>;
+    /// Apply the requested playback start.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn play(&self) -> Result<(), String>;
+    /// Apply the requested playback pause.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn pause(&self) -> Result<(), String>;
+    /// Apply the requested playback stop.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn stop(&self) -> Result<(), String>;
+    /// Apply the requested seek.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn seek(&self, target_secs: f64) -> Result<(), String>;
+    /// Apply the requested volume change.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn set_volume(&self, volume: u8) -> Result<(), String>;
+    /// Apply the requested mute change.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the request.
     fn set_mute(&self, muted: bool) -> Result<(), String>;
     fn status(&self) -> RendererStatus;
 }
 
-/// DLNA MediaRenderer — listens for SOAP control requests and responds.
+/// DLNA `MediaRenderer` — listens for SOAP control requests and responds.
 pub struct DlnaRenderer {
     device: DlnaDevice,
     adapter: Arc<dyn RendererAdapter>,
     events: GenaRegistry,
+}
+
+impl std::fmt::Debug for DlnaRenderer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DlnaRenderer")
+            .field("device", &self.device)
+            .finish_non_exhaustive()
+    }
 }
 
 impl DlnaRenderer {
@@ -83,6 +121,13 @@ impl DlnaRenderer {
     }
 
     /// Run the renderer (HTTP control server + SSDP announcements).
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP listener cannot bind or initialize.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Renderer startup wires HTTP, SSDP, eventing and cancellation lifetimes together"
+    )]
     pub async fn run(
         &self,
         local_ip: Ipv4Addr,
@@ -90,7 +135,7 @@ impl DlnaRenderer {
     ) -> Result<(), String> {
         let listener = TcpListener::bind(format!("0.0.0.0:{}", self.device.http_port))
             .await
-            .map_err(|e| format!("Failed to bind renderer HTTP: {}", e))?;
+            .map_err(|e| format!("Failed to bind renderer HTTP: {e}"))?;
 
         // Send initial SSDP alive
         ssdp::send_alive(&self.device, local_ip).await?;
@@ -100,7 +145,7 @@ impl DlnaRenderer {
         let ssdp_cancel = cancel.clone();
         tokio::spawn(async move {
             if let Err(e) = ssdp::listen_and_respond(ssdp_device, local_ip, ssdp_cancel).await {
-                log::warn!("[DLNA Renderer] SSDP error: {}", e);
+                log::warn!("[DLNA Renderer] SSDP error: {e}");
             }
         });
 
@@ -119,17 +164,17 @@ impl DlnaRenderer {
                         if event_registry.has_subscribers("/AVTransport/event")
                             && avtransport != last_avtransport
                         {
-                            last_avtransport = avtransport.clone();
-                            event_registry.notify("/AVTransport/event", avtransport);
+                            last_avtransport.clone_from(&avtransport);
+                            event_registry.notify("/AVTransport/event", &avtransport);
                         }
                         let rendering_control = rendering_control_event_body(&event_adapter);
                         if event_registry.has_subscribers("/RenderingControl/event")
                             && rendering_control != last_rendering_control
                         {
-                            last_rendering_control = rendering_control.clone();
+                            last_rendering_control.clone_from(&rendering_control);
                             event_registry.notify(
                                 "/RenderingControl/event",
-                                rendering_control,
+                                &rendering_control,
                             );
                         }
                     }
@@ -146,14 +191,14 @@ impl DlnaRenderer {
         let alive_device = self.device.clone();
         let alive_cancel = cancel.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(900));
+            let mut interval = tokio::time::interval(std::time::Duration::from_mins(15));
             loop {
                 interval.tick().await;
                 if *alive_cancel.borrow() {
                     break;
                 }
                 if let Err(e) = ssdp::send_alive(&alive_device, local_ip).await {
-                    log::warn!("[DLNA Renderer] SSDP alive failed: {}", e);
+                    log::warn!("[DLNA Renderer] SSDP alive failed: {e}");
                 }
             }
         });
@@ -185,17 +230,17 @@ impl DlnaRenderer {
                                 )
                                 .await
                                 {
-                                    log::debug!("[DLNA Renderer] HTTP error: {}", e);
+                                    log::debug!("[DLNA Renderer] HTTP error: {e}");
                                 }
                             });
                         }
-                        Err(e) => log::warn!("[DLNA Renderer] Accept error: {}", e),
+                        Err(e) => log::warn!("[DLNA Renderer] Accept error: {e}"),
                     }
                 }
                 _ = cancel_rx.changed() => {
                     if *cancel_rx.borrow() {
                         // Send byebye before shutting down
-                        ssdp::send_byebye(&self.device).await.ok();
+                        let _ = ssdp::send_byebye(&self.device).await;
                         break;
                     }
                 }
@@ -381,8 +426,8 @@ fn handle_avtransport_action(body: &str, adapter: &Arc<dyn RendererAdapter>) -> 
             return http_soap_response(&resp);
         }
         _ => {
-            log::debug!("[DLNA Renderer] Unknown AVTransport action: {}", action);
-            return http_soap_fault(401, &format!("Invalid Action: {}", action));
+            log::debug!("[DLNA Renderer] Unknown AVTransport action: {action}");
+            return http_soap_fault(401, &format!("Invalid Action: {action}"));
         }
     };
 
@@ -451,11 +496,8 @@ fn handle_rendering_control_action(body: &str, adapter: &Arc<dyn RendererAdapter
             http_soap_response(&resp)
         }
         _ => {
-            log::debug!(
-                "[DLNA Renderer] Unknown RenderingControl action: {}",
-                action
-            );
-            http_soap_fault(401, &format!("Invalid Action: {}", action))
+            log::debug!("[DLNA Renderer] Unknown RenderingControl action: {action}");
+            http_soap_fault(401, &format!("Invalid Action: {action}"))
         }
     }
 }
@@ -479,7 +521,7 @@ fn handle_connection_manager_action(body: &str) -> String {
                 xml::soap_response(&action, CM_SERVICE, &[("Source", ""), ("Sink", protocols)]);
             http_soap_response(&resp)
         }
-        _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
+        _ => http_soap_fault(401, &format!("Invalid Action: {action}")),
     }
 }
 
@@ -503,10 +545,14 @@ fn http_response_with_headers(
         503 => "Service Unavailable",
         _ => "Unknown",
     };
-    let extra_headers = extra_headers
-        .iter()
-        .map(|(name, value)| format!("{}: {}\r\n", name, value))
-        .collect::<String>();
+    let mut header_lines = String::new();
+    for (name, value) in extra_headers {
+        header_lines.push_str(name);
+        header_lines.push_str(": ");
+        header_lines.push_str(value);
+        header_lines.push_str("\r\n");
+    }
+    let extra_headers = header_lines;
     format!(
         "HTTP/1.1 {} {}\r\n\
          Content-Type: {}\r\n\
@@ -548,11 +594,16 @@ fn parse_duration_to_secs(s: &str) -> f64 {
 
 /// Format seconds as "HH:MM:SS".
 fn format_duration(secs: f64) -> String {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Protocol timestamps use saturated nonnegative whole seconds"
+    )]
     let total = secs as u64;
     let h = total / 3600;
     let m = (total % 3600) / 60;
     let s = total % 60;
-    format!("{:02}:{:02}:{:02}", h, m, s)
+    format!("{h:02}:{m:02}:{s:02}")
 }
 
 #[cfg(test)]

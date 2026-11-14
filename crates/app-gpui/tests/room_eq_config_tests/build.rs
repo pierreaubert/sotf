@@ -7,7 +7,10 @@ use sotf_audio_player_gpui::{ChannelDspChain, ChannelOptResult, DspChainOutput, 
 /// Simulate the channel-to-filter mapping logic from apply_room_eq_to_player.
 /// Given channel names in output order and a DSP output HashMap, returns
 /// the ordered list of channel names as they would be mapped to audio indices.
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "UI hooks and feature-gated state are retained across application configurations"
+)]
 fn build_per_channel_order(
     channel_result_names: &[&str],
     dsp_channels: &std::collections::HashMap<String, ChannelDspChain>,

@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 /// Compute aggregate stats (track count, album count) for a directory and all its descendants.
-/// Iterates the stats_map in memory — no disk I/O.
+/// Iterates the `stats_map` in memory — no disk I/O.
 ///
 /// Album count is the size of the union of per-directory album-key sets, so an
 /// album whose tracks span several subdirectories is counted once, not once

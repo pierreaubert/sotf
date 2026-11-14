@@ -36,7 +36,11 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, AppContext, Bounds, ElementId, Empty, Entity, FocusHandle, FontWeight, Hsla,
+    MouseButton, MouseDownEvent, Pixels, Rgba, ScrollDelta, SharedString, Window, deferred, div,
+    px, rems,
+};
 use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, NumberInput,
@@ -159,7 +163,10 @@ fn format_eq_frequency_label(freq: f64) -> String {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 fn apply_eq_chart_nudge(
     entity: &Entity<AppState>,
     plugin_idx: usize,
@@ -194,6 +201,10 @@ fn apply_eq_chart_nudge(
     });
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn eq_frequency_points() -> &'static [f64] {
     static EQ_FREQUENCY_POINTS: OnceLock<Vec<f64>> = OnceLock::new();
     EQ_FREQUENCY_POINTS
@@ -214,6 +225,10 @@ fn eq_frequency_points() -> &'static [f64] {
         .as_slice()
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(crate) fn render_analog_eq_graph(
     settings: &PluginSettings,
     spectrum: Option<std::sync::Arc<[f32]>>,
@@ -232,10 +247,10 @@ pub(crate) fn render_analog_eq_graph(
     let points = eq_frequency_points();
     let curve = eq_curve_cache()
         .lock()
-        .unwrap_or_else(|err| err.into_inner())
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
         .get_or_build(&filters, points, sample_rate);
     let (min_db, max_db) = calculate_dynamic_y_range(&filters);
-    let transparent = gpui::rgba(0x00000000);
+    let transparent = gpui::rgba(0x0000_0000);
     let chart_theme = ChartTheme {
         plot_background: transparent,
         grid_color: theme.plugin_palette.eq_curve_colors.grid,
@@ -260,14 +275,13 @@ pub(crate) fn render_analog_eq_graph(
             .band_colors
             .get(index)
             .copied()
-            .map(rgba_to_u32)
-            .unwrap_or(BAND_COLOR_FALLBACK);
+            .map_or(BAND_COLOR_FALLBACK, rgba_to_u32);
         chart = chart.add_series(response, Option::<String>::None, color, 1.5, 0.7);
     }
-    let plot = chart
-        .build()
-        .map(|chart| chart.into_any_element())
-        .unwrap_or_else(|_| div().into_any_element());
+    let plot = chart.build().map_or_else(
+        |_| div().into_any_element(),
+        gpui::IntoElement::into_any_element,
+    );
     let colors = &theme.plugin_palette.spectrum_colors;
     div()
         .relative()
@@ -381,8 +395,7 @@ fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
             filter.order,
             filter
                 .lambda
-                .map(|lambda| lambda.to_bits().to_string())
-                .unwrap_or_default()
+                .map_or_default(|lambda| lambda.to_bits().to_string())
         );
         for section in &filter.kautz_sections {
             let _ = write!(
@@ -397,6 +410,11 @@ fn eq_curve_signature(filters: &[EQFilter], freq_count: usize) -> String {
     signature
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 fn render_band_frequency_guide(
     freq: f64,
     gain_db: f64,
@@ -486,7 +504,18 @@ fn render_band_frequency_guide(
     vec![guide, label]
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_eq_channel_segment(
     d: &Ds,
     entity: Entity<AppState>,
@@ -622,7 +651,22 @@ where
         .child(label)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Exact parameter choices and changed-value detection preserve control semantics"
+)]
 pub(crate) fn render_eq_property_strip(
     d: &Ds,
     entity: Entity<AppState>,
@@ -715,7 +759,7 @@ pub(crate) fn render_eq_property_strip(
                                 solo_entity.update(cx, |state, cx| {
                                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                                     if let Err(e) = state.app.toggle_eq_band_solo(band_idx) {
-                                        log::warn!("Failed to toggle EQ band solo: {}", e);
+                                        log::warn!("Failed to toggle EQ band solo: {e}");
                                     }
                                     cx.notify();
                                 });
@@ -732,7 +776,7 @@ pub(crate) fn render_eq_property_strip(
                                 mute_entity.update(cx, |state, cx| {
                                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                                     if let Err(e) = state.app.toggle_eq_band_mute(band_idx) {
-                                        log::warn!("Failed to toggle EQ band mute: {}", e);
+                                        log::warn!("Failed to toggle EQ band mute: {e}");
                                     }
                                     cx.notify();
                                 });
@@ -866,7 +910,6 @@ pub(crate) fn render_eq_property_strip(
                     ))
                 })
                 .when(!is_lp_mode, |col| {
-                    use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
                     let mut row = div()
                         .flex()
                         .flex_wrap()
@@ -921,6 +964,29 @@ pub(crate) fn render_eq_property_strip(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[cfg_attr(
+    not(feature = "dev-api"),
+    expect(
+        unused_variables,
+        reason = "Selector identifiers are read by optional developer instrumentation"
+    )
+)]
 fn render_eq_band_popup(
     d: &Ds,
     entity: Entity<AppState>,
@@ -977,14 +1043,14 @@ fn render_eq_band_popup(
                             .app
                             .plugin_state
                             .plugin_ui_state
-                            .eq_filter_type_highlight = Some(index.saturating_sub(1))
+                            .eq_filter_type_highlight = Some(index.saturating_sub(1));
                     }
                     "down" => {
                         state
                             .app
                             .plugin_state
                             .plugin_ui_state
-                            .eq_filter_type_highlight = Some((index + 1).min(7))
+                            .eq_filter_type_highlight = Some((index + 1).min(7));
                     }
                     "enter" | "space" => {
                         state.app.set_plugin_param(
@@ -1256,7 +1322,7 @@ fn render_eq_band_popup(
             ),
         ]
         .map(|(label, value, unit, local)| {
-            let _param_idx = base_param_idx + local;
+            let param_idx = base_param_idx + local;
             let display = match unit {
                 "Hz" if value >= 1000.0 => format!("{:.1} kHz", value / 1000.0),
                 "Hz" => format!("{value:.0} Hz"),
@@ -1267,7 +1333,7 @@ fn render_eq_band_popup(
                 .size(gpui_ui_kit::TextSize::Xs)
                 .color(theme.text_primary);
             #[cfg(feature = "dev-api")]
-            let value = value.dev_track(format!("eq.summary.{_param_idx}"));
+            let value = value.dev_track(format!("eq.summary.{param_idx}"));
             div()
                 .flex_1()
                 .min_w_0()
@@ -1288,7 +1354,7 @@ fn render_eq_band_popup(
                 .flex()
                 .flex_col()
                 .gap(d.grid)
-                .when(details_open, |rail| rail.flex_row())
+                .when(details_open, gpui::Styled::flex_row)
                 .child(solo)
                 .child(mute)
                 .child(remove),
@@ -1407,6 +1473,13 @@ where
     button.into_any_element()
 }
 
+#[cfg_attr(
+    not(feature = "dev-api"),
+    expect(
+        unused_variables,
+        reason = "Selector identifiers are read by optional developer instrumentation"
+    )
+)]
 pub(super) fn render_eq_band_action_button(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1415,7 +1488,7 @@ pub(super) fn render_eq_band_action_button(
     enabled: bool,
     theme: &Theme,
 ) -> AnyElement {
-    let (id, _selector, variant) = match action {
+    let (id, selector, variant) = match action {
         EqBandAction::Add => ("eq-add-band", "eq.band.add", ButtonVariant::Primary),
         EqBandAction::Remove(_) => (
             "eq-remove-band",
@@ -1475,7 +1548,7 @@ pub(super) fn render_eq_band_action_button(
             });
         });
     #[cfg(feature = "dev-api")]
-    let button = button.dev_track(_selector);
+    let button = button.dev_track(selector);
     button.into_any_element()
 }
 
@@ -1556,7 +1629,23 @@ pub(crate) fn render_eq_visualization(
 }
 
 /// Render EQ frequency response using gpui-px with a caller-supplied height.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub(crate) fn render_eq_visualization_sized(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -1579,7 +1668,7 @@ pub(crate) fn render_eq_visualization_sized(
     let curve_data = {
         let mut cache = eq_curve_cache()
             .lock()
-            .unwrap_or_else(|err| err.into_inner());
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         cache.get_or_build(filters, freq_points, sample_rate)
     };
 
@@ -1625,8 +1714,7 @@ pub(crate) fn render_eq_visualization_sized(
             .plugin_palette
             .band_colors
             .get(i)
-            .map(|c| rgba_to_u32(*c))
-            .unwrap_or(BAND_COLOR_FALLBACK);
+            .map_or(BAND_COLOR_FALLBACK, |c| rgba_to_u32(*c));
         let is_selected = selected_band == Some(i);
         let is_muted = filter.muted;
         let is_soloed = filter.solo;
@@ -1727,7 +1815,7 @@ pub(crate) fn render_eq_visualization_sized(
             let entity_left = entity.clone();
             let current_q = filter.q;
             let (q_min, q_max) = eq_q_bounds(filter.filter_type);
-            let bounds_ref = bounds_ref.clone();
+            let bounds_ref = std::rc::Rc::clone(&bounds_ref);
             let hit_radius = geometry.q_handle_hit_radius;
             div()
                 .id(("eq-q-left", i))
@@ -1740,7 +1828,7 @@ pub(crate) fn render_eq_visualization_sized(
                 .items_center()
                 .justify_center()
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
-                .hover(|s| s.shadow_lg())
+                .hover(gpui::Styled::shadow_lg)
                 .child(
                     div()
                         .w(px(geometry.q_handle_radius * 2.0))
@@ -1775,9 +1863,7 @@ pub(crate) fn render_eq_visualization_sized(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, _window, cx| {
-                        let bounds = if let Some(b) = *bounds_ref.borrow() {
-                            b
-                        } else {
+                        let Some(bounds) = *bounds_ref.borrow() else {
                             return;
                         };
                         let drag_data = event.drag(cx);
@@ -1816,7 +1902,7 @@ pub(crate) fn render_eq_visualization_sized(
             let entity_right = entity.clone();
             let current_q = filter.q;
             let (q_min, q_max) = eq_q_bounds(filter.filter_type);
-            let bounds_ref = bounds_ref.clone();
+            let bounds_ref = std::rc::Rc::clone(&bounds_ref);
             let hit_radius = geometry.q_handle_hit_radius;
             div()
                 .id(("eq-q-right", i))
@@ -1829,7 +1915,7 @@ pub(crate) fn render_eq_visualization_sized(
                 .items_center()
                 .justify_center()
                 .cursor(gpui::CursorStyle::ResizeLeftRight)
-                .hover(|s| s.shadow_lg())
+                .hover(gpui::Styled::shadow_lg)
                 .child(
                     div()
                         .w(px(geometry.q_handle_radius * 2.0))
@@ -1864,9 +1950,7 @@ pub(crate) fn render_eq_visualization_sized(
                 )
                 .on_drag_move::<EqQHandleDrag>({
                     move |event, _window, cx| {
-                        let bounds = if let Some(b) = *bounds_ref.borrow() {
-                            b
-                        } else {
+                        let Some(bounds) = *bounds_ref.borrow() else {
                             return;
                         };
                         let drag_data = event.drag(cx);
@@ -1913,7 +1997,7 @@ pub(crate) fn render_eq_visualization_sized(
             .items_center()
             .justify_center()
             .cursor(gpui::CursorStyle::PointingHand)
-            .hover(|s| s.shadow_lg())
+            .hover(gpui::Styled::shadow_lg)
             .child(
                 div()
                     .w(px(geometry.control_point_radius * 2.0))
@@ -2015,7 +2099,7 @@ pub(crate) fn render_eq_visualization_sized(
         .on_mouse_down(MouseButton::Left, {
             let focus_handle = focus_handle.clone();
             let entity = entity.clone();
-            let bounds_ref = bounds_ref.clone();
+            let bounds_ref = std::rc::Rc::clone(&bounds_ref);
             let chart_is_empty = filters.is_empty();
             move |event, window, cx| {
                 window.focus(&focus_handle, cx);
@@ -2223,11 +2307,9 @@ pub(crate) fn render_eq_visualization_sized(
         })
         .on_drag_move::<EqControlPointDrag>({
             let entity = entity.clone();
-            let bounds_ref = bounds_ref.clone();
+            let bounds_ref = std::rc::Rc::clone(&bounds_ref);
             move |event, _window, cx| {
-                let bounds = if let Some(b) = *bounds_ref.borrow() {
-                    b
-                } else {
+                let Some(bounds) = *bounds_ref.borrow() else {
                     return;
                 };
                 let drag_data = event.drag(cx);
@@ -2299,7 +2381,14 @@ pub(crate) fn render_eq_visualization_sized(
 }
 
 /// Render a selected EQ parameter as a horizontal slider with exact entry.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(crate) fn render_eq_knob_with_midi(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2347,9 +2436,9 @@ pub(crate) fn render_eq_knob_with_midi(
             let entity = entity.clone();
             move |new_value, _, cx| {
                 let actual = if logarithmic {
-                    min * (max / min).powf(new_value as f64)
+                    min * (max / min).powf(f64::from(new_value))
                 } else {
-                    new_value as f64
+                    f64::from(new_value)
                 };
                 entity.update(cx, |state, _| {
                     state.app.set_plugin_param(plugin_idx, param_idx, actual);
@@ -2405,6 +2494,14 @@ pub(crate) fn render_eq_knob_with_midi(
 }
 
 /// Render the EQ plugin with graphical visualization
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_eq_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -2448,11 +2545,7 @@ pub fn render_eq_plugin(
     let num_bands = display_filters.len();
 
     // Get the selected filter
-    let selected_filter = if num_bands > 0 {
-        Some(&display_filters[selected_band_idx])
-    } else {
-        None
-    };
+    let selected_filter = (num_bands > 0).then(|| &display_filters[selected_band_idx]);
     let is_lp_mode = matches!(&state.mode, EqViewMode::LinearPhase { .. });
     let indexing = if is_lp_mode {
         EqBandIndexing::FIR
@@ -2592,7 +2685,7 @@ pub fn render_eq_plugin(
                 };
                 // Keep both the editing handle and the visible response clear.
                 let clearance = 24.0 * state.layout_scale + (curve_y - anchor_y).abs() / 2.0;
-                let anchor_y = (anchor_y + curve_y) / 2.0;
+                let anchor_y = f32::midpoint(anchor_y, curve_y);
                 let (left, top, panel_height) = eq_popup_placement(
                     graph_width,
                     chart_height,
@@ -3013,6 +3106,10 @@ fn eq_band_topology_label(topology: EqFilterTopology) -> &'static str {
     }
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_eq_band_topology_selector(
     d: &Ds,
     entity: Entity<AppState>,
@@ -3081,6 +3178,10 @@ fn render_eq_band_topology_selector(
         )
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_eq_active_toggle(
     d: &Ds,
     entity: Entity<AppState>,
@@ -3149,6 +3250,18 @@ fn mark_eq_global_update(state: &mut AppState) {
 }
 
 /// Global EQ controls stay in the shell header; band editing stays beside the graph.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Exact parameter choices and changed-value detection preserve control semantics"
+)]
 pub(crate) fn render_eq_header_controls(
     d: &Ds,
     entity: Entity<AppState>,
@@ -3157,8 +3270,9 @@ pub(crate) fn render_eq_header_controls(
     theme: &Theme,
     cx: &App,
 ) -> AnyElement {
-    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+
+    let text = EqViewTranslations::for_language(entity.read(cx).app.ui_state.language);
     let PluginSettings::EQ {
         per_channel_mode,
         topology,
@@ -3542,12 +3656,23 @@ pub(crate) fn render_eq_global_toggle(
 }
 
 /// Render a filter type selector using exclusive buttons
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[cfg_attr(
+    not(feature = "dev-api"),
+    expect(
+        unused_variables,
+        reason = "Selector identifiers are read by optional developer instrumentation"
+    )
+)]
 pub(crate) fn render_filter_type_selector(
     d: &Ds,
     entity: Entity<AppState>,
     plugin_idx: usize,
     current_type: &BiquadFilterType,
-    _band_idx: usize,
+    band_idx: usize,
     param_idx: usize,
     _select_open: Option<(usize, usize)>,
     theme: &Theme,
@@ -3611,7 +3736,7 @@ pub(crate) fn render_filter_type_selector(
                 )
                 .child(abbrev);
             #[cfg(feature = "dev-api")]
-            let button = button.dev_track(format!("eq.filter_type.{_band_idx}.{idx}"));
+            let button = button.dev_track(format!("eq.filter_type.{band_idx}.{idx}"));
             button
         }))
 }

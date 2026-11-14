@@ -21,6 +21,7 @@ pub enum Language {
 impl Language {
     pub const ALL: [Self; 4] = [Self::English, Self::French, Self::German, Self::Spanish];
 
+    #[must_use]
     pub fn from_environment() -> Self {
         ["LC_ALL", "LC_MESSAGES", "LANG"]
             .into_iter()
@@ -28,6 +29,7 @@ impl Language {
             .map_or(Self::English, |locale| Self::from_locale(&locale))
     }
 
+    #[must_use]
     pub fn from_locale(locale: &str) -> Self {
         match locale
             .split(['.', '_', '-'])
@@ -43,6 +45,7 @@ impl Language {
         }
     }
 
+    #[must_use]
     pub fn next(self) -> Self {
         match self {
             Self::English => Self::French,
@@ -52,6 +55,7 @@ impl Language {
         }
     }
 
+    #[must_use]
     pub fn code(self) -> &'static str {
         match self {
             Self::English => "en",
@@ -74,6 +78,7 @@ pub struct TuiTranslations {
 }
 
 impl TuiTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         match language {
             Language::English => Self {
@@ -115,13 +120,14 @@ impl TuiTranslations {
         }
     }
 
+    #[must_use]
     pub fn screen_name(self, screen: Screen) -> &'static str {
         match (self.language, screen) {
             (Language::English, Screen::Loading) => "Loading",
             (Language::English, Screen::Library) => "Library",
             (Language::English, Screen::Queue) => "Queue",
             (Language::English, Screen::Playlists) => "Playlists",
-            (Language::English, Screen::Plugins) => "Plugins",
+            (Language::English | Language::German, Screen::Plugins) => "Plugins",
             (Language::English, Screen::Devices) => "Devices",
             (Language::English, Screen::Tools) => "Tools",
             (Language::English, Screen::EarTraining) => "Ear Training",
@@ -141,7 +147,6 @@ impl TuiTranslations {
             (Language::German, Screen::Library) => "Mediathek",
             (Language::German, Screen::Queue) => "Warteschlange",
             (Language::German, Screen::Playlists) => "Wiedergabelisten",
-            (Language::German, Screen::Plugins) => "Plugins",
             (Language::German, Screen::Devices) => "Geräte",
             (Language::German, Screen::Tools) => "Werkzeuge",
             (Language::German, Screen::EarTraining) => "Gehörtraining",
@@ -160,6 +165,7 @@ impl TuiTranslations {
         }
     }
 
+    #[must_use]
     pub fn help_title(self, screen: Screen) -> String {
         match self.language {
             Language::English => format!(
@@ -185,6 +191,7 @@ impl TuiTranslations {
         }
     }
 
+    #[must_use]
     pub fn action_description(self, action: &'static str) -> &'static str {
         let translations = match self.language {
             Language::English => return action,
@@ -210,6 +217,7 @@ impl TuiTranslations {
     /// External plugin-provided labels intentionally bypass this catalog and
     /// remain verbatim. Every call site using this method is parity-tested
     /// across the required locale set.
+    #[must_use]
     pub fn ui(self, source: &'static str) -> &'static str {
         let translations = match self.language {
             Language::English => return source,
@@ -232,6 +240,7 @@ impl TuiTranslations {
 
     /// Translate a formatted first-party status while preserving dynamic
     /// values and verbatim external error details.
+    #[must_use]
     pub fn dynamic(self, message: String) -> String {
         if self.language == Language::English {
             return message;
@@ -250,6 +259,7 @@ impl TuiTranslations {
 
     /// Translate known first-party framing while retaining unknown external
     /// diagnostics verbatim. Use this only at boundaries that can carry both.
+    #[must_use]
     pub fn dynamic_or_verbatim(self, message: &str) -> String {
         if self.language == Language::English {
             return message.to_string();

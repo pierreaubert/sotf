@@ -18,10 +18,10 @@ pub struct BootstrapUncertaintyUiConfig {
     /// PRNG seed.
     #[serde(default = "default_bootstrap_seed")]
     pub seed: u64,
-    /// Scalarisation kind: "worst_case" or "cvar".
+    /// Scalarisation kind: "`worst_case`" or "cvar".
     #[serde(default = "default_bootstrap_scalarisation")]
     pub scalarisation: String,
-    /// Tail fraction for CVaR scalarisation.
+    /// Tail fraction for `CVaR` scalarisation.
     #[serde(default = "default_bootstrap_cvar_alpha")]
     pub cvar_alpha: f64,
 }

@@ -35,7 +35,7 @@ pub fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
         s.to_string()
     } else {
         let truncated: String = s.chars().take(max_len.saturating_sub(3)).collect();
-        format!("{}...", truncated)
+        format!("{truncated}...")
     }
 }
 

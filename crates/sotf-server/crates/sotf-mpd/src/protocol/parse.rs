@@ -6,6 +6,13 @@ use super::types::MpdErrorCode;
 use super::types::SingleMode;
 
 /// Parse a single MPD command line (without the trailing newline).
+///
+/// # Errors
+/// Returns an MPD protocol error for unknown commands or invalid arguments.
+#[expect(
+    clippy::too_many_lines,
+    reason = "This function is the MPD command grammar dispatch table"
+)]
 pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
     let line = line.trim();
     if line.is_empty() {
@@ -53,7 +60,9 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
                     "volume must be 0-100",
                 ));
             }
-            Ok(MpdCommand::SetVol(vol as u8))
+            Ok(MpdCommand::SetVol(u8::try_from(vol).map_err(|_error| {
+                MpdError::new(MpdErrorCode::Arg, &cmd, "volume must be 0-100")
+            })?))
         }
         "volume" => {
             // MPD spec: delta is a signed integer; route through i32 explicitly
@@ -68,7 +77,9 @@ pub fn parse_command(line: &str) -> Result<MpdCommand, MpdError> {
                 ));
             }
             // Safe: the range check guarantees the value fits in i8.
-            Ok(MpdCommand::Volume(delta_i32 as i8))
+            Ok(MpdCommand::Volume(i8::try_from(delta_i32).map_err(
+                |_error| MpdError::new(MpdErrorCode::Arg, &cmd, "volume delta must be -100..=100"),
+            )?))
         }
         "random" => Ok(MpdCommand::Random(parts.require_bool(&cmd)?)),
         "repeat" => Ok(MpdCommand::Repeat(parts.require_bool(&cmd)?)),

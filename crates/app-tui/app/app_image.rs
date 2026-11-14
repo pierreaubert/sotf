@@ -16,9 +16,8 @@ mod inner {
             // and the stdio query leaks escape sequences onto the screen.
             // Use halfblocks directly for terminals that don't support graphics.
             if self.library_view.image_picker.is_none() {
-                let use_halfblocks = std::env::var("TERM_PROGRAM")
-                    .map(|tp| tp == "Apple_Terminal")
-                    .unwrap_or(false);
+                let use_halfblocks =
+                    std::env::var("TERM_PROGRAM").is_ok_and(|tp| tp == "Apple_Terminal");
 
                 if use_halfblocks {
                     log::info!("Terminal.app detected, using halfblocks for album art");
@@ -31,8 +30,7 @@ mod inner {
                         }
                         Err(e) => {
                             log::warn!(
-                                "Failed to query terminal for font size: {}, using halfblocks fallback",
-                                e
+                                "Failed to query terminal for font size: {e}, using halfblocks fallback"
                             );
                             self.library_view.image_picker =
                                 Some(ratatui_image::picker::Picker::halfblocks());

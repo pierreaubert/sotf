@@ -110,7 +110,7 @@ where
             while buf.len() < required {
                 let read = timeout(API_REQUEST_READ_TIMEOUT, stream.read(&mut chunk))
                     .await
-                    .map_err(|_| "timed out reading request body".to_string())?
+                    .map_err(|_error| "timed out reading request body".to_string())?
                     .map_err(|e| format!("read request body: {e}"))?;
                 if read == 0 {
                     return Err("connection closed before request body completed".to_string());
@@ -125,7 +125,7 @@ where
 
         let read = timeout(API_REQUEST_READ_TIMEOUT, stream.read(&mut chunk))
             .await
-            .map_err(|_| "timed out reading request headers".to_string())?
+            .map_err(|_error| "timed out reading request headers".to_string())?
             .map_err(|e| format!("read request: {e}"))?;
         if read == 0 {
             return Err("connection closed before request headers completed".to_string());

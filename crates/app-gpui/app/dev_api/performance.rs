@@ -71,7 +71,7 @@ fn capture() -> &'static Mutex<CaptureState> {
 pub(super) fn start(window_id: WindowId, update_frame_count: u64) -> Result<Arc<AtomicBool>> {
     let mut state = capture()
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if state.active.is_some() {
         return Err(anyhow!("performance capture is already active"));
     }
@@ -89,7 +89,7 @@ pub(super) fn start(window_id: WindowId, update_frame_count: u64) -> Result<Arc<
         update_frame_baseline: update_frame_count,
         allocation_baseline,
         frame_trace_was_enabled,
-        playback_clock_running: playback_clock_running.clone(),
+        playback_clock_running: std::sync::Arc::clone(&playback_clock_running),
     });
     Ok(playback_clock_running)
 }
@@ -97,7 +97,7 @@ pub(super) fn start(window_id: WindowId, update_frame_count: u64) -> Result<Arc<
 pub(super) fn stop(update_frame_count: u64) -> Result<()> {
     let mut state = capture()
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let mut active = state
         .active
         .take()
@@ -145,7 +145,7 @@ pub(super) fn stop(update_frame_count: u64) -> Result<()> {
 pub(super) fn resolve(path: &str) -> Result<Value> {
     let state = capture()
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if path == "performance.active" {
         return Ok(json!(state.active.is_some()));
     }

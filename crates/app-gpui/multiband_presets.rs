@@ -1,7 +1,7 @@
 pub(crate) fn preset_frequencies(preset: i32) -> Option<[f64; 4]> {
     let index = usize::try_from(preset.checked_sub(1)?).ok()?;
     let &(a, b, c, d) = sotf_plugins::plugin_multiband_compressor::CROSSOVER_PRESETS.get(index)?;
-    Some([a as f64, b as f64, c as f64, d as f64])
+    Some([f64::from(a), f64::from(b), f64::from(c), f64::from(d)])
 }
 
 pub(crate) fn matching_crossover_preset(crossovers: [f64; 4]) -> i32 {

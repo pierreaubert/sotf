@@ -9,7 +9,7 @@ use crate::components::design::Ds;
 use crate::components::graphs::common::theme_to_chart_theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{SharedString, div, px, rems};
 use gpui_px::{ScaleType, line};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Badge, BadgeVariant, Button, ButtonVariant, Column,
@@ -172,6 +172,19 @@ impl PlayerView {
     }
 
     /// Render recording device content for accordion
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     pub(super) fn render_recording_device_content(
         &self,
         cx: &mut Context<Self>,
@@ -198,8 +211,7 @@ impl PlayerView {
                 .or_else(|| input_devices.first());
             let max_ch = selected_device
                 .and_then(|d| d.default_config.as_ref())
-                .map(|c| c.channels as usize)
-                .unwrap_or(128);
+                .map_or(128, |c| c.channels as usize);
             (
                 state.app.ui_state.theme.clone(),
                 rec_config.num_channels,
@@ -224,7 +236,7 @@ impl PlayerView {
         // Info badges
         let badges = HStack::new()
             .spacing(StackSpacing::Xs)
-            .child(Badge::new(format!("{} ch", num_channels)).variant(BadgeVariant::Info))
+            .child(Badge::new(format!("{num_channels} ch")).variant(BadgeVariant::Info))
             .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info));
 
         let channel_count_row = HStack::new()
@@ -312,7 +324,7 @@ impl PlayerView {
                 let view = view.clone();
                 NumberInput::new("ctc_loopback_input")
                     .label(text.loopback_input)
-                    .value(ctc_loopback.map(|ch| ch + 1).unwrap_or(1) as f64)
+                    .value(ctc_loopback.map_or(1, |ch| ch + 1) as f64)
                     .min(1.0)
                     .max(max_input_channels as f64)
                     .step(1.0)
@@ -406,6 +418,10 @@ impl PlayerView {
     }
 
     /// Render microphone calibration content for accordion
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_mic_calibration_content(
         &self,
         cx: &mut Context<Self>,
@@ -442,7 +458,10 @@ impl PlayerView {
         let mut container = VStack::new().spacing(StackSpacing::Sm);
 
         // Render one row per channel (ch used as index into multiple vecs and for element IDs)
-        #[allow(clippy::needless_range_loop)]
+        #[allow(
+            clippy::needless_range_loop,
+            reason = "Layout coordinates address the paired indexed arrays"
+        )]
         for ch in 0..num_channels {
             let path = channel_paths[ch].clone();
             let ch_view = view.clone();
@@ -660,6 +679,19 @@ impl PlayerView {
     /// - Post-silence: numeric input in seconds (blank = derived from RT60 estimate)
     ///
     /// The estimated capture time for the whole session is also shown.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_advanced_sweep_quality_content(
         &self,
         cx: &mut Context<Self>,
@@ -735,7 +767,7 @@ impl PlayerView {
                 .child(
                     NumberInput::new("pre_silence_s")
                         .label(translations.recording_pre_silence)
-                        .value(pre_s as f64)
+                        .value(f64::from(pre_s))
                         .min(0.0)
                         .max(10.0)
                         .step(0.5)
@@ -766,7 +798,7 @@ impl PlayerView {
                 .child(
                     NumberInput::new("post_silence_s")
                         .label(translations.recording_post_silence)
-                        .value(post_s_opt.unwrap_or(0.0) as f64)
+                        .value(f64::from(post_s_opt.unwrap_or(0.0)))
                         .min(0.0)
                         .max(30.0)
                         .step(0.5)
@@ -810,7 +842,7 @@ impl PlayerView {
                 signal_type,
                 rec_state.sweep_start_freq,
                 rec_state.sweep_end_freq,
-                measurement_amplitude(rec_state.signal_level_db as f64),
+                measurement_amplitude(f64::from(rec_state.signal_level_db)),
                 Some(bass_dur),
                 Some(pre_s),
                 post_s_opt,
@@ -851,7 +883,7 @@ impl PlayerView {
                         .child(
                             NumberInput::new("num_sweeps")
                                 .label(recording_text.repeat.sweeps_per_channel)
-                                .value(num_sweeps as f64)
+                                .value(f64::from(num_sweeps))
                                 .min(1.0)
                                 .max(8.0)
                                 .step(1.0)
@@ -904,7 +936,7 @@ impl PlayerView {
 
                 if let Some(folder) = folder {
                     let base_path = folder.path().to_string_lossy().to_string();
-                    log::info!("Selected recording directory: {}", base_path);
+                    log::info!("Selected recording directory: {base_path}");
 
                     // Create timestamped subdirectory name
                     let now = chrono::Local::now();
@@ -917,11 +949,11 @@ impl PlayerView {
                     let (base_path, full_path, status_message) =
                         match std::fs::create_dir_all(&full_path) {
                             Ok(()) => {
-                                log::info!("Created recording directory: {}", full_path);
+                                log::info!("Created recording directory: {full_path}");
                                 (base_path, full_path, None)
                             }
                             Err(e) => {
-                                log::error!("Failed to create recording directory: {}", e);
+                                log::error!("Failed to create recording directory: {e}");
                                 let (fallback_base, fallback_dir) =
                                     crate::app::config::default_recording_paths();
                                 match (fallback_base, fallback_dir) {
@@ -929,8 +961,7 @@ impl PlayerView {
                                         base,
                                         dir,
                                         Some(format!(
-                                            "Cannot write to selected folder; using app recordings folder: {}",
-                                            e
+                                            "Cannot write to selected folder; using app recordings folder: {e}"
                                         )),
                                     ),
                                     _ => return,
@@ -958,6 +989,10 @@ impl PlayerView {
     }
 
     /// Render playback device dropdown
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_playback_device_dropdown(
         &self,
         cx: &mut Context<Self>,
@@ -982,8 +1017,7 @@ impl PlayerView {
                 .audio_device_state
                 .output_devices
                 .first()
-                .map(|d| d.name.clone())
-                .unwrap_or_default()
+                .map_or_default(|d| d.name.clone())
         } else {
             recording_state.playback_config.device_name.clone()
         };
@@ -1045,8 +1079,7 @@ impl PlayerView {
                                     device
                                         .default_config
                                         .as_ref()
-                                        .map(|c| c.sample_rate)
-                                        .unwrap_or(48000)
+                                        .map_or(48000, |c| c.sample_rate)
                                 };
 
                                 state
@@ -1113,7 +1146,7 @@ impl PlayerView {
                 let label = if rate >= 1000 {
                     format!("{} kHz", rate / 1000)
                 } else {
-                    format!("{} Hz", rate)
+                    format!("{rate} Hz")
                 };
                 SelectOption::new(rate.to_string(), label)
             })
@@ -1183,6 +1216,10 @@ impl PlayerView {
     }
 
     /// Render speaker configuration dropdown with channel count and sample rate badges
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_speaker_config_dropdown(
         &self,
         cx: &mut Context<Self>,
@@ -1203,8 +1240,7 @@ impl PlayerView {
             .iter()
             .find(|d| d.name == recording_state.playback_config.device_name)
             .and_then(|d| d.default_config.as_ref())
-            .map(|c| c.channels as usize)
-            .unwrap_or(128);
+            .map_or(128, |c| c.channels as usize);
 
         // Only show speaker configs that fit within the device's channel count
         let options: Vec<SelectOption> = SpeakerConfiguration::all()
@@ -1336,11 +1372,15 @@ impl PlayerView {
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
             )
-            .child(Badge::new(format!("{}", num_channels)).variant(BadgeVariant::Info))
+            .child(Badge::new(format!("{num_channels}")).variant(BadgeVariant::Info))
             .child(Badge::new(format!("{} kHz", sample_rate / 1000)).variant(BadgeVariant::Info))
     }
 
     /// Render playback channel mapping table (speaker-centric view)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_playback_channel_mapping(
         &self,
         cx: &mut Context<Self>,
@@ -1482,7 +1522,7 @@ impl PlayerView {
                                             let idx = cfg.channel_mappings.len() + 1;
                                             cfg.channel_mappings.push(ChannelMapping::single(
                                                 next_ch,
-                                                format!("Ch{}", idx),
+                                                format!("Ch{idx}"),
                                             ));
                                             cfg.sync_channel_count();
                                         });
@@ -1521,6 +1561,15 @@ impl PlayerView {
     }
 
     /// Render an interface channel selector without a repeated visual label.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     fn render_playback_interface_channel(
         &self,
         cx: &mut Context<Self>,
@@ -1588,7 +1637,7 @@ impl PlayerView {
 
         div().w_full().child(
             // The table column owns the control width.
-            Select::new(SharedString::from(format!("speaker_mode_{}", speaker_idx)))
+            Select::new(SharedString::from(format!("speaker_mode_{speaker_idx}")))
                 .aria_label(format!(
                     "{} / {}",
                     recording_text.single, recording_text.multi
@@ -1608,8 +1657,7 @@ impl PlayerView {
                                     .app
                                     .measurement_state
                                     .recording_state
-                                    .speaker_mode_dropdown_open =
-                                    if open { Some(speaker_idx) } else { None };
+                                    .speaker_mode_dropdown_open = open.then_some(speaker_idx);
                             });
                             cx.notify();
                         });
@@ -1664,6 +1712,19 @@ impl PlayerView {
     }
 
     /// Render the channel list for a multi-channel speaker
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     pub(super) fn render_multi_channel_list(
         &self,
         cx: &mut Context<Self>,
@@ -1694,8 +1755,7 @@ impl PlayerView {
                                 // intentional: fixed ch-number input column
                                 let view = view.clone();
                                 NumberInput::new(SharedString::from(format!(
-                                    "speaker_{}_ch_{}",
-                                    speaker_idx, ch_idx
+                                    "speaker_{speaker_idx}_ch_{ch_idx}"
                                 )))
                                 .aria_label(format!("{} {}", recording_text.multi, ch_idx + 1))
                                 .value((interface_ch + 1) as f64)
@@ -1731,10 +1791,7 @@ impl PlayerView {
                                 let view = view.clone();
                                 let can_remove = interface_channels.len() > 2;
                                 Button::new(
-                                    SharedString::from(format!(
-                                        "remove_ch_{}_{}",
-                                        speaker_idx, ch_idx
-                                    )),
+                                    SharedString::from(format!("remove_ch_{speaker_idx}_{ch_idx}")),
                                     "\u{2715}",
                                 )
                                 .variant(ButtonVariant::Ghost)
@@ -1783,7 +1840,7 @@ impl PlayerView {
                 let theme = theme.clone();
                 HStack::new().spacing(StackSpacing::Xs).child(
                     Button::new(
-                        SharedString::from(format!("add_ch_{}", speaker_idx)),
+                        SharedString::from(format!("add_ch_{speaker_idx}")),
                         recording_text.add,
                     )
                     .variant(ButtonVariant::Ghost)
@@ -1835,7 +1892,7 @@ impl PlayerView {
         let current_name = current_name.to_string();
 
         div().size_full().child(
-            Input::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+            Input::new(SharedString::from(format!("channel_name_{channel_idx}")))
                 .placeholder(translations.recording_name_placeholder)
                 .value(current_name)
                 .size(CONFIG_CONTROL_SIZE.into())
@@ -1888,12 +1945,14 @@ impl PlayerView {
         let selected_label: SharedString = CHANNEL_GROUPS
             .iter()
             .find(|(id, _)| *id == current_group.as_str())
-            .map(|(_, name)| SharedString::from(*name))
-            .unwrap_or_else(|| SharedString::from(current_group.clone()));
+            .map_or_else(
+                || SharedString::from(current_group.clone()),
+                |(_, name)| SharedString::from(*name),
+            );
 
         div().w_full().child(
             // The table column owns the control width.
-            Select::new(SharedString::from(format!("channel_name_{}", channel_idx)))
+            Select::new(SharedString::from(format!("channel_name_{channel_idx}")))
                 .size(CONFIG_CONTROL_SIZE.into())
                 .options(options)
                 .selected(current_group.clone())
@@ -1909,8 +1968,7 @@ impl PlayerView {
                                     .app
                                     .measurement_state
                                     .recording_state
-                                    .channel_name_dropdown_open =
-                                    if is_open { Some(channel_idx) } else { None };
+                                    .channel_name_dropdown_open = is_open.then_some(channel_idx);
                             });
                             cx.notify();
                         });
@@ -1945,6 +2003,10 @@ impl PlayerView {
     }
 
     /// Render recording device dropdown
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_recording_device_dropdown(
         &self,
         cx: &mut Context<Self>,
@@ -1969,8 +2031,7 @@ impl PlayerView {
                 .audio_device_state
                 .input_devices
                 .first()
-                .map(|d| d.name.clone())
-                .unwrap_or_default()
+                .map_or_default(|d| d.name.clone())
         } else {
             recording_state.recording_config.device_name.clone()
         };
@@ -2032,8 +2093,7 @@ impl PlayerView {
                                     device
                                         .default_config
                                         .as_ref()
-                                        .map(|c| c.sample_rate)
-                                        .unwrap_or(48000)
+                                        .map_or(48000, |c| c.sample_rate)
                                 };
 
                                 state
@@ -2097,7 +2157,7 @@ impl PlayerView {
                 let label = if rate >= 1000 {
                     format!("{} kHz", rate / 1000)
                 } else {
-                    format!("{} Hz", rate)
+                    format!("{rate} Hz")
                 };
                 SelectOption::new(rate.to_string(), label)
             })
@@ -2166,6 +2226,15 @@ impl PlayerView {
     }
 
     /// Render recording channel mapping table
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     pub(super) fn render_recording_channel_mapping(
         &self,
         cx: &mut Context<Self>,
@@ -2204,8 +2273,7 @@ impl PlayerView {
                                     .child({
                                         let view = view.clone();
                                         NumberInput::new(SharedString::from(format!(
-                                            "recording_interface_{}",
-                                            idx
+                                            "recording_interface_{idx}"
                                         )))
                                         .value((interface_ch + 1) as f64)
                                         .min(1.0)
@@ -2355,16 +2423,12 @@ impl PlayerView {
 
                 if let Some(file) = file {
                     let path = file.path().to_string_lossy().to_string();
-                    log::info!(
-                        "Selected calibration file for channel {}: {}",
-                        channel_idx,
-                        path
-                    );
+                    log::info!("Selected calibration file for channel {channel_idx}: {path}");
 
                     let calibration_data = match std::fs::read_to_string(&path) {
                         Ok(content) => CalibrationData::parse(&content),
                         Err(e) => {
-                            log::error!("Failed to read calibration file: {}", e);
+                            log::error!("Failed to read calibration file: {e}");
                             None
                         }
                     };
@@ -2393,7 +2457,8 @@ impl PlayerView {
                         }
 
                         rs.mic_calibration_paths[channel_idx] = Some(path.clone());
-                        rs.mic_calibration_data_per_channel[channel_idx] = calibration_data.clone();
+                        rs.mic_calibration_data_per_channel[channel_idx]
+                            .clone_from(&calibration_data);
 
                         // Sync legacy fields from channel 0
                         if channel_idx == 0 {

@@ -828,7 +828,10 @@ fn test_icon_paths() {
 }
 
 #[test]
-#[allow(deprecated)] // `IconSize::px()` is retained for APIs that require Pixels; this pins its legacy contract.
+#[allow(
+    deprecated,
+    reason = "Compatibility code still exercises the retained legacy interface"
+)] // `IconSize::px()` is retained for APIs that require Pixels; this pins its legacy contract.
 fn test_icon_sizes() {
     use gpui::px;
     assert_eq!(IconSize::Xs.px(), px(12.0));
@@ -875,7 +878,10 @@ fn test_pagination_4k_window() {
 }
 
 #[test]
-#[allow(deprecated)] // Cross-checks the legacy `px()` contract against `to_rems()` at the base rem size.
+#[allow(
+    deprecated,
+    reason = "Compatibility code still exercises the retained legacy interface"
+)] // Cross-checks the legacy `px()` contract against `to_rems()` at the base rem size.
 fn test_icon_size_to_rems_matches_px_at_base_rem() {
     let base_rem = 16.0_f32;
     let variants = [

@@ -1,4 +1,9 @@
 /// Inverse of `quality_to_optimizer_params`: map a population value back to 0.0-1.0.
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Optimizer quality is an approximate logarithmic representation of population size"
+)]
 pub fn population_to_quality(population: usize) -> f32 {
     const POP_MIN: f32 = 30.0;
     const POP_MAX: f32 = 300.0;

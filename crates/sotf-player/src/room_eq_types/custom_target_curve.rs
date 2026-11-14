@@ -8,6 +8,7 @@ pub struct CustomTargetCurve {
 }
 
 impl CustomTargetCurve {
+    #[must_use]
     pub fn new_flat() -> Self {
         Self {
             control_points: vec![
@@ -18,6 +19,7 @@ impl CustomTargetCurve {
     }
 
     /// Create Near-field target: Flat 20-1000Hz, then down to -1dB at 20kHz
+    #[must_use]
     pub fn new_near_field() -> Self {
         Self {
             control_points: vec![
@@ -29,6 +31,7 @@ impl CustomTargetCurve {
     }
 
     /// Create Mid-field target: +4dB at 40Hz, down to -3dB at 20kHz
+    #[must_use]
     pub fn new_mid_field() -> Self {
         Self {
             control_points: vec![
@@ -41,6 +44,7 @@ impl CustomTargetCurve {
     }
 
     /// Create Far-field target: Flat up to 2kHz, then rolloff 3dB/oct
+    #[must_use]
     pub fn new_far_field() -> Self {
         Self {
             control_points: vec![
@@ -54,6 +58,9 @@ impl CustomTargetCurve {
         }
     }
 
+    ///
+    /// # Panics
+    /// Panics if a control-point frequency is NaN.
     pub fn add_point(&mut self, point: TargetCurveControlPoint) {
         self.control_points.push(point);
         self.control_points
@@ -66,6 +73,9 @@ impl CustomTargetCurve {
         }
     }
 
+    ///
+    /// # Panics
+    /// Panics if a control-point frequency is NaN.
     pub fn update_point(&mut self, index: usize, frequency: f64, level_db: f64) {
         if let Some(point) = self.control_points.get_mut(index) {
             point.frequency = frequency.clamp(20.0, 20000.0);
@@ -76,6 +86,11 @@ impl CustomTargetCurve {
     }
 
     /// Generate the target curve as 200 log-spaced points
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Target curves interpolate a fixed display frequency grid"
+    )]
     pub fn generate_curve(&self) -> Vec<(f64, f64)> {
         const NUM_POINTS: usize = 200;
         const MIN_FREQ: f64 = math_audio_iir_fir::AUDIBLE_MIN_FREQ;

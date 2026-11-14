@@ -1,20 +1,20 @@
 use math_audio_iir_fir::BiquadFilterType;
 
 /// Get the index of a filter type in the standard ordering
+#[must_use]
 pub fn get_filter_type_index(filter_type: &BiquadFilterType) -> usize {
     match filter_type {
-        BiquadFilterType::Peak => 0,
-        BiquadFilterType::Lowshelf => 1,
-        BiquadFilterType::Highshelf => 2,
+        BiquadFilterType::Lowshelf | BiquadFilterType::LowshelfOrf => 1,
+        BiquadFilterType::Highshelf | BiquadFilterType::HighshelfOrf => 2,
         BiquadFilterType::Lowpass => 3,
-        BiquadFilterType::Highpass => 4,
+        BiquadFilterType::Highpass | BiquadFilterType::HighpassVariableQ => 4,
         BiquadFilterType::Bandpass => 5,
         BiquadFilterType::Notch => 6,
         BiquadFilterType::AllPass => 7,
-        BiquadFilterType::HighpassVariableQ => 4, // Map to Highpass
-        BiquadFilterType::LowshelfOrf => 1,       // Map to Lowshelf
-        BiquadFilterType::HighshelfOrf => 2,      // Map to Highshelf
-        BiquadFilterType::PeakMatched => 0,       // Map to Peak
+        // Map to Highpass
+        // Map to Lowshelf
+        // Map to Highshelf
+        BiquadFilterType::Peak | BiquadFilterType::PeakMatched => 0, // Map to Peak
     }
 }
 

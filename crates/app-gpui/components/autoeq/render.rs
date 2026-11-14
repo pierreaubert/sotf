@@ -1,10 +1,10 @@
-//! RenderOnce implementation for the AutoEQ form.
+//! `RenderOnce` implementation for the `AutoEQ` form.
 //!
 //! Renders a two-panel layout: form parameters on the left, contextual
 //! documentation on the right. The docs panel collapses on narrow screens.
 
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{App, MouseButton, SharedString, Window, div, rems};
 
 use gpui_ui_kit::button::{Button, ButtonSize, ButtonVariant};
 use gpui_ui_kit::card::Card;
@@ -17,7 +17,15 @@ use gpui_ui_kit::theme::ThemeExt;
 use gpui_ui_kit::toggle::{Toggle, ToggleSize};
 
 use super::config::ParamLimits;
-use super::constants::*;
+use super::constants::{
+    ALGORITHM_OPTIONS, BO_ACQUISITION_OPTIONS, DE_STRATEGY_OPTIONS, FIR_PHASE_OPTIONS,
+    HEADPHONE_LOSS_TYPE_OPTIONS, HEADPHONE_TARGET_CURVE_OPTIONS, HIGHPASS_TYPE_OPTIONS,
+    LOCAL_ALGO_OPTIONS, LOSS_TYPE_DESCRIPTIONS, LOSS_TYPE_OPTIONS, MIXED_CROSSOVER_TYPE_OPTIONS,
+    MIXED_FIR_BAND_OPTIONS, MULTI_MEASUREMENT_STRATEGY_OPTIONS, MULTI_SEAT_STRATEGY_OPTIONS,
+    OPT_MODE_OPTIONS, OPTIMIZATION_GOAL_OPTIONS, OptimizationType, PEQ_MODEL_DESCRIPTIONS,
+    PEQ_MODEL_OPTIONS, ROOMEQ_TILT_TYPE_OPTIONS, SPEAKER_TARGET_CURVE_OPTIONS,
+    SPINORAMA_CURVE_OPTIONS, SYSTEM_TYPE_OPTIONS, TARGET_DISTANCE_OPTIONS,
+};
 use super::docs;
 use super::form::{
     AutoEqForm, AutoEqLayoutMode, is_narrow_default_layout, is_narrow_room_eq_layout,
@@ -26,9 +34,28 @@ use super::theme::AutoEqFormTheme;
 use super::ui_state::{AutoEqStage, DetailLevel};
 use crate::i18n::Translations;
 
-#[allow(clippy::too_many_lines)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "UI schema and interaction dispatch remain together for review"
+)]
 impl RenderOnce for AutoEqForm {
-    #[allow(clippy::cognitive_complexity)]
+    #[allow(
+        clippy::cognitive_complexity,
+        reason = "UI dispatch preserves one ordered interaction path"
+    )]
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let global_theme = cx.theme();
         let theme = self

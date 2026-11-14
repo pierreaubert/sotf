@@ -4,6 +4,9 @@ use rusqlite::{Result as SqlResult, params};
 
 impl MusicDatabase {
     /// Define all database migrations
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn search_library(&self, query: &str) -> SqlResult<Vec<i64>> {
         // If query is empty, return empty
         if query.trim().is_empty() {
@@ -19,8 +22,8 @@ impl MusicDatabase {
             .filter(|s| !s.is_empty())
             .map(|s| {
                 // Escape double quotes and add wildcard for prefix matching (fuzzy search)
-                let escaped = s.replace("\"", "\"\"");
-                format!("{}*", escaped)
+                let escaped = s.replace('"', "\"\"");
+                format!("{escaped}*")
             })
             .collect();
 
@@ -47,6 +50,9 @@ impl MusicDatabase {
 
     /// Rebuild FTS index from current database state
     /// This ensures FTS is in sync after bulk operations like scanning
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn sync_fts_index(&self) -> SqlResult<()> {
         // Clear existing FTS data
         self.conn.execute("DELETE FROM library_fts", [])?;
@@ -114,6 +120,9 @@ impl MusicDatabase {
     /// When the TUI keeps a persistent read connection open, the WAL can grow
     /// indefinitely during scanning. This method forces a TRUNCATE checkpoint
     /// which resets the WAL file to zero bytes.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn checkpoint_wal(&self) -> SqlResult<()> {
         // PRAGMA wal_checkpoint(TRUNCATE) returns (busy, log_pages, checkpointed_pages)
         // TRUNCATE mode checkpoints all frames and truncates the WAL file to zero bytes
@@ -123,11 +132,7 @@ impl MusicDatabase {
         if busy != 0 {
             log::warn!("WAL checkpoint was blocked (busy), WAL may still be large");
         } else {
-            log::info!(
-                "WAL checkpoint complete: {}/{} pages checkpointed",
-                checkpointed,
-                log_pages
-            );
+            log::info!("WAL checkpoint complete: {checkpointed}/{log_pages} pages checkpointed");
         }
         Ok(())
     }

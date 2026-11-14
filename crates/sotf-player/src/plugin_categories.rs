@@ -7,6 +7,7 @@
 use sotf_audio::plugins::PluginType;
 
 /// One category as displayed in the plugin picker.
+#[derive(Debug)]
 pub struct PluginCategory {
     pub name: &'static str,
     pub plugins: &'static [PluginType],
@@ -96,6 +97,7 @@ pub const CATEGORIES: &[PluginCategory] = &[
 ];
 
 /// Find the category name for a plugin, if it appears in `CATEGORIES`.
+#[must_use]
 pub fn category_of(plugin_type: &PluginType) -> Option<&'static str> {
     CATEGORIES
         .iter()

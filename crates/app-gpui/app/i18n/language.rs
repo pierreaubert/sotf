@@ -13,6 +13,7 @@ pub enum Language {
 }
 
 impl Language {
+    #[must_use]
     pub fn all() -> &'static [Language] {
         &[
             Language::English,
@@ -22,6 +23,7 @@ impl Language {
         ]
     }
 
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Language::English => "English",
@@ -32,6 +34,7 @@ impl Language {
         }
     }
 
+    #[must_use]
     pub fn code(&self) -> &'static str {
         match self {
             Language::English => "en",
@@ -42,20 +45,22 @@ impl Language {
         }
     }
 
+    #[must_use]
     pub fn next(&self) -> Language {
         match self {
             Language::English => Language::French,
             Language::French => Language::German,
             Language::German => Language::Spanish,
-            Language::Spanish => Language::English,
-            Language::Pseudo => Language::English,
+            Language::Spanish | Language::Pseudo => Language::English,
         }
     }
 
+    #[must_use]
     pub fn is_pseudo(self) -> bool {
         self == Language::Pseudo
     }
 
+    #[must_use]
     pub fn base(self) -> Language {
         if self.is_pseudo() {
             Language::English

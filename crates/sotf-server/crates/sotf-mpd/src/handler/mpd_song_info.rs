@@ -1,6 +1,7 @@
-use crate::protocol::*;
+use crate::protocol::{MpdKv, kv};
 
 /// Song metadata for MPD responses.
+#[derive(Debug)]
 pub struct MpdSongInfo {
     pub file: String,
     pub title: Option<String>,
@@ -15,6 +16,7 @@ pub struct MpdSongInfo {
 }
 
 impl MpdSongInfo {
+    #[must_use]
     pub fn to_kvs(&self) -> Vec<MpdKv> {
         let mut kvs = vec![kv("file", &self.file)];
         if let Some(ref t) = self.title {
@@ -36,9 +38,9 @@ impl MpdSongInfo {
             kvs.push(kv("Genre", g));
         }
         if let Some(d) = self.duration {
-            kvs.push(kv("duration", format!("{:.3}", d)));
+            kvs.push(kv("duration", format!("{d:.3}")));
             // Also include Time for compatibility (integer seconds)
-            kvs.push(kv("Time", d as u64));
+            kvs.push(kv("Time", super::misc::whole_seconds(d)));
         }
         kvs.push(kv("Pos", self.pos));
         kvs.push(kv("Id", self.id));

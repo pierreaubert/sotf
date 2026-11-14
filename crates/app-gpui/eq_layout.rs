@@ -11,6 +11,7 @@ pub enum EqCompactLayout {
 }
 
 impl EqCompactLayout {
+    #[must_use]
     pub fn from_width(width: f32) -> Self {
         if width >= 900.0 {
             Self::Current
@@ -27,12 +28,14 @@ impl EqCompactLayout {
 /// a pixel floor that overflows narrow editors. Short windows reduce chart
 /// height and scroll the editor vertically; they must not clip a phantom
 /// minimum width.
+#[must_use]
 pub fn medium_graph_width(available_width: f32, layout_scale: f32) -> f32 {
     (available_width - 104.0 * layout_scale).max(1.0)
 }
 
 /// ui.md Phase 3 pilot: the narrow-inspector EQ chart fills the container
 /// width with no minimum-width floor.
+#[must_use]
 pub fn narrow_graph_width(available_width: f32) -> f32 {
     available_width.max(1.0)
 }

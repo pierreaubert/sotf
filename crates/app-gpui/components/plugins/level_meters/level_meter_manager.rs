@@ -61,13 +61,20 @@ impl LevelMeterManager for AppState {
     /// Update level meter groups based on current speaker configuration or channel count
     /// Creates a default stereo layout when no audio is playing
     /// Uses caching to avoid rebuilding every frame
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     fn update_level_meter_groups(&mut self) {
         let num_channels = self
             .playback
             .loudness_info
             .as_ref()
-            .map(|l| l.channel_peaks.len())
-            .unwrap_or(0);
+            .map_or(0, |l| l.channel_peaks.len());
 
         // Default to stereo (2 channels) when no audio is playing
         // This ensures meters are always visible with -60 dB default
@@ -86,7 +93,9 @@ impl LevelMeterManager for AppState {
 
         // Update cache
         self.level_meters.last_channel_count = num_channels;
-        self.level_meters.last_speaker_config = current_speaker_config.clone();
+        self.level_meters
+            .last_speaker_config
+            .clone_from(&current_speaker_config);
 
         // Capture previous states to preserve them
         let old_groups: Vec<(String, bool, bool, bool)> = self
@@ -101,8 +110,7 @@ impl LevelMeterManager for AppState {
             old_groups
                 .iter()
                 .find(|(n, _, _, _)| n == name)
-                .map(|(_, m, s, d)| (*m, *s, *d))
-                .unwrap_or((false, false, false))
+                .map_or((false, false, false), |(_, m, s, d)| (*m, *s, *d))
         };
 
         self.level_meters.groups.clear();
@@ -240,16 +248,16 @@ impl LevelMeterManager for AppState {
         let elapsed_seconds = self
             .level_meters
             .peak_hold_last_update
-            .map(|last| now.duration_since(last).as_secs_f64())
-            .unwrap_or(PEAK_HOLD_REFERENCE_INTERVAL_SECONDS);
+            .map_or(PEAK_HOLD_REFERENCE_INTERVAL_SECONDS, |last| {
+                now.duration_since(last).as_secs_f64()
+            });
 
         // Get current channel peaks from loudness data (zero-copy slice reference)
         let current_peaks: &[f64] = self
             .playback
             .loudness_info
             .as_ref()
-            .map(|l| l.channel_peaks.as_slice())
-            .unwrap_or(&[]);
+            .map_or(&[][..], |l| l.channel_peaks.as_slice());
 
         update_peak_hold_values(
             &mut self.level_meters.peak_hold,

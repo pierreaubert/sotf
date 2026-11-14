@@ -6,7 +6,7 @@ use std::path::PathBuf;
 ///
 /// Deref/DerefMut to `QueueController` so `.len()`, `.iter()`, `.current_index`,
 /// `.peek_next_track()`, etc. work transparently. Mutations that change item count
-/// (add, remove, clear, fill_magic) are shadowed to keep `expanded` in sync.
+/// (add, remove, clear, `fill_magic`) are shadowed to keep `expanded` in sync.
 #[derive(Debug, Clone)]
 struct ClearedQueueSnapshot {
     ctrl: QueueController,
@@ -57,6 +57,7 @@ impl Default for QueueState {
 }
 
 impl QueueState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             ctrl: QueueController::new(),
@@ -78,6 +79,9 @@ impl QueueState {
     }
 
     /// Add an album to the queue, tracking its expansion state.
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn add_album(&mut self, album: sotf_audio_player::Album) -> Result<usize, String> {
         self.invalidate_undo();
         let idx = self.ctrl.add_album(album)?;
@@ -85,6 +89,10 @@ impl QueueState {
         Ok(idx)
     }
 
+    /// Runs next.
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn enqueue_next(&mut self, album: sotf_audio_player::Album) -> Result<usize, String> {
         let old_len = self.ctrl.len();
         let index = self.ctrl.enqueue_next(album)?;
@@ -99,6 +107,9 @@ impl QueueState {
     }
 
     /// Add album and immediately jump to it for playback.
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn play_album_now(
         &mut self,
         album: sotf_audio_player::Album,
@@ -178,6 +189,7 @@ impl QueueState {
         self.selected_index = 0;
     }
 
+    #[must_use]
     pub fn can_undo_clear(&self) -> bool {
         self.last_cleared.is_some()
     }
@@ -195,6 +207,7 @@ impl QueueState {
         true
     }
 
+    #[must_use]
     pub fn can_undo_remove(&self) -> bool {
         self.last_removed.is_some() || self.last_removed_track.is_some()
     }
@@ -242,6 +255,9 @@ impl QueueState {
     }
 
     /// Fill queue with "magic" recommendations.
+    ///
+    /// # Errors
+    /// Returns an error if audio-feature data cannot be loaded or recommendations cannot be generated.
     pub fn fill_magic(
         &mut self,
         db: &sotf_audio_player::MusicDatabase,

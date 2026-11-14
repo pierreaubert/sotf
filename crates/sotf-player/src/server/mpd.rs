@@ -19,7 +19,7 @@ pub(super) fn mpd_song_json(song: &MpdSongInfo) -> Value {
     })
 }
 
-pub(super) fn mpd_state_name(state: &MpdPlayState) -> &'static str {
+pub(super) fn mpd_state_name(state: MpdPlayState) -> &'static str {
     match state {
         MpdPlayState::Play => "play",
         MpdPlayState::Pause => "pause",

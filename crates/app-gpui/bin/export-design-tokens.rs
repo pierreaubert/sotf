@@ -7,7 +7,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Parser)]
 struct Args {
-    /// Export the generic gpui-toolkit DesignSystem token document.
+    /// Export the generic gpui-toolkit `DesignSystem` token document.
     #[arg(long)]
     toolkit: bool,
 
@@ -20,6 +20,11 @@ struct Args {
     format: String,
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Normalized design colors are deliberately rounded to eight-bit RGBA components"
+)]
 fn rgba_to_hex(r: f32, g: f32, b: f32, a: f32) -> String {
     let ri = (r * 255.0).round() as u8;
     let gi = (g * 255.0).round() as u8;
@@ -54,6 +59,10 @@ fn theme_set_name(id: ThemeId) -> &'static str {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the complete theme mapping or ordered application startup and capture workflow together"
+)]
 fn export_theme_colors(theme: &Theme) -> Value {
     let band_map: Map<String, Value> = theme
         .plugin_palette

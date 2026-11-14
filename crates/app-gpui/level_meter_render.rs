@@ -21,6 +21,10 @@ pub struct ChannelMeterData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct GroupMeterData {
     pub group_idx: usize,
     pub is_selected: bool,
@@ -32,6 +36,7 @@ pub struct GroupMeterData {
 
 /// Compute per-channel meter fill ratios and peak-hold markers from the
 /// loudness data and peak-hold vector.
+#[must_use]
 pub fn build_channel_meter_data(
     channels: &[ChannelInfo],
     loudness: Option<&LoudnessData>,
@@ -49,11 +54,7 @@ pub fn build_channel_meter_data(
 
             let peak_hold_value = peak_hold.get(channel.index).copied().unwrap_or(0.0);
             let peak_hold_db = sample_peak_db(peak_hold_value);
-            let peak_hold_ratio = if peak_hold_value > 0.0001 {
-                Some(db_to_position(peak_hold_db))
-            } else {
-                None
-            };
+            let peak_hold_ratio = (peak_hold_value > 0.0001).then(|| db_to_position(peak_hold_db));
 
             ChannelMeterData {
                 fill_ratio: db_to_position(peak_db),
@@ -70,6 +71,7 @@ pub fn build_channel_meter_data(
 /// horizontal meter. This is also used when a snapshot predates the
 /// oversampled true-peak field, so callers can preserve its channel count
 /// without inventing an L/R pair.
+#[must_use]
 pub fn sample_peak_db(peak: f64) -> f64 {
     if peak > 0.0001 {
         20.0 * peak.log10()
@@ -82,6 +84,7 @@ pub fn sample_peak_db(peak: f64) -> f64 {
 ///
 /// Returns `None` for values outside the standard legend set so callers can
 /// choose a fallback while the common path stays allocation-free.
+#[must_use]
 pub fn db_tick_label(db: i32) -> Option<&'static str> {
     Some(match db {
         0 => "0",
@@ -103,7 +106,7 @@ fn width_percent_labels() -> &'static [&'static str] {
     WIDTH_PERCENT_LABELS.get_or_init(|| {
         (0..=100)
             .map(|i| {
-                let label = format!("{}%", i);
+                let label = format!("{i}%");
                 // Leak a bounded set of 101 small strings once; this removes
                 // per-frame heap allocation from the width-bar label.
                 Box::leak(label.into_boxed_str()) as &'static str
@@ -114,6 +117,12 @@ fn width_percent_labels() -> &'static [&'static str] {
 
 /// Format a stereo-width ratio (0.0 = mono, 1.0 = wide) as a pre-cached,
 /// heap-allocation-free percentage label.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 pub fn format_width_percent(width: f64) -> &'static str {
     let pct = (width * 100.0).round().clamp(0.0, 100.0) as usize;
     width_percent_labels()[pct]

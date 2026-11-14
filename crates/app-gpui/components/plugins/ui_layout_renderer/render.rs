@@ -21,7 +21,7 @@ use crate::components::themed_tooltip;
 use crate::plugin_file_picker::{FilePickerOpenTarget, file_picker_open_target};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Empty, Entity, FontWeight, SharedString, div, px, rems};
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, IconButton,
@@ -31,7 +31,10 @@ use gpui_ui_kit::{
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::layout_solver::{KnobSize, SolvedLayout, solve_layout_scaled};
 use sotf_plugins::param_specs::{ParamCategory, ParamSpec, ParamType};
-use sotf_plugins::plugin_layout::*;
+use sotf_plugins::plugin_layout::{
+    ColumnConstraint, ColumnRole, ControlGroup, ControlSpec, ControlType, PluginLayout,
+    VizPosition, VizSlot,
+};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Default)]
@@ -58,12 +61,12 @@ fn apply_live_profile_action_values(
                 data.downcast_ref::<sotf_plugins::plugin_hiss_reducer::snapshot::ProfileSnapshot>()
             }) {
                 if let Some(value) = values.get_mut(5) {
-                    *value = f64::from(snapshot.capture_state().0 as u8);
+                    *value = f64::from(u8::from(snapshot.capture_state().0));
                 }
                 if let Some(value) = values.get_mut(6)
                     && let Ok(status) = snapshot.try_status()
                 {
-                    *value = f64::from(status.use_flag as u8);
+                    *value = f64::from(u8::from(status.use_flag));
                 }
             }
         }
@@ -72,10 +75,10 @@ fn apply_live_profile_action_values(
                 plugin_data.and_then(|data| data.downcast_ref::<sotf_plugins::DenoiserData>())
             {
                 if let Some(value) = values.get_mut(20) {
-                    *value = f64::from(data.is_learning_noise as u8);
+                    *value = f64::from(u8::from(data.is_learning_noise));
                 }
                 if let Some(value) = values.get_mut(21) {
-                    *value = f64::from(data.requested_use_profile as u8);
+                    *value = f64::from(u8::from(data.requested_use_profile));
                 }
             }
         }
@@ -98,6 +101,10 @@ fn solve_editor_layout(layout: &PluginLayout, available_width: f32, scale: f32) 
     solve_layout_scaled(&constraints, available_width, scale)
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn localized_parameter_specs(
     params: &[ParamSpec],
     text: PluginCommonTranslations,
@@ -125,7 +132,24 @@ fn localized_parameter_specs(
 ///
 /// This replaces individual `render_*_plugin()` functions. Call this for any
 /// plugin that has a `PluginLayout` definition (i.e., `settings.layout().is_some()`).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn render_from_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -295,32 +319,31 @@ pub fn render_from_layout(
             let scale = param.display_scale;
             let entity_for_change = entity.clone();
             let entity_for_reset = entity.clone();
-            let unity_control = if matches!(settings, PluginSettings::Gain { .. }) && idx == 0 {
-                let entity = entity.clone();
-                let button = Button::new(("gain-unity", plugin_idx), "0 dB")
-                    .size(ButtonSize::Sm)
-                    .variant(ButtonVariant::Secondary)
-                    .theme(chassis_theme.to_button_theme())
-                    .disabled(!interactive)
-                    .selected(value == 0.0)
-                    .aria_label(format!("{}: 0 dB", param.name))
-                    .on_click_event(move |_, _, cx| {
-                        entity.update(cx, |state, cx| {
-                            state.app.reset_plugin_param(plugin_idx, idx);
-                            cx.notify();
+            let unity_control =
+                (matches!(settings, PluginSettings::Gain { .. }) && idx == 0).then(|| {
+                    let entity = entity.clone();
+                    let button = Button::new(("gain-unity", plugin_idx), "0 dB")
+                        .size(ButtonSize::Sm)
+                        .variant(ButtonVariant::Secondary)
+                        .theme(chassis_theme.to_button_theme())
+                        .disabled(!interactive)
+                        .selected(value == 0.0)
+                        .aria_label(format!("{}: 0 dB", param.name))
+                        .on_click_event(move |_, _, cx| {
+                            entity.update(cx, |state, cx| {
+                                state.app.reset_plugin_param(plugin_idx, idx);
+                                cx.notify();
+                            });
                         });
-                    });
-                #[cfg(feature = "dev-api")]
-                let button = button.dev_track_with_state(
-                    format!("plugin.gain.{plugin_idx}.unity"),
-                    DevElementState::default()
-                        .enabled(interactive)
-                        .selected(value == 0.0),
-                );
-                Some(button)
-            } else {
-                None
-            };
+                    #[cfg(feature = "dev-api")]
+                    let button = button.dev_track_with_state(
+                        format!("plugin.gain.{plugin_idx}.unity"),
+                        DevElementState::default()
+                            .enabled(interactive)
+                            .selected(value == 0.0),
+                    );
+                    button
+                });
             let slider = Slider::new(("utility-slider", plugin_idx * 1000 + idx))
                 .value((value * scale) as f32)
                 .range((min * scale) as f32, (max * scale) as f32)
@@ -345,12 +368,12 @@ pub fn render_from_layout(
                         state
                             .app
                             .set_plugin_param(plugin_idx, idx, f64::from(value));
-                    })
+                    });
                 })
                 .on_reset(move |_, cx| {
                     entity_for_reset.update(cx, |state, _| {
                         state.app.reset_plugin_param(plugin_idx, idx);
-                    })
+                    });
                 });
             #[cfg(feature = "dev-api")]
             let slider = slider.dev_track(format!("plugin.slider.{plugin_idx}.{idx}"));
@@ -454,7 +477,11 @@ pub fn render_from_layout(
 ///
 /// Custom plugin views use this when they need bespoke content for one portion
 /// of a plugin but still need the standard parameter controls.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_main_controls_from_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -521,7 +548,11 @@ pub fn render_main_controls_from_layout(
 }
 
 /// Gear menus contain appearance controls only; DSP controls render in the editor.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[must_use]
 pub fn render_config_controls_from_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -656,13 +687,12 @@ fn editor_setup_controls(settings: &PluginSettings, header: bool) -> Vec<&'stati
 pub(crate) fn shell_owned_param_indices(settings: &PluginSettings) -> Vec<usize> {
     let custom: &[usize] = match settings {
         PluginSettings::Compressor { .. } => &[7, 8, 14],
-        PluginSettings::Upmixer { .. } => &[0],
+        PluginSettings::Upmixer { .. } | PluginSettings::ChannelMuteSolo { .. } => &[0],
         PluginSettings::DynamicEq { .. } => &[0, 6],
         PluginSettings::LinearPhaseEq { .. } => &[100, 101, 102, 103, 105],
         PluginSettings::MultibandCompressor { .. } => &[0, 1, 12, 14],
         PluginSettings::MultibandExpander { .. } => &[0, 1, 15],
         PluginSettings::SpectrumAnalyzer { .. } => &[4, 5],
-        PluginSettings::ChannelMuteSolo { .. } => &[0],
         PluginSettings::XTC { .. } => &[13, 24],
         _ => &[],
     };
@@ -680,7 +710,18 @@ pub(crate) fn shell_owned_param_indices(settings: &PluginSettings) -> Vec<usize>
 }
 
 /// Render each generated configuration control in its single editor location.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_editor_setup(
     d: &Ds,
     entity: Entity<AppState>,
@@ -719,7 +760,7 @@ pub(crate) fn render_editor_setup(
         .gap(d.grid)
         .min_w_0()
         .max_w_full()
-        .when(header, |row| row.flex_1());
+        .when(header, gpui::Styled::flex_1);
     for spec in controls {
         let control = render_control(
             text,
@@ -752,6 +793,10 @@ pub(crate) fn render_editor_setup(
 /// Preferred width for the generated setup popover, derived from the controls
 /// it will actually contain. File paths and long choice rows receive more room;
 /// compact numeric/toggle layouts stay narrow.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn config_controls_preferred_width(settings: &PluginSettings, layout_scale: f32) -> f32 {
     let Some(layout) = settings.layout() else {
         return 220.0 * layout_scale;
@@ -787,7 +832,10 @@ pub fn config_controls_preferred_width(settings: &PluginSettings, layout_scale: 
 ///
 /// Custom plugin views use this for layout-declared supplemental controls
 /// while keeping their bespoke main surface.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 pub fn render_tabs_from_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -903,7 +951,18 @@ pub fn render_tabs_from_layout(
     container.into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_solved_layout(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1004,10 +1063,7 @@ fn render_solved_layout(
     ));
 
     #[cfg(feature = "dev-api")]
-    let row = {
-        use crate::app::dev_api::DevTrackExt;
-        row.dev_track(format!("plugin.layout.row.{plugin_idx}"))
-    };
+    let row = { row.dev_track(format!("plugin.layout.row.{plugin_idx}")) };
     root = root.child(row);
 
     // Custom visualizations rendered at the root level (FullCenter position).
@@ -1039,6 +1095,10 @@ fn render_solved_layout(
 /// Thin wrapper around the shared
 /// [`spatial_spider::render_spatial_spider_panel`] — bundles in the speaker
 /// config inference from the loudness data's channel count.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_spatial_spider_viz(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1054,7 +1114,22 @@ fn render_spatial_spider_viz(
 
 /// Render the config (left) column.
 /// Render the main (center) column with groups and tabs.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_main_column(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1269,13 +1344,14 @@ fn render_main_column(
                 .iter()
                 .all(|id| layout.main.iter().any(|group| group.id == *id));
         if analog_compact {
+            use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+
             let (instance_id, expanded) = sections.clone().unwrap_or((plugin_idx, Vec::new()));
             let selected_band = expanded
                 .iter()
                 .find_map(|id| id.strip_prefix("analog-band:"))
                 .filter(|id| analog_bands.contains(id))
                 .unwrap_or("LOW");
-            use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
             let band_entity = entity.clone();
             let strip = ButtonSet::new(("analog-band-strip", plugin_idx))
                 .options(
@@ -1410,10 +1486,7 @@ fn render_main_column(
                 .child(gpui_ui_kit::Text::caption("GR"))
                 .child(gpui_ui_kit::Text::label(format!("{reduction:.1} dB")));
             #[cfg(feature = "dev-api")]
-            let gr = {
-                use crate::app::dev_api::DevTrackExt;
-                gr.dev_track(format!("plugin.control.{plugin_idx}.{}", usize::MAX))
-            };
+            let gr = { gr.dev_track(format!("plugin.control.{plugin_idx}.{}", usize::MAX)) };
             center = center.child(toolbar.child(gr));
             let mut primary = div()
                 .flex()
@@ -1542,10 +1615,7 @@ fn render_main_column(
                     meter_theme,
                 ));
             #[cfg(feature = "dev-api")]
-            let gr = {
-                use crate::app::dev_api::DevTrackExt;
-                gr.dev_track(format!("plugin.control.{plugin_idx}.{}", usize::MAX))
-            };
+            let gr = { gr.dev_track(format!("plugin.control.{plugin_idx}.{}", usize::MAX)) };
             center = center.child(gr);
         }
 
@@ -1563,9 +1633,9 @@ fn render_main_column(
         // Count only groups with body controls after header-owned globals move out.
         visible_groups.retain(|group| {
             group.controls.iter().any(|spec| {
-                !spec.hidden
-                    && !primary_indices.contains(&spec.param_index)
-                    && !(choice_state.relocate_globals
+                !(spec.hidden
+                    || primary_indices.contains(&spec.param_index)
+                    || choice_state.relocate_globals
                         && params
                             .get(spec.param_index)
                             .is_some_and(|param| main_header_control(spec, param)))
@@ -1605,21 +1675,18 @@ fn render_main_column(
             ));
         }
         #[cfg(feature = "dev-api")]
-        let container = {
-            use crate::app::dev_api::DevTrackExt;
-            container.dev_track(format!("plugin.layout.groups.{plugin_idx}"))
-        };
+        let container = { container.dev_track(format!("plugin.layout.groups.{plugin_idx}")) };
         center = center.child(container);
 
         // Output values and meters stay on the primary surface. Compact
         // global choices have their sole owner in the editor header.
         if layout.output.iter().any(|spec| {
-            !(choice_state.relocate_globals
-                && params
-                    .get(spec.param_index)
-                    .is_some_and(|param| main_header_control(spec, param)))
-                && !spec.hidden
-                && !(output_meter_compact
+            !(spec.hidden
+                || choice_state.relocate_globals
+                    && params
+                        .get(spec.param_index)
+                        .is_some_and(|param| main_header_control(spec, param))
+                || output_meter_compact
                     && matches!(spec.control_type, ControlType::BarMeter { .. }))
         }) {
             let mut meter_row = div()
@@ -1634,12 +1701,12 @@ fn render_main_column(
                     theme,
                 ));
             for spec in layout.output.iter().filter(|spec| {
-                !(choice_state.relocate_globals
-                    && params
-                        .get(spec.param_index)
-                        .is_some_and(|param| main_header_control(spec, param)))
-                    && !spec.hidden
-                    && !(output_meter_compact
+                !(spec.hidden
+                    || choice_state.relocate_globals
+                        && params
+                            .get(spec.param_index)
+                            .is_some_and(|param| main_header_control(spec, param))
+                    || output_meter_compact
                         && matches!(spec.control_type, ControlType::BarMeter { .. }))
             }) {
                 meter_row = meter_row.child(render_control(
@@ -1802,10 +1869,7 @@ fn render_main_column(
                 tab_bar = tab_bar.child(tab_button);
             }
             #[cfg(feature = "dev-api")]
-            let tab_bar = {
-                use crate::app::dev_api::DevTrackExt;
-                tab_bar.dev_track(format!("plugin.layout.tabs.{plugin_idx}"))
-            };
+            let tab_bar = { tab_bar.dev_track(format!("plugin.layout.tabs.{plugin_idx}")) };
             center = center.child(tab_bar);
 
             // Active tab content
@@ -1829,25 +1893,35 @@ fn render_main_column(
                     text,
                 );
                 #[cfg(feature = "dev-api")]
-                let tab_div = {
-                    use crate::app::dev_api::DevTrackExt;
-                    tab_div.dev_track(format!("plugin.layout.tab-content.{plugin_idx}"))
-                };
+                let tab_div =
+                    { tab_div.dev_track(format!("plugin.layout.tab-content.{plugin_idx}")) };
                 center = center.child(tab_div);
             }
         }
     }
 
     #[cfg(feature = "dev-api")]
-    let center = {
-        use crate::app::dev_api::DevTrackExt;
-        center.dev_track(format!("plugin.layout.main.{plugin_idx}"))
-    };
+    let center = { center.dev_track(format!("plugin.layout.main.{plugin_idx}")) };
     center
 }
 
 /// Render a control group (titled section with controls).
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_group(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2049,14 +2123,19 @@ fn render_group(
         col
     };
     #[cfg(feature = "dev-api")]
-    let col = {
-        use crate::app::dev_api::DevTrackExt;
-        col.dev_track(format!("plugin.layout.group.{plugin_idx}.{}", group.id))
-    };
+    let col = { col.dev_track(format!("plugin.layout.group.{plugin_idx}.{}", group.id)) };
     col
 }
 
-/// Render a single control based on its ControlType.
+/// Render a single control based on its `ControlType`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_control(
     text: PluginCommonTranslations,
     d: &Ds,
@@ -2219,17 +2298,14 @@ fn render_control(
         }
         ControlType::FilePicker => {
             if let Some(param) = params.get(idx) {
-                let path = file_paths.get(&idx).map(|s| s.as_str());
+                let path = file_paths.get(&idx).map(std::string::String::as_str);
                 render_file_picker(d, plugin_idx, idx, param, path, interactive, theme)
             } else {
                 div().into_any_element()
             }
         }
     };
-    let engine_key = params
-        .get(idx)
-        .map(|param| param.engine_key)
-        .unwrap_or("meter");
+    let engine_key = params.get(idx).map_or("meter", |param| param.engine_key);
     let control = div()
         .id(SharedString::from(format!(
             "plugin-control-{plugin_idx}-{engine_key}"
@@ -2241,7 +2317,10 @@ fn render_control(
 }
 
 /// Render a compact horizontal parameter row with exact display-space entry.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 pub(crate) fn render_horizontal_param(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2249,8 +2328,8 @@ pub(crate) fn render_horizontal_param(
     idx: usize,
     param: &ParamSpec,
     value: f64,
-    _is_editing: bool,
-    _selected_param: usize,
+    is_editing: bool,
+    selected_param: usize,
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
@@ -2261,8 +2340,8 @@ pub(crate) fn render_horizontal_param(
         idx,
         param,
         value,
-        _is_editing,
-        _selected_param,
+        is_editing,
+        selected_param,
         interactive,
         theme,
         true,
@@ -2304,7 +2383,10 @@ pub(crate) fn render_narrow_horizontal_param(
 }
 
 /// Render numeric table values without repeating their name-column label.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 pub(crate) fn render_horizontal_param_value(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2312,8 +2394,8 @@ pub(crate) fn render_horizontal_param_value(
     idx: usize,
     param: &ParamSpec,
     value: f64,
-    _is_editing: bool,
-    _selected_param: usize,
+    is_editing: bool,
+    selected_param: usize,
     interactive: bool,
     theme: &Theme,
 ) -> AnyElement {
@@ -2324,8 +2406,8 @@ pub(crate) fn render_horizontal_param_value(
         idx,
         param,
         value,
-        _is_editing,
-        _selected_param,
+        is_editing,
+        selected_param,
         interactive,
         theme,
         false,
@@ -2333,7 +2415,19 @@ pub(crate) fn render_horizontal_param_value(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "Independent presentation flags preserve the existing renderer interface"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_horizontal_param_impl(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2390,7 +2484,7 @@ fn render_horizontal_param_impl(
                 entity.update(cx, |state, _| {
                     state
                         .app
-                        .set_plugin_param(plugin_idx, idx, new_value as f64);
+                        .set_plugin_param(plugin_idx, idx, f64::from(new_value));
                 });
             }
         })
@@ -2454,6 +2548,10 @@ fn render_horizontal_param_impl(
 /// values. `set_plugin_param` accepts display-space values and applies the
 /// parameter's display scale, so the editor follows the same contract as the
 /// existing potentiometer and slider callbacks.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_param_as_number_input(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -2518,6 +2616,10 @@ fn render_param_as_number_input(
 }
 
 /// Render a param as a toggle (for Bool and Choice types).
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_param_as_toggle(
     text: PluginCommonTranslations,
     d: &Ds,
@@ -2717,6 +2819,23 @@ fn render_compact_selector_impl(
 }
 
 /// Render a choice parameter using its connected dropdown or button set.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_param_as_selector(
     text: PluginCommonTranslations,
     d: &Ds,
@@ -2872,6 +2991,15 @@ fn render_param_as_selector(
 
 /// Render a param as a horizontal button set (mutually exclusive buttons).
 /// Render a compact exclusive parameter choice with an inline label.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(crate) fn render_compact_choice_param(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2930,6 +3058,23 @@ pub(crate) fn render_compact_choice_param(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "Independent presentation flags preserve the existing renderer interface"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_param_as_button_set(
     d: &Ds,
     entity: Entity<AppState>,
@@ -2946,6 +3091,8 @@ fn render_param_as_button_set(
     theme: &Theme,
     text: PluginCommonTranslations,
 ) -> AnyElement {
+    use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
+
     if matches!(param.engine_key, "learn_noise" | "clear_profile") {
         let capture_active = value > 0.5;
         let is_learn = param.engine_key == "learn_noise";
@@ -2988,7 +3135,6 @@ fn render_param_as_button_set(
             .child(button)
             .into_any_element();
     }
-    use gpui_ui_kit::{ButtonSet, ButtonSetOption, ButtonSetSize};
     let choices = ButtonSet::new(("plugin-layout-buttons", plugin_idx * 1000 + idx))
         .options(
             labels
@@ -3061,28 +3207,28 @@ fn current_gain_reduction_db(
                     .iter()
                     .copied()
                     .reduce(f32::max)
-                    .map(|v| v as f64)
+                    .map(f64::from)
             } else if let Some(ld) = d.downcast_ref::<sotf_plugins::LimiterData>() {
-                Some(ld.gain_reduction_db as f64)
+                Some(f64::from(ld.gain_reduction_db))
             } else if let Some(gd) = d.downcast_ref::<sotf_plugins::GateData>() {
                 // Use attenuation_db: take max across channels
                 gd.attenuation_db
                     .iter()
                     .copied()
                     .reduce(f32::max)
-                    .map(|v| v as f64)
+                    .map(f64::from)
             } else if let Some(ed) = d.downcast_ref::<sotf_plugins::MultibandExpanderData>() {
                 ed.attenuation_db
                     .iter()
                     .copied()
                     .reduce(f32::max)
-                    .map(|v| v as f64)
+                    .map(f64::from)
             } else if let Some(dd) = d.downcast_ref::<sotf_plugins::DeEsserData>() {
                 dd.gain_reduction_db
                     .iter()
                     .copied()
                     .reduce(f32::max)
-                    .map(|v| v as f64)
+                    .map(f64::from)
             } else {
                 None
             }
@@ -3102,7 +3248,7 @@ fn render_param_as_label(
         |value| {
             let display_val = value * param.display_scale;
             if param.unit.is_empty() {
-                format!("{:.1}", display_val)
+                format!("{display_val:.1}")
             } else {
                 format!("{:.1} {}", display_val, param.unit)
             }
@@ -3134,6 +3280,10 @@ fn render_param_as_label(
 }
 
 /// Render a file picker with load button.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn render_file_picker(
     d: &Ds,
     plugin_idx: usize,
@@ -3199,7 +3349,7 @@ pub(crate) fn render_file_picker(
                         cx,
                     );
                 }
-                None => log::warn!("No file open action for engine_key: {}", engine_key),
+                None => log::warn!("No file open action for engine_key: {engine_key}"),
             },
         )
     })
@@ -3274,8 +3424,24 @@ pub(crate) fn render_file_picker(
 
 /// Render a transfer curve visualization using param values from the layout.
 ///
-/// Looks up threshold, ratio, and knee by engine_key. For limiters (no ratio param),
-/// uses ratio=∞ and is_limiter=true for proper brickwall rendering.
+/// Looks up threshold, ratio, and knee by `engine_key`. For limiters (no ratio param),
+/// uses ratio=∞ and `is_limiter=true` for proper brickwall rendering.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 fn render_transfer_curve_for_layout(
     d: &Ds,
     params: &[ParamSpec],
@@ -3399,15 +3565,15 @@ fn render_transfer_curve_for_layout(
                 .iter()
                 .copied()
                 .reduce(f32::max)
-                .map(|level| level as f64)
+                .map(f64::from)
         } else if let Some(ld) = d.downcast_ref::<sotf_plugins::LimiterData>() {
-            Some(ld.peak_db as f64)
+            Some(f64::from(ld.peak_db))
         } else if let Some(gd) = d.downcast_ref::<sotf_plugins::GateData>() {
             gd.input_levels_db
                 .iter()
                 .copied()
                 .reduce(f32::max)
-                .map(|v| v as f64)
+                .map(f64::from)
         } else {
             None
         }
@@ -3426,7 +3592,14 @@ fn render_transfer_curve_for_layout(
     .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_layout_tab_content(
     d: &Ds,
     entity: Entity<AppState>,

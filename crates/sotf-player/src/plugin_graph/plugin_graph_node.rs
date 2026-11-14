@@ -23,10 +23,12 @@ pub struct PluginGraphNode {
 }
 
 impl PluginGraphNode {
+    #[must_use]
     pub fn new(plugin: Plugin, position: NodePosition) -> Self {
         Self::with_role(plugin, position, NodeRole::User)
     }
 
+    #[must_use]
     pub fn with_role(plugin: Plugin, position: NodePosition, role: NodeRole) -> Self {
         let (input_channels, output_channels) = Self::channel_counts_for(&plugin);
         Self {

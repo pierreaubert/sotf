@@ -2,7 +2,10 @@ pub(crate) fn is_narrow_default_layout(available_width: f32) -> bool {
     available_width > 0.0 && available_width < 720.0
 }
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "UI hooks and feature-gated state are retained across application configurations"
+)]
 pub(crate) fn is_single_column_default_grid(available_width: f32) -> bool {
     available_width > 0.0 && available_width < 520.0
 }

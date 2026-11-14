@@ -7,6 +7,10 @@ use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
 use gpui_audio_kit::audio_design_tokens::AudioDesignTokens;
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+)]
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {
         r: ((hex >> 16) & 0xff) as f32 / 255.0,
@@ -16,35 +20,36 @@ const fn rgba(hex: u32, alpha: f32) -> Rgba {
     }
 }
 
+#[must_use]
 pub fn theme() -> PluginTheme {
     PluginTheme {
         // Surfaces — flat black, hard white border
-        chassis_bg_top: rgba(0x000000, 1.0),
-        chassis_bg_bottom: rgba(0x000000, 1.0),
-        chassis_border: rgba(0xffffff, 1.0),
-        panel_bg: rgba(0x000000, 1.0),
-        panel_recess: rgba(0x0a0a0a, 1.0),
-        section_divider: rgba(0xffffff, 1.0),
-        corner_bracket: rgba(0xffffff, 1.0),
+        chassis_bg_top: rgba(0x0000_0000, 1.0),
+        chassis_bg_bottom: rgba(0x0000_0000, 1.0),
+        chassis_border: rgba(0x00ff_ffff, 1.0),
+        panel_bg: rgba(0x0000_0000, 1.0),
+        panel_recess: rgba(0x000a_0a0a, 1.0),
+        section_divider: rgba(0x00ff_ffff, 1.0),
+        corner_bracket: rgba(0x00ff_ffff, 1.0),
 
         // Ink — no greys, just on/off
-        ink_hi: rgba(0xffffff, 1.0),
-        ink: rgba(0xffffff, 1.0),
-        ink_mid: rgba(0xffffff, 0.7),
-        ink_low: rgba(0xffffff, 0.4),
-        ink_faint: rgba(0xffffff, 0.2),
+        ink_hi: rgba(0x00ff_ffff, 1.0),
+        ink: rgba(0x00ff_ffff, 1.0),
+        ink_mid: rgba(0x00ff_ffff, 0.7),
+        ink_low: rgba(0x00ff_ffff, 0.4),
+        ink_faint: rgba(0x00ff_ffff, 0.2),
 
         // Accent — same white. The "accent" expressiveness comes from
         // motion + stroke weight, not color.
-        accent: rgba(0xffffff, 1.0),
-        accent_bright: rgba(0xffffff, 1.0),
-        accent_glow: rgba(0xffffff, 0.0), // no glow — brutalist
-        accent_arc: rgba(0xffffff, 1.0),
-        accent_track: rgba(0xffffff, 0.15),
+        accent: rgba(0x00ff_ffff, 1.0),
+        accent_bright: rgba(0x00ff_ffff, 1.0),
+        accent_glow: rgba(0x00ff_ffff, 0.0), // no glow — brutalist
+        accent_arc: rgba(0x00ff_ffff, 1.0),
+        accent_track: rgba(0x00ff_ffff, 0.15),
 
         // LED — also white. Active state shown as solid; off as outlined.
-        led_active: rgba(0xffffff, 1.0),
-        led_glow: rgba(0xffffff, 0.0),
+        led_active: rgba(0x00ff_ffff, 1.0),
+        led_glow: rgba(0x00ff_ffff, 0.0),
 
         // Typography — heavy display sans, monospace, single weight family
         font_display: SharedString::from("Archivo Black"),

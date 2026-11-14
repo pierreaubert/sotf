@@ -11,7 +11,7 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, ClickEvent, Entity, FontWeight, KeyDownEvent, Result, div, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, NumberInput, NumberInputSize, StackSpacing, Text,
     TextSize, VStack,
@@ -26,6 +26,15 @@ use sotf_plugins::{
 
 impl PlayerView {
     /// Render misc settings content
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric selectors round worker counts before clamping to the available range"
+    )]
     pub(crate) fn render_plugins_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -107,12 +116,12 @@ impl PlayerView {
                                 .weight(gpui_ui_kit::TextWeight::Bold)
                                 .color(theme.text_primary),
                         )
-                        .when_some(runtime_summary, |stack, summary| stack.child(summary))
-                        .when_some(runtime_error, |stack, error| stack.child(error))
+                        .when_some(runtime_summary, gpui_ui_kit::VStack::child)
+                        .when_some(runtime_error, gpui_ui_kit::VStack::child)
                         .when_some(build_diagnostics, |stack, diagnostics| {
                             stack.child(diagnostics)
                         })
-                        .when_some(worker_statuses, |stack, statuses| stack.child(statuses))
+                        .when_some(worker_statuses, gpui_ui_kit::VStack::child)
                         .child(
                             div()
                                 .flex()
@@ -209,8 +218,8 @@ impl PlayerView {
                                     }),
                                 ),
                         )
-                        .when_some(scan_error, |stack, error| stack.child(error))
-                        .when_some(scan_results, |stack, results| stack.child(results))
+                        .when_some(scan_error, gpui_ui_kit::VStack::child)
+                        .when_some(scan_results, gpui_ui_kit::VStack::child)
                         .build()
                         .into_any_element(),
                 )
@@ -223,10 +232,9 @@ impl PlayerView {
         };
 
         let total_cores = std::thread::available_parallelism()
-            .map(|n| n.get() as u8)
-            .unwrap_or(4);
+            .map_or(4, |n| u8::try_from(n.get()).unwrap_or(u8::MAX));
 
-        let current_value = max_cores.unwrap_or(total_cores) as f64;
+        let current_value = f64::from(max_cores.unwrap_or(total_cores));
 
         div()
             .w_full()
@@ -291,7 +299,7 @@ impl PlayerView {
                                 let state_entity = self.state.clone();
                                 NumberInput::new("max-cpu-cores")
                                     .value(current_value)
-                                    .range(1.0, total_cores as f64)
+                                    .range(1.0, f64::from(total_cores))
                                     .step(1.0)
                                     .decimals(0)
                                     .unit(text.cpu_cores_unit)
@@ -322,6 +330,10 @@ impl PlayerView {
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_external_runtime_summary(
     d: &Ds,
     text: ExternalPluginSettingsTranslations,
@@ -390,6 +402,10 @@ fn render_external_error(d: &Ds, label: &'static str, error: &str, theme: &Theme
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_external_worker_statuses(
     d: &Ds,
     text: ExternalPluginSettingsTranslations,
@@ -445,6 +461,14 @@ fn render_external_worker_statuses(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_external_plugin_results(
     d: &Ds,
     text: ExternalPluginSettingsTranslations,
@@ -573,6 +597,14 @@ fn external_count_chip(d: &Ds, label: &'static str, count: usize, theme: &Theme)
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_external_plugin_row(
     d: &Ds,
     text: ExternalPluginSettingsTranslations,
@@ -720,6 +752,10 @@ fn render_external_plugin_row(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn start_external_plugin_scan(
     view: &mut PlayerView,
     text: ExternalPluginSettingsTranslations,
@@ -767,6 +803,10 @@ fn start_external_plugin_scan(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn start_external_runtime_update(
     view: &mut PlayerView,
     text: ExternalPluginSettingsTranslations,

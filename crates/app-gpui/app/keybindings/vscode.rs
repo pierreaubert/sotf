@@ -1,7 +1,7 @@
 use crate::app::actions;
 use gpui::KeyBinding;
 
-/// VSCode preset - familiar to many developers
+/// `VSCode` preset - familiar to many developers
 pub(super) fn vscode_bindings() -> Vec<KeyBinding> {
     vec![
         // Track navigation - VSCode media style (modifier combos stay global)

@@ -1,6 +1,6 @@
-//! Generates shared AutoEQ reports entirely in-process.
+//! Generates shared `AutoEQ` reports entirely in-process.
 //!
-//! Payload composition is delegated to AutoEQ's native dataset composer
+//! Payload composition is delegated to `AutoEQ`'s native dataset composer
 //! (`autoeq_report_wasm::report_dataset_payload`); file-backed report
 //! inputs are prepared by [`autoeq_report_native::prepare_live_report`]. No Python runtime, staged
 //! scripts, or subprocesses are involved, so generation works identically
@@ -30,6 +30,7 @@ impl GeneratedReport {
     }
 
     /// Generated report path, valid while this object lives.
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.html_path
     }
@@ -44,12 +45,13 @@ impl GeneratedReport {
     }
 
     /// Directory retained for diagnostics during this report's lifetime.
+    #[must_use]
     pub fn working_directory(&self) -> &Path {
         self.directory.path()
     }
 }
 
-/// Generate every dashboard using AutoEQ's native report composer.
+/// Generate every dashboard using `AutoEQ`'s native report composer.
 ///
 /// Run this function on a background worker. `artifact_root` resolves
 /// relative response/IR sidecars without rewriting their identities.
@@ -103,7 +105,7 @@ pub fn export_report(document: &ReportDocument) -> anyhow::Result<GeneratedRepor
     })
 }
 
-/// Prepares and composes the shared AutoEQ report document.
+/// Prepares and composes the shared `AutoEQ` report document.
 ///
 /// Run this function on a background worker because preparation reads artifacts.
 ///
@@ -118,7 +120,7 @@ pub fn compose_report(
         .context("Resolving AutoEQ report artifacts")?;
     let mut document = autoeq_report_wasm::report_dataset_payload::build_report_document(
         &prepared,
-        &Default::default(),
+        &autoeq_report_wasm::report_dataset::ReportDatasetOptions::default(),
     )
     .map_err(anyhow::Error::msg)?;
     if let Some(quality) = quality {

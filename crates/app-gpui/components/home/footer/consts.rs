@@ -7,7 +7,10 @@ use crate::components::icons::{Icon, IconName, IconSize};
 use crate::components::themed_tooltip as footer_tooltip;
 use crate::ui::{FOOTER_HEIGHT_REMS, PlayerView};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, Bounds, ClickEvent, ElementId, FontWeight, KeyDownEvent, MouseButton,
+    MouseDownEvent, Pixels, ScrollWheelEvent, div, img, px, rems,
+};
 use gpui_audio_kit::VolumeKnob;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, IconButton, IconButtonSize, IconButtonVariant,
@@ -35,6 +38,10 @@ const TEST_WAVEFORM_BOUNDS_WIDTH_PX: f32 = 600.0;
 #[cfg(test)]
 const TEST_WAVEFORM_SMALL_BOUNDS_WIDTH_PX: f32 = 64.0;
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(super) fn waveform_bar_x_and_width(
     bounds_width: Pixels,
     idx: usize,
@@ -108,6 +115,14 @@ mod tests {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub(crate) fn render_scan_status_row(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -136,11 +151,8 @@ impl PlayerView {
             .when(library_active, |row| {
                 let tracks = state.app.library_state.scan_progress_tracks;
                 let total = state.app.scan.total_files;
-                let progress = if total > 0 && tracks < total {
-                    Some((tracks as f32 / total as f32).clamp(0.0, 1.0))
-                } else {
-                    None
-                };
+                let progress = (total > 0 && tracks < total)
+                    .then(|| (tracks as f32 / total as f32).clamp(0.0, 1.0));
                 let item = self.render_scan_status_item(
                     "Scan",
                     progress,
@@ -235,6 +247,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_scan_status_item(
         &self,
         label: &'static str,
@@ -284,9 +300,7 @@ impl PlayerView {
         phase: &str,
     ) -> String {
         let elapsed = Self::format_scan_duration(elapsed_secs);
-        let eta = eta_secs
-            .map(Self::format_scan_duration)
-            .unwrap_or_else(|| "--".to_string());
+        let eta = eta_secs.map_or_else(|| "--".to_string(), Self::format_scan_duration);
         let phase = if phase.is_empty() { "Scanning" } else { phase };
 
         if total > 0 && tracks >= total {
@@ -406,6 +420,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub(super) fn render_footer_collapsed(
         &self,
         translations: &crate::i18n::Translations,
@@ -623,6 +645,10 @@ impl PlayerView {
     }
 
     /// Track info text (title, album, artist) - displayed next to album art
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_footer_track_info(
         &self,
         translations: &crate::i18n::Translations,
@@ -631,7 +657,8 @@ impl PlayerView {
     ) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
-        let _text = FooterTranslations::for_language(state.app.ui_state.language);
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let text = FooterTranslations::for_language(state.app.ui_state.language);
         let theme = &state.app.ui_state.theme;
         let no_track_label = translations.playback_no_track;
 
@@ -663,13 +690,13 @@ impl PlayerView {
                         .text_size(d.text_sm)
                         .font_weight(FontWeight::MEDIUM)
                         .text_color(accent)
-                        .child(_text.hal_input_active),
+                        .child(text.hal_input_active),
                 )
                 .child(
                     div()
                         .text_size(d.text_xs)
                         .text_color(text_secondary)
-                        .child(_text.processing_system_audio),
+                        .child(text.processing_system_audio),
                 )
                 .child(
                     div()
@@ -762,6 +789,18 @@ impl PlayerView {
     }
 
     /// Center section: Transport controls + waveform + time
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_sign_loss,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_footer_center(
         &self,
         show_waveform: bool,
@@ -792,7 +831,7 @@ impl PlayerView {
         let format_time = |secs: f64| -> String {
             let mins = (secs / 60.0) as u32;
             let s = (secs % 60.0) as u32;
-            format!("{:02}:{:02}", mins, s)
+            format!("{mins:02}:{s:02}")
         };
 
         let position_str = format_time(position_secs);
@@ -844,7 +883,7 @@ impl PlayerView {
         };
 
         let bounds_ref = Rc::new(RefCell::new(None::<Bounds<Pixels>>));
-        let bounds_ref_clone = bounds_ref.clone();
+        let bounds_ref_clone = std::rc::Rc::clone(&bounds_ref);
 
         div()
             .flex()
@@ -1012,8 +1051,7 @@ impl PlayerView {
                                                                 state.player.seek(new_position)
                                                             {
                                                                 log::error!(
-                                                                    "Failed to seek backward: {}",
-                                                                    e
+                                                                    "Failed to seek backward: {e}"
                                                                 );
                                                             }
                                                         }
@@ -1121,8 +1159,7 @@ impl PlayerView {
                                                                 state.player.seek(new_position)
                                                             {
                                                                 log::error!(
-                                                                    "Failed to seek forward: {}",
-                                                                    e
+                                                                    "Failed to seek forward: {e}"
                                                                 );
                                                             }
                                                         }
@@ -1260,10 +1297,10 @@ impl PlayerView {
                                     view.state.update(cx, |state, _cx| {
                                         if state.app.playback.duration_secs > 0.0 {
                                             let new_pos =
-                                                state.app.playback.duration_secs * ratio as f64;
+                                                state.app.playback.duration_secs * f64::from(ratio);
                                             state.app.playback.position_secs = new_pos;
                                             if let Err(e) = state.player.seek(new_pos) {
-                                                log::error!("Failed to seek from waveform: {}", e);
+                                                log::error!("Failed to seek from waveform: {e}");
                                             }
                                         }
                                     });
@@ -1356,6 +1393,14 @@ impl PlayerView {
             })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_compact_transport(
         &self,
         is_playing: bool,
@@ -1478,6 +1523,19 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_compact_volume(
         &self,
         volume: f32,
@@ -1736,6 +1794,19 @@ impl PlayerView {
 
     /// Render a round volume button with circular progress indicator
     /// Supports mouse scroll and keyboard input to change volume
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_volume_button(
         &self,
         volume: f32,
@@ -1769,7 +1840,7 @@ impl PlayerView {
         let knob = VolumeKnob::new()
             .id("volume-knob")
             .value(volume)
-            .label(format!("{}", volume_percent))
+            .label(format!("{volume_percent}"))
             .size(rems(4.5))
             .muted(muted)
             .focus_handle(focus_handle.clone())

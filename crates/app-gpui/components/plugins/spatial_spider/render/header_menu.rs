@@ -4,12 +4,17 @@ use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, deferred, div, rgba};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Menu, MenuItem, Popover, PopoverPlacement, PopoverTheme,
 };
 use sotf_plugins::speaker_config::SpeakerConfig;
 
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_spatial_header_menu(
     d: &Ds,
     entity: Entity<AppState>,
@@ -26,7 +31,10 @@ pub fn render_spatial_header_menu(
         SpiderViewMode::Disc2D => "2D",
         SpiderViewMode::View3D => "3D",
     };
-    #[allow(unused_mut)]
+    #[allow(
+        unused_mut,
+        reason = "Other platform and feature configurations require mutation"
+    )]
     let mut items = vec![
         MenuItem::checkbox("off", "Off", ui.view_mode == SpiderViewMode::Off),
         MenuItem::checkbox("2d", "2D", ui.view_mode == SpiderViewMode::Disc2D),
@@ -101,7 +109,7 @@ pub fn render_spatial_header_menu(
                         .build_with_theme(&PopoverTheme {
                             background: theme.surface,
                             border: theme.border,
-                            backdrop: rgba(0x00000001), // intentional: invisible click-outside hit area matches toolkit Popover default
+                            backdrop: rgba(0x0000_0001), // intentional: invisible click-outside hit area matches toolkit Popover default
                         }),
                 )
                 .with_priority(1),

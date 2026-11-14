@@ -9,10 +9,21 @@ use crate::app::App;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
+///
+/// # Errors
+/// Returns an error for an unknown query path or unavailable indexed data.
 pub fn resolve(path: &str, app: &App) -> Result<Value> {
     read_path(path, app)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 fn read_path(path: &str, app: &App) -> Result<Value> {
     Ok(match path {
         // Playback
@@ -376,12 +387,12 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         // read-only counters let scenarios assert completed domain work.
         "learning.session_active" => json!(app.ui.ear_training.session.is_some()),
         "learning.config_trial_count" => json!(app.ui.ear_training.config.trial_count),
-        "learning.session_current_answered" => json!(
+        "learning.session_current_answered" | "learning.session_answered" => json!(
             app.ui
                 .ear_training
                 .session
                 .as_ref()
-                .is_some_and(|session| session.current_is_answered())
+                .is_some_and(sotf_audio_player::EqTrainingSession::current_is_answered)
         ),
         "learning.session_trial_count" => json!(
             app.ui
@@ -395,14 +406,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
                 .ear_training
                 .session
                 .as_ref()
-                .map_or(0, |session| session.correct_count())
-        ),
-        "learning.session_answered" => json!(
-            app.ui
-                .ear_training
-                .session
-                .as_ref()
-                .is_some_and(|session| session.current_is_answered())
+                .map_or(0, sotf_audio_player::EqTrainingSession::correct_count)
         ),
         "learning.progress_total_attempts" => {
             json!(app.ui.ear_training.progress.total_attempts())
@@ -505,8 +509,9 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
         } else {
             "Content"
         }),
-        "roomeq.measurement_count" => json!(app.room_eq.model.channel_measurements.len()),
-        "roomeq.speaker_config_count" => json!(app.room_eq.model.channel_measurements.len()),
+        "roomeq.measurement_count" | "roomeq.speaker_config_count" => {
+            json!(app.room_eq.model.channel_measurements.len())
+        }
         "roomeq.optimization_status" => {
             json!(format!("{:?}", app.room_eq.model.optimization_status))
         }
@@ -552,8 +557,7 @@ fn read_path(path: &str, app: &App) -> Result<Value> {
             std::fs::read_to_string(&app.room_eq.export_path)
                 .ok()
                 .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
-                .map(|value| chain_filter_count(&value))
-                .unwrap_or(0)
+                .map_or(0, |value| chain_filter_count(&value))
         ),
         "roomeq.export_filter_count_matches_result" => {
             let exported_count = std::fs::read_to_string(&app.room_eq.export_path)
@@ -853,8 +857,10 @@ fn applied_room_eq_filters(app: &App) -> serde_json::Value {
             let channel_filters = channel_filters.as_ref();
             let effective_filters = channel_filters
                 .filter(|channels| !channels.is_empty())
-                .map(|channels| channels.iter().flatten().collect::<Vec<_>>())
-                .unwrap_or_else(|| filters.iter().collect());
+                .map_or_else(
+                    || filters.iter().collect(),
+                    |channels| channels.iter().flatten().collect::<Vec<_>>(),
+                );
             Some(serde_json::json!({
                 "index": index,
                 "name": plugin.name.as_deref().unwrap_or(""),
@@ -1055,6 +1061,10 @@ fn chain_filter_count(value: &Value) -> usize {
     total
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 fn average_room_eq_score(
     results: &[sotf_audio_player::room_eq_types::ChannelOptResult],
     score: impl Fn(&sotf_audio_player::room_eq_types::ChannelOptResult) -> f64,

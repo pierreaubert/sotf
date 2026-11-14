@@ -17,7 +17,15 @@ use std::path::Path;
 /// - `PluginSetParam` -> set numeric parameter at `param_index`
 /// - `PluginSetParamString` -> set string parameter at `param_index`
 /// - `PluginChainSave` / `PluginChainLoad` -> save/load user plugin chain
+///
+/// # Errors
+/// Returns an error for unknown actions, missing or invalid payload fields, or rejected plugin changes.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The API dispatch exhaustively matches the supported plugin actions"
+)]
 pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>) -> Result<()> {
+    let payload = payload.unwrap_or(Value::Null);
     match name {
         "PluginAdd" => {
             let plugin_type = payload_str(&payload, "plugin_type")?;
@@ -28,32 +36,32 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             Ok(())
         }
         "PluginRemove" => {
-            let idx = payload_u64(&payload, "index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
             graph.remove_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
             Ok(())
         }
         "PluginToggle" => {
-            let idx = payload_u64(&payload, "index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
             graph.toggle_plugin_by_index(idx).map_err(|e| anyhow!(e))?;
             Ok(())
         }
         "PluginMoveUp" => {
-            let idx = payload_u64(&payload, "index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
             if graph.can_move_up_by_index(idx) {
                 graph.move_plugin(idx, idx - 1).map_err(|e| anyhow!(e))?;
             }
             Ok(())
         }
         "PluginMoveDown" => {
-            let idx = payload_u64(&payload, "index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
             if graph.can_move_down_by_index(idx) {
                 graph.move_plugin(idx, idx + 1).map_err(|e| anyhow!(e))?;
             }
             Ok(())
         }
         "PluginSetParam" => {
-            let idx = payload_u64(&payload, "index")? as usize;
-            let param_idx = payload_u64(&payload, "param_index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
+            let param_idx = usize::try_from(payload_u64(&payload, "param_index")?)?;
             let value = payload_f64(&payload, "value")?;
             let plugin = graph
                 .get_plugin_mut(idx)
@@ -73,8 +81,8 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
             Ok(())
         }
         "PluginSetParamString" => {
-            let idx = payload_u64(&payload, "index")? as usize;
-            let param_idx = payload_u64(&payload, "param_index")? as usize;
+            let idx = usize::try_from(payload_u64(&payload, "index")?)?;
+            let param_idx = usize::try_from(payload_u64(&payload, "param_index")?)?;
             let value = payload_str(&payload, "value")?.to_string();
             let plugin = graph
                 .get_plugin_mut(idx)
@@ -123,38 +131,37 @@ pub fn plugin_action(graph: &mut PluginGraph, name: &str, payload: Option<Value>
     }
 }
 
-fn payload_str<'a>(payload: &'a Option<Value>, key: &str) -> Result<&'a str> {
+fn payload_str<'a>(payload: &'a Value, key: &str) -> Result<&'a str> {
     payload
-        .as_ref()
-        .and_then(|v| v.get(key))
+        .get(key)
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("payload needs string `{key}`"))
 }
 
-fn payload_u64(payload: &Option<Value>, key: &str) -> Result<u64> {
+fn payload_u64(payload: &Value, key: &str) -> Result<u64> {
     payload
-        .as_ref()
-        .and_then(|v| v.get(key))
+        .get(key)
         .and_then(Value::as_u64)
         .ok_or_else(|| anyhow!("payload needs u64 `{key}`"))
 }
 
-fn payload_f64(payload: &Option<Value>, key: &str) -> Result<f64> {
+fn payload_f64(payload: &Value, key: &str) -> Result<f64> {
     payload
-        .as_ref()
-        .and_then(|v| v.get(key))
+        .get(key)
         .and_then(Value::as_f64)
         .ok_or_else(|| anyhow!("payload needs f64 `{key}`"))
 }
 
 /// Set a string-valued plugin parameter by index.
+///
+/// # Errors
+/// Returns an error for unknown actions, missing or invalid payload fields, or rejected plugin changes.
 pub fn set_string_param(
     settings: &mut crate::PluginSettings,
     param_idx: usize,
     value: String,
 ) -> Result<()> {
     use crate::security::{validate_plugin_ir_file_path, validate_plugin_sofa_file_path};
-    use std::path::Path;
 
     match settings {
         crate::PluginSettings::ABCompare { path_a_config, .. } if param_idx == 9 => {

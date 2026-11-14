@@ -8,12 +8,9 @@ pub(super) fn post_json(
     client: &reqwest::blocking::Client,
     base_url: &str,
     path: &str,
-    body: Value,
+    body: &Value,
 ) -> Result<Value> {
-    let resp = client
-        .post(format!("{base_url}{path}"))
-        .json(&body)
-        .send()?;
+    let resp = client.post(format!("{base_url}{path}")).json(body).send()?;
     parse_dev_response(resp, path)
 }
 

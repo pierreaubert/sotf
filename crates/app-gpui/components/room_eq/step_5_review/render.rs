@@ -11,7 +11,7 @@ use crate::app::types::room_eq::{RoomEqReviewGraphId, RoomEqReviewGraphSettings}
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, SharedString, div};
 use gpui_ui_kit::{
     Accordion, AccordionItem, Card, HStack, Select, SelectSize, StackSpacing, TabItem, TabVariant,
     Tabs, Text, TextSize, TextWeight, Toggle, VStack,
@@ -44,8 +44,7 @@ impl PlayerView {
                         let index = |value: Option<usize>| {
                             value
                                 .and_then(|index| index.checked_add(1))
-                                .map(|index| index.to_string())
-                                .unwrap_or_else(|| unknown.to_owned())
+                                .map_or_else(|| unknown.to_owned(), |index| index.to_string())
                         };
                         let name = source.name.as_deref().unwrap_or(unknown);
                         div()
@@ -108,7 +107,7 @@ impl PlayerView {
                             .app
                             .measurement_state
                             .room_eq_state
-                            .review_sources_open = expanded
+                            .review_sources_open = expanded;
                     });
                     cx.notify();
                 });
@@ -121,6 +120,10 @@ impl PlayerView {
         disclosure.into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_room_eq_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let source_identity = self.render_room_eq_source_identity(cx);
         let state = self.state.read(cx);
@@ -273,12 +276,17 @@ impl PlayerView {
     }
 
     /// Render the selected channel's optimization result
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_selected_channel_result(
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        let d = Ds::from_cx(cx);
         use crate::app::types::room_eq::InteractiveChartStateWrapper;
+
+        let d = Ds::from_cx(cx);
 
         // Initialize interactive chart state if needed
         {
@@ -316,27 +324,30 @@ impl PlayerView {
         let smoothing_octaves = room_eq.review_smoothing_octaves;
         let y_axis_auto = room_eq.review_y_axis_auto;
         let graph_settings = room_eq.review_graph_settings.clone();
-        let chart_state = room_eq.review_chart_state.as_ref().map(|w| w.inner());
+        let chart_state = room_eq
+            .review_chart_state
+            .as_ref()
+            .map(crate::app::types::room_eq::InteractiveChartStateWrapper::inner);
         let window_width = state.app.ui_state.window_width;
         let report = room_eq
             .dsp_output
             .as_ref()
             .map(room_eq_report_data_from_dsp_output);
-        let channel_names: Vec<String> = report
-            .as_ref()
-            .map(|report| {
+        let channel_names: Vec<String> = report.as_ref().map_or_else(
+            || {
+                channel_results
+                    .iter()
+                    .map(|result| result.channel_name.clone())
+                    .collect()
+            },
+            |report| {
                 report
                     .channels
                     .iter()
                     .map(|channel| channel.name.clone())
                     .collect()
-            })
-            .unwrap_or_else(|| {
-                channel_results
-                    .iter()
-                    .map(|result| result.channel_name.clone())
-                    .collect()
-            });
+            },
+        );
         let selected_idx_for_tabs = selected_idx.min(channel_names.len().saturating_sub(1));
         let channel_tabs = render_room_eq_channel_tabs(
             channel_names,
@@ -434,7 +445,7 @@ impl PlayerView {
             .and_then(|out| {
                 super::super::room_eq_channel_chain_by_name(&out.channels, &result.channel_name)
             })
-            .map(|chain| {
+            .is_some_and(|chain| {
                 chain.plugins.iter().any(|p| {
                     let t = p.plugin_type.to_ascii_lowercase();
                     t == "fir"
@@ -443,8 +454,7 @@ impl PlayerView {
                         || t == "firfilter"
                         || t == "fir_filter"
                 })
-            })
-            .unwrap_or(false);
+            });
 
         let mut display_result = result.clone();
         if let Some(chain) = room_eq.dsp_output.as_ref().and_then(|out| {
@@ -547,6 +557,18 @@ fn render_room_eq_channel_tabs(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_review_graph_controls(
     graph_id: RoomEqReviewGraphId,
     settings: RoomEqReviewGraphSettings,
@@ -731,6 +753,10 @@ fn render_review_graph_controls(
 /// card lists exactly the channels with measurable pre/post-ringing data.
 /// When no channel has the metrics, the function still returns an empty card
 /// stub that simply collapses to nothing — callers chain it unconditionally.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_fir_temporal_masking_summary(
     dsp_output: &sotf_audio_player::room_eq_types::DspChainOutput,
     text: RoomEqReportTranslations,
@@ -738,7 +764,7 @@ fn render_fir_temporal_masking_summary(
 ) -> AnyElement {
     let mut rows: Vec<(String, roomeq_model::TemporalIrMaskingMetrics)> = Vec::new();
 
-    for (name, chain) in dsp_output.channels.iter() {
+    for (name, chain) in &dsp_output.channels {
         if let Some(metrics) = chain.fir_temporal_masking.as_ref() {
             rows.push((name.clone(), metrics.clone()));
         }

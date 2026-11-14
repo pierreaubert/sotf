@@ -19,9 +19,8 @@ pub fn poll_probe_capture(app: &mut App) -> bool {
     ) {
         return false;
     }
-    let slot = PROBE_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot =
+        std::sync::Arc::clone(PROBE_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
@@ -71,9 +70,7 @@ pub fn poll_spl_calibration_capture(app: &mut App) -> bool {
     ) {
         return false;
     }
-    let slot = SPL_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot = std::sync::Arc::clone(SPL_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
@@ -123,9 +120,9 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
     ) {
         return false;
     }
-    let slot = BASS_ANCHOR_CAPTURE_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let slot = std::sync::Arc::clone(
+        BASS_ANCHOR_CAPTURE_RESULT.get_or_init(|| Arc::new(Mutex::new(None))),
+    );
     let Ok(mut guard) = slot.lock() else {
         return false;
     };
@@ -165,6 +162,10 @@ pub fn poll_bass_anchor_capture(app: &mut App) -> bool {
 }
 
 /// B7: Poll for recording completion — call from main tick loop
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub fn poll_recording(app: &mut App) -> bool {
     use sotf_audio_player::recording_types::ChannelRecordingState;
 
@@ -179,9 +180,8 @@ pub fn poll_recording(app: &mut App) -> bool {
         return false;
     }
 
-    let result_slot = RECORDING_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(RECORDING_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
 
     if let Ok(mut guard) = result_slot.lock()
         && let Some((generation, result)) = guard.take()
@@ -221,11 +221,9 @@ pub fn poll_recording(app: &mut App) -> bool {
                                 first_verdict = Some(
                                     rec_result
                                         .quality
-                                        .as_ref()
-                                        .map(take_verdict_text)
-                                        .unwrap_or_else(|| {
+                                        .as_ref().map_or_else(|| {
                                             "Quality evidence unavailable (unknown); review this take before accepting".into()
-                                        }),
+                                        }, take_verdict_text),
                                 );
                             }
                         } else {
@@ -258,7 +256,7 @@ pub fn poll_recording(app: &mut App) -> bool {
                     app.recording.model.noise_floor_warning = None;
                 } else {
                     let warning = low_measured_level_warning(&low_level_names.join(", "));
-                    log::warn!("Low-level warning: {}", warning);
+                    log::warn!("Low-level warning: {warning}");
                     app.recording.model.noise_floor_warning = Some(warning);
                 }
                 if let Some(loopback) = loopback {
@@ -285,11 +283,11 @@ pub fn poll_recording(app: &mut App) -> bool {
                     // The TUI has no dedicated widget for
                     // `noise_floor_warning`; surface it in the status line.
                     if let Some(warning) = &app.recording.model.noise_floor_warning {
-                        msg = format!("{} — {}", msg, warning);
+                        msg = format!("{msg} — {warning}");
                     }
                     if let Some(dropout) = dropout_warning(max_dropped) {
-                        log::warn!("Dropout warning: {}", dropout);
-                        msg = format!("{} — {}", msg, dropout);
+                        log::warn!("Dropout warning: {dropout}");
+                        msg = format!("{msg} — {dropout}");
                     }
                     app.recording.model.status_message = msg;
                 } else if let Some(dropout) = dropout_warning(max_dropped) {
@@ -319,7 +317,7 @@ pub fn poll_recording(app: &mut App) -> bool {
                     }
                 }
                 app.recording.model.noise_floor_warning = None;
-                app.recording.model.status_message = format!("Recording failed: {}", e);
+                app.recording.model.status_message = format!("Recording failed: {e}");
             }
         }
         return true;
@@ -331,9 +329,8 @@ pub fn poll_recording(app: &mut App) -> bool {
 /// Drain the background save thread's result, if any. Returns true
 /// when state changed (forces a redraw via the tick handler).
 pub fn poll_save_recordings(app: &mut App) -> bool {
-    let rx = match app.recording.save.receiver.as_ref() {
-        Some(rx) => rx,
-        None => return false,
+    let Some(rx) = app.recording.save.receiver.as_ref() else {
+        return false;
     };
     match rx.try_recv() {
         Ok(Ok(())) => {

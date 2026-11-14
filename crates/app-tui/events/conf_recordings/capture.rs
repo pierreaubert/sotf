@@ -5,6 +5,14 @@ use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::ui_models::room_eq::RoomEqViewEvent;
 use std::path::PathBuf;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 pub(super) fn handle_capture_keys(app: &mut App, key: KeyEvent) -> bool {
     let panel = &mut app.recording.multi_capture;
     if !panel.active {

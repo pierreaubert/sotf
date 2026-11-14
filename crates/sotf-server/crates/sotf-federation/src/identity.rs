@@ -17,8 +17,9 @@ const SOTF_NAMESPACE: Uuid = Uuid::from_bytes([
 /// Generate a stable UUID for an album from normalized metadata.
 ///
 /// The UUID is deterministic: same `(artist, title)` always produces the same UUID.
+#[must_use]
 pub fn album_uuid(normalized_artist: &str, normalized_title: &str) -> Uuid {
-    let input = format!("{}\0{}", normalized_artist, normalized_title);
+    let input = format!("{normalized_artist}\0{normalized_title}");
     Uuid::new_v5(&SOTF_NAMESPACE, input.as_bytes())
 }
 
@@ -26,16 +27,14 @@ pub fn album_uuid(normalized_artist: &str, normalized_title: &str) -> Uuid {
 ///
 /// The UUID is deterministic: same `(album_uuid, title, disc, track_number)` always
 /// produces the same UUID.
+#[must_use]
 pub fn track_uuid(
     album_uuid: &Uuid,
     normalized_title: &str,
     disc_number: u32,
     track_number: u32,
 ) -> Uuid {
-    let input = format!(
-        "{}\0{}\0{}\0{}",
-        album_uuid, normalized_title, disc_number, track_number
-    );
+    let input = format!("{album_uuid}\0{normalized_title}\0{disc_number}\0{track_number}");
     Uuid::new_v5(&SOTF_NAMESPACE, input.as_bytes())
 }
 

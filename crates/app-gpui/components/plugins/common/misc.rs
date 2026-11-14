@@ -3,6 +3,7 @@ use gpui_audio_kit::VerticalSliderTheme;
 
 /// Format a label with keyboard shortcut indicator
 /// e.g., "Threshold" with key 't' -> "\[T\]hreshold"
+#[must_use]
 pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String {
     match shortcut_key {
         Some(key) => {
@@ -27,7 +28,7 @@ pub fn format_shortcut_label(label: &str, shortcut_key: Option<char>) -> String 
     }
 }
 
-/// Convert Theme to VerticalSliderTheme for gpui-audio-kit VerticalSlider
+/// Convert Theme to `VerticalSliderTheme` for gpui-audio-kit `VerticalSlider`
 pub(in super::super) fn theme_to_vertical_slider_theme(theme: &Theme) -> VerticalSliderTheme {
     VerticalSliderTheme {
         surface: theme.surface,
@@ -50,6 +51,7 @@ pub(in super::super) fn theme_to_vertical_slider_theme(theme: &Theme) -> Vertica
 /// Models compressor/limiter behavior:
 /// - Limiter: hard clip at threshold
 /// - Compressor: soft knee compression with the given ratio
+#[must_use]
 pub fn compute_transfer(
     input_db: f64,
     threshold_db: f64,

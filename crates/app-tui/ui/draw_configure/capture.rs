@@ -7,6 +7,14 @@ use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(super) fn draw_capture(frame: &mut Frame, area: Rect, app: &App) {
     let panel = &app.recording.multi_capture;
     let regions = Layout::default()

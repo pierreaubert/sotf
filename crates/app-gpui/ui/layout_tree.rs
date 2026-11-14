@@ -8,7 +8,7 @@ use gpui_builder::{
     Axis, ContainerNode, DisplayTier, LayoutNode, LayoutPreferences, Sizing, SlotNode, SolvedNode,
 };
 
-/// Divider thickness in pixels — must match the PaneDivider component size.
+/// Divider thickness in pixels — must match the `PaneDivider` component size.
 const DIVIDER_SIZE: f32 = 6.0;
 
 static RACK_TIERS: &[DisplayTier<'_>] = &[
@@ -61,18 +61,9 @@ impl From<SolvedNode<'_>> for AppSolvedLayout {
     fn from(solved: SolvedNode<'_>) -> Self {
         Self {
             is_horizontal: solved.resolved_axis == Some(Axis::Horizontal),
-            library: solved
-                .find("library")
-                .map(SolvedSlot::from)
-                .unwrap_or_default(),
-            queue: solved
-                .find("queue")
-                .map(SolvedSlot::from)
-                .unwrap_or_default(),
-            rack: solved
-                .find("rack")
-                .map(SolvedSlot::from)
-                .unwrap_or_default(),
+            library: solved.find("library").map_or_default(SolvedSlot::from),
+            queue: solved.find("queue").map_or_default(SolvedSlot::from),
+            rack: solved.find("rack").map_or_default(SolvedSlot::from),
         }
     }
 }

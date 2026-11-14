@@ -46,7 +46,7 @@ pub(super) fn encode_dns_name(packet: &mut Vec<u8>, name: &str) {
     for label in name.trim_end_matches('.').split('.') {
         let label = label.as_bytes();
         let len = label.len().min(63);
-        packet.push(len as u8);
+        packet.push(u8::try_from(len).expect("DNS labels are limited to 63 bytes"));
         packet.extend_from_slice(&label[..len]);
     }
     packet.push(0);

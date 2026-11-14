@@ -11,6 +11,9 @@ pub struct TuiMediaControls {
 }
 
 impl TuiMediaControls {
+    ///
+    /// # Errors
+    /// Returns an error if platform media controls cannot be created or attached.
     pub fn new() -> Result<Self, sotf_media_controls::Error> {
         #[cfg(target_os = "macos")]
         init_macos_app();
@@ -34,6 +37,7 @@ impl TuiMediaControls {
     }
 
     /// Poll for a single pending media control event (non-blocking).
+    #[must_use]
     pub fn poll_event(&self) -> Option<MediaControlEvent> {
         self.rx.try_recv().ok()
     }
@@ -55,20 +59,20 @@ impl TuiMediaControls {
             cover_url,
         };
         if let Err(e) = self.controls.set_metadata(metadata) {
-            log::warn!("Failed to set media metadata: {}", e);
+            log::warn!("Failed to set media metadata: {e}");
         }
     }
 
     /// Update playback state in the OS media controls.
     pub fn set_playback(&mut self, playback: MediaPlayback) {
         if let Err(e) = self.controls.set_playback(playback) {
-            log::warn!("Failed to set media playback state: {}", e);
+            log::warn!("Failed to set media playback state: {e}");
         }
     }
 }
 
-/// On macOS, initialize NSApplication with Accessory activation policy
-/// so MPRemoteCommandCenter events are delivered to our process.
+/// On macOS, initialize `NSApplication` with Accessory activation policy
+/// so `MPRemoteCommandCenter` events are delivered to our process.
 #[cfg(target_os = "macos")]
 fn init_macos_app() {
     use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
@@ -81,11 +85,11 @@ fn init_macos_app() {
 }
 
 /// Pump the macOS run loop so that pending OS events — including media key
-/// callbacks registered by sotf_media_controls via MPRemoteCommandCenter — are dispatched.
+/// callbacks registered by `sotf_media_controls` via `MPRemoteCommandCenter` — are dispatched.
 ///
-/// MPRemoteCommandCenter delivers events through CoreFoundation run loop
-/// sources, NOT through the NSApplication event queue. We must call
-/// CFRunLoopRunInMode to process those sources. We also drain NSApp events
+/// `MPRemoteCommandCenter` delivers events through CoreFoundation run loop
+/// sources, NOT through the `NSApplication` event queue. We must call
+/// `CFRunLoopRunInMode` to process those sources. We also drain `NSApp` events
 /// for completeness (other Cocoa callbacks may depend on them).
 ///
 /// Processes all queued events without blocking. No-op on non-macOS platforms.
@@ -98,8 +102,8 @@ pub fn pump_macos_event_loop() {
     // 1. Process CoreFoundation run loop sources (MPRemoteCommandCenter events).
     //    returnAfterSourceHandled=1 processes one source per call; loop to drain all.
     //    Timeout 0.0 means return immediately if no sources are ready.
-    // SAFETY: FFI call with valid static string and numeric args.
     loop {
+        // SAFETY: Core Foundation supplies the static mode; zero timeout and the boolean flag are valid.
         let result = unsafe { CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, 1) };
         // kCFRunLoopRunHandledSource = 4 — a source was processed, check for more
         if result != 4 {
@@ -159,4 +163,10 @@ fn get_hwnd() -> Option<WindowHandle<'static>> {
 #[cfg(not(target_os = "windows"))]
 fn get_hwnd() -> Option<WindowHandle<'static>> {
     None
+}
+
+impl std::fmt::Debug for TuiMediaControls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TuiMediaControls").finish_non_exhaustive()
+    }
 }

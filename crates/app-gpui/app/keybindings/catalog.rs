@@ -65,7 +65,7 @@ fn documented_keybindings_from_specs(
                     .then_with(|| left.0.cmp(&right.0))
             });
             keys.dedup_by(|left, right| left.0 == right.0);
-            let raw_key_spec = keys.first().map(|(_, raw)| raw.clone()).unwrap_or_default();
+            let raw_key_spec = keys.first().map_or_default(|(_, raw)| raw.clone());
             let action_name = spec.palette_action_name.filter(|action_name| {
                 runtime_bindings
                     .iter()
@@ -98,6 +98,10 @@ pub(super) fn missing_documented_commands(runtime_bindings: &[KeyBinding]) -> Ve
         .collect()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 fn documentation_specs() -> Vec<DocumentationSpec> {
     vec![
         documentation!(Playback, "Play/Pause", actions::PlayPause),
@@ -367,6 +371,10 @@ fn documentation_specs() -> Vec<DocumentationSpec> {
     ]
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
     match screen {
         Screen::Home | Screen::HomeShelf => vec![
@@ -482,7 +490,7 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
             documentation!(System, "Cycle language", actions::CycleLanguage),
         ],
         Screen::SettingsDetail => vec![documentation!(System, "Back to settings", actions::Cancel)],
-        Screen::StudioHub => vec![
+        Screen::StudioHub | Screen::Playlists => vec![
             documentation!(Playback, "Play/Pause", actions::PlayPause),
             documentation!(System, "Cancel/close", actions::Cancel),
         ],
@@ -639,10 +647,6 @@ fn screen_documentation_specs(screen: Screen) -> Vec<DocumentationSpec> {
                 actions::PlayPause,
             ),
         ],
-        Screen::Playlists => vec![
-            documentation!(Playback, "Play/Pause", actions::PlayPause),
-            documentation!(System, "Cancel/close", actions::Cancel),
-        ],
     }
 }
 
@@ -726,9 +730,7 @@ fn key_display_rank(key: &str) -> u8 {
         4
     } else if key.contains("Ctrl") || key.contains("Cmd") || key.contains("Alt") {
         2
-    } else if key.chars().count() == 1 {
-        0
     } else {
-        1
+        u8::from(key.chars().count() != 1)
     }
 }

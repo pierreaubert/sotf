@@ -59,6 +59,7 @@ impl EpaTemporalMaskingConfig {
     /// Returns true when the user has knobs set away from the autoeq defaults
     /// — used by `to_optimizer_config` to decide whether to override the
     /// backend's `epa_config` at all.
+    #[must_use]
     pub fn differs_from_default(&self) -> bool {
         let d = Self::default();
         self.enabled != d.enabled
@@ -73,6 +74,7 @@ impl EpaTemporalMaskingConfig {
     /// Build a room-model `TemporalMaskingConfig`, leaving non-UI knobs at the
     /// autoeq defaults. Spread-init keeps any future backend fields at their
     /// `Default::default()` without forcing this layer to track them.
+    #[must_use]
     pub fn to_backend(&self) -> roomeq_model::TemporalMaskingConfig {
         roomeq_model::TemporalMaskingConfig {
             enabled: self.enabled,

@@ -1,10 +1,10 @@
 use super::misc::resolve_plugin_node;
 use super::plugin::plugin_max_ports;
-use gpui::*;
+use gpui::{App, Entity, SharedString};
 use gpui_ui_kit::workflow::{NodeId, Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use sotf_audio_player::{PluginGraph, SpecialNodeType};
 
-/// Node types for user_data
+/// Node types for `user_data`
 pub(super) const NODE_TYPE_PLAYER: &str = "player";
 
 pub(super) const NODE_TYPE_INPUT_DEVICE: &str = "input_device";
@@ -15,7 +15,11 @@ pub(super) const NODE_TYPE_PLUGIN: &str = "plugin";
 
 pub(super) const MAX_WORKFLOW_PORTS: usize = 32;
 
-/// Convert an existing PluginGraph to a WorkflowGraph
+/// Convert an existing `PluginGraph` to a `WorkflowGraph`
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn convert_plugin_graph(graph: &PluginGraph) -> WorkflowGraph {
     let mut workflow_graph = WorkflowGraph::new();
 

@@ -26,12 +26,20 @@ pub struct SurfaceManifest {
 }
 
 impl SurfaceManifest {
+    /// Parses and validates a surface manifest.
+    ///
+    /// # Errors
+    /// Returns an error for malformed TOML or invalid manifest fields.
     pub fn parse_toml(source: &str) -> Result<Self, ManifestError> {
         let manifest: Self = toml::from_str(source)?;
         manifest.validate()?;
         Ok(manifest)
     }
 
+    /// Validates the schema and action definitions.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported schemas, empty or duplicate actions, or invalid weights.
     pub fn validate(&self) -> Result<(), ManifestError> {
         if self.schema_version != MANIFEST_SCHEMA_VERSION {
             return Err(ManifestError::Schema(self.schema_version));
@@ -51,6 +59,10 @@ impl SurfaceManifest {
         Ok(())
     }
 
+    /// Computes the serialized manifest digest.
+    ///
+    /// # Errors
+    /// Returns an error if the manifest cannot be serialized.
     pub fn digest(&self) -> Result<String, ManifestError> {
         let bytes = serde_json::to_vec(self)?;
         Ok(hex::encode(Sha256::digest(bytes)))
@@ -197,6 +209,7 @@ pub struct CapabilityIntersection {
     pub families: BTreeMap<String, usize>,
 }
 
+#[must_use]
 pub fn intersect_capabilities(
     manifest: &SurfaceManifest,
     capabilities: &sotf_dev_api::Capabilities,

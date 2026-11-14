@@ -8,7 +8,10 @@
 // The local provider does not do its own scanning — it converts already-loaded
 // Album/Track data into ProviderAlbum/ProviderTrack for the federation layer.
 
-use crate::provider::*;
+use crate::provider::{
+    LibraryEvent, LibraryProvider, ProviderAlbum, ProviderCapabilities, ProviderError,
+    ProviderFuture, ProviderTrack, SourceId, SourceType,
+};
 use sotf_audio::decoder::AudioSource;
 use std::path::PathBuf;
 
@@ -18,7 +21,7 @@ pub struct LocalProviderConfig {
     pub directories: Vec<PathBuf>,
 }
 
-/// A LibraryProvider backed by local audio files on disk.
+/// A `LibraryProvider` backed by local audio files on disk.
 ///
 /// This wraps the existing `MusicLibrary` scanning + database infrastructure.
 /// Albums and tracks are provided from in-memory data that was already loaded
@@ -29,6 +32,7 @@ pub struct LocalFilesProvider {
 }
 
 impl LocalFilesProvider {
+    #[must_use]
     pub fn new(config: LocalProviderConfig) -> Self {
         Self {
             source_id: SourceId("local".to_string()),
@@ -36,8 +40,9 @@ impl LocalFilesProvider {
         }
     }
 
-    /// Convert a path-based album/track list into ProviderAlbums.
+    /// Convert a path-based album/track list into `ProviderAlbums`.
     /// This is used by the federation layer to ingest local library data.
+    #[must_use]
     pub fn albums_from_local(
         albums: &[(String, String, Option<u32>, Vec<LocalTrackInfo>)],
     ) -> Vec<ProviderAlbum> {
@@ -71,6 +76,7 @@ impl LocalFilesProvider {
             .collect()
     }
 
+    #[must_use]
     pub fn directories(&self) -> &[PathBuf] {
         &self.config.directories
     }
@@ -98,7 +104,7 @@ impl LibraryProvider for LocalFilesProvider {
         &self.source_id
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Local Files"
     }
 
@@ -166,6 +172,14 @@ impl LibraryProvider for LocalFilesProvider {
         // Local files are always available (directories might not be mounted,
         // but that's handled at scan time).
         Box::pin(async { true })
+    }
+}
+
+impl std::fmt::Debug for LocalFilesProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LocalFilesProvider")
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
     }
 }
 

@@ -9,6 +9,7 @@ use sotf_audio_player_gpui::app::types::{
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct RecordingParameterCheckScenario;
 
 impl TestScenario for RecordingParameterCheckScenario {

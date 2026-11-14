@@ -9,9 +9,12 @@ use super::LibraryDirectoryAccessError;
 /// configured directory set. A successful metadata lookup alone is not
 /// enough: sandbox and ACL failures commonly appear only when enumeration is
 /// attempted.
+///
+/// # Errors
+/// Returns an error if the directory is missing, inaccessible, or not a directory.
 pub fn validate_library_directory(path: &Path) -> Result<(), LibraryDirectoryAccessError> {
     let metadata =
-        std::fs::metadata(path).map_err(|error| classify_library_directory_error(path, error))?;
+        std::fs::metadata(path).map_err(|error| classify_library_directory_error(path, &error))?;
     if !metadata.is_dir() {
         return Err(LibraryDirectoryAccessError::NotDirectory(
             path.to_path_buf(),
@@ -19,12 +22,12 @@ pub fn validate_library_directory(path: &Path) -> Result<(), LibraryDirectoryAcc
     }
     std::fs::read_dir(path)
         .map(|_| ())
-        .map_err(|error| classify_library_directory_error(path, error))
+        .map_err(|error| classify_library_directory_error(path, &error))
 }
 
 fn classify_library_directory_error(
     path: &Path,
-    error: std::io::Error,
+    error: &std::io::Error,
 ) -> LibraryDirectoryAccessError {
     match error.kind() {
         std::io::ErrorKind::NotFound => LibraryDirectoryAccessError::NotFound(path.to_path_buf()),
@@ -64,6 +67,7 @@ pub(super) fn capitalize_words(s: &str) -> String {
 /// - "Album Title CD 1" or "Album Title CD1"
 /// - "Album Title (3116-2)" - catalog numbers
 /// - "Album Title (R2 47730)" - catalog numbers with prefix
+#[must_use]
 pub fn clean_album_title(title: &str) -> String {
     let lower = title.to_lowercase();
 
@@ -89,8 +93,8 @@ pub fn clean_album_title(title: &str) -> String {
             // Catalog numbers usually have a dash, or are short alphanumeric codes
             // They typically don't have spaces unless it's a prefix like "R2 47730"
             // Note: inner is lowercased, so we check for lowercase letters
-            let letter_count = inner.chars().filter(|c| c.is_ascii_lowercase()).count();
-            let digit_count = inner.chars().filter(|c| c.is_ascii_digit()).count();
+            let letter_count = inner.chars().filter(char::is_ascii_lowercase).count();
+            let digit_count = inner.chars().filter(char::is_ascii_digit).count();
             let looks_like_catalog = has_digit
                 && !is_disc_marker
                 && !is_album_suffix
@@ -120,8 +124,8 @@ pub fn clean_album_title(title: &str) -> String {
                 || inner.contains("live")
                 || inner.contains("bonus")
                 || inner.contains("anniversary");
-            let letter_count = inner.chars().filter(|c| c.is_ascii_lowercase()).count();
-            let digit_count = inner.chars().filter(|c| c.is_ascii_digit()).count();
+            let letter_count = inner.chars().filter(char::is_ascii_lowercase).count();
+            let digit_count = inner.chars().filter(char::is_ascii_digit).count();
             let looks_like_catalog = has_digit
                 && !is_disc_marker
                 && !is_album_suffix
@@ -165,8 +169,7 @@ pub fn clean_album_title(title: &str) -> String {
             let ends_with_letter = marker
                 .chars()
                 .last()
-                .map(|c| c.is_ascii_alphabetic())
-                .unwrap_or(false);
+                .is_some_and(|c| c.is_ascii_alphabetic());
             if ends_with_letter && !has_parens_or_brackets {
                 if let Some(first_char) = after_marker.chars().next() {
                     if !first_char.is_ascii_digit() && first_char != '-' {
@@ -235,7 +238,7 @@ pub(super) fn read_riff_info_tags(
         }
 
         let chunk_id = &chunk_header[0..4];
-        let chunk_size = u32::from_le_bytes(chunk_header[4..8].try_into()?) as u64;
+        let chunk_size = u64::from(u32::from_le_bytes(chunk_header[4..8].try_into()?));
         let next_chunk = file.stream_position()? + chunk_size + (chunk_size % 2);
 
         if chunk_id == b"LIST" && chunk_size >= 4 {
@@ -248,13 +251,13 @@ pub(super) fn read_riff_info_tags(
                     let mut info_header = [0u8; 8];
                     file.read_exact(&mut info_header)?;
                     let info_id = String::from_utf8_lossy(&info_header[0..4]).to_string();
-                    let info_size = u32::from_le_bytes(info_header[4..8].try_into()?) as u64;
+                    let info_size = u64::from(u32::from_le_bytes(info_header[4..8].try_into()?));
 
                     if file.stream_position()? + info_size > list_end {
                         break;
                     }
 
-                    let mut value_bytes = vec![0u8; info_size as usize];
+                    let mut value_bytes = vec![0u8; usize::try_from(info_size)?];
                     file.read_exact(&mut value_bytes)?;
                     if info_size % 2 == 1 && file.stream_position()? < list_end {
                         file.seek(SeekFrom::Current(1))?;

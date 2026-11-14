@@ -12,6 +12,11 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn set_eq_training_config(
         &mut self,
         field: EqConfigField,
@@ -86,7 +91,7 @@ impl PlayerView {
             // A source probe started before this session must never replace its audio,
             // including if the session ends before the probe finishes.
             workspace.source_request = None;
-            workspace.practice = Default::default();
+            workspace.practice = crate::app::state::plugin::PracticeWorkspaceState::default();
         });
         self.ensure_eq_audition_plugin(cx);
         let started = self.state.update(cx, |state, _| {
@@ -199,7 +204,7 @@ impl PlayerView {
                     .await;
                 if let Some(file) = file {
                     let _ = owner.update(cx, |view, cx| {
-                        view.load_listening_source(file.path().to_path_buf(), surface, cx)
+                        view.load_listening_source(file.path().to_path_buf(), surface, cx);
                     });
                 }
             })
@@ -216,6 +221,10 @@ impl PlayerView {
         self.load_listening_source(path, EarTrainingSurface::EqBands, cx);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn load_listening_source(
         &mut self,
         path: std::path::PathBuf,
@@ -243,7 +252,7 @@ impl PlayerView {
                 .plugin_state
                 .plugin_ui_state
                 .listening_workspace
-                .source_request = Some(request.clone());
+                .source_request = Some(std::sync::Arc::clone(&request));
         });
         let owner = cx.entity().downgrade();
         cx.notify();
@@ -317,7 +326,12 @@ impl PlayerView {
                         Ok(None) => {}
                         Err(error) => {
                             let message = text.source_error(&error);
-                            state.app.plugin_state.listening_test_state.status = message.clone();
+                            state
+                                .app
+                                .plugin_state
+                                .listening_test_state
+                                .status
+                                .clone_from(&message);
                             state.app.ui_state.toast_message =
                                 Some(crate::app::types::ToastMessage::error(message));
                         }
@@ -357,6 +371,11 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn navigate_eq_source(&mut self, direction: i32, cx: &mut Context<Self>) {
         let path = {
             let state = self.state.read(cx);
@@ -465,6 +484,11 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn move_eq_training_selection(&mut self, direction: i32, cx: &mut Context<Self>) {
         if self.eq_practice_locked(cx) {
             return;
@@ -705,7 +729,7 @@ impl PlayerView {
                     }
                 }
                 Err(error) => {
-                    state.app.plugin_state.listening_test_state.status = error.to_string()
+                    state.app.plugin_state.listening_test_state.status = error.to_string();
                 }
             }
             cx.notify();
@@ -766,7 +790,7 @@ impl PlayerView {
                 .plugin_state
                 .plugin_ui_state
                 .listening_workspace
-                .practice = Default::default();
+                .practice = crate::app::state::plugin::PracticeWorkspaceState::default();
             keep.then(|| listening.eq_progress.clone())
         });
         if let (Some(path), Some(progress)) = (

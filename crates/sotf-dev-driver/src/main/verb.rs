@@ -35,8 +35,8 @@ pub(super) fn verb_query(rest: &str, ctx: &Ctx) -> Result<Value> {
         bail!("query verb needs a path");
     }
     let url = format!("{}/query?path={}", ctx.base, urlencode(path));
-    let resp = ctx.client.get(url).send()?;
-    let json = parse_dev_response(resp, &format!("query `{path}`"))?;
+    let response = ctx.client.get(url).send()?;
+    let json = parse_dev_response(response, &format!("query `{path}`"))?;
     json.get("value")
         .cloned()
         .ok_or_else(|| anyhow!("server returned no `value`"))
@@ -481,6 +481,10 @@ fn write_perceptual_snapshot_metrics(
     Ok(path)
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Image similarity ratios use approximate pixel and block counts"
+)]
 fn perceptual_snapshot_diff(
     actual: &image::RgbaImage,
     baseline: &image::RgbaImage,
@@ -690,6 +694,10 @@ pub(super) fn write_snapshot_artifacts(
     Ok(directory.to_path_buf())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Pixel counts are converted to approximate image difference ratios"
+)]
 pub(super) fn mean_pixel_delta(actual: &[u8], baseline: &[u8]) -> f64 {
     debug_assert_eq!(actual.len(), baseline.len());
     if actual.is_empty() {
@@ -698,7 +706,7 @@ pub(super) fn mean_pixel_delta(actual: &[u8], baseline: &[u8]) -> f64 {
     actual
         .iter()
         .zip(baseline)
-        .map(|(actual, baseline)| (*actual as f64 - *baseline as f64).abs())
+        .map(|(actual, baseline)| (f64::from(*actual) - f64::from(*baseline)).abs())
         .sum::<f64>()
         / (actual.len() as f64 * 255.0)
 }
@@ -1142,7 +1150,7 @@ pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
             &format!(
                 "{} {} {delta}",
                 port_left.max(0.0) + 1.0,
-                (visible_top + visible_bottom) / 2.0
+                f64::midpoint(visible_top, visible_bottom)
             ),
             ctx,
         )?;

@@ -4,7 +4,10 @@ use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, ClickEvent, ElementId, FontWeight, KeyDownEvent, MouseButton, MouseUpEvent, Pixels,
+    Point, SharedString, Window, div, px, relative, rems,
+};
 use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, SearchBar, SearchBarSize, Spinner, SpinnerSize, Text,
@@ -51,6 +54,14 @@ pub(super) enum SelectionAction {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_library_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         // Ensure library stats are computed (cached - only recomputes when invalidated)
@@ -142,35 +153,35 @@ impl PlayerView {
                                     cx,
                                 ))
                                 .child(self.render_filter_button(
-                                    &format!("1.0 Mono ({})", mono_count),
+                                    &format!("1.0 Mono ({mono_count})"),
                                     crate::app::state::library::ChannelFilter::Mono,
                                     channel_filter,
                                     theme.clone(),
                                     cx,
                                 ))
                                 .child(self.render_filter_button(
-                                    &format!("2.0 Stereo ({})", stereo_count),
+                                    &format!("2.0 Stereo ({stereo_count})"),
                                     crate::app::state::library::ChannelFilter::Stereo,
                                     channel_filter,
                                     theme.clone(),
                                     cx,
                                 ))
                                 .child(self.render_filter_button(
-                                    &format!("5.x Surround ({})", surround_count),
+                                    &format!("5.x Surround ({surround_count})"),
                                     crate::app::state::library::ChannelFilter::Surround,
                                     channel_filter,
                                     theme.clone(),
                                     cx,
                                 ))
                                 .child(self.render_filter_button(
-                                    &format!("7.1 ({})", surround71_count),
+                                    &format!("7.1 ({surround71_count})"),
                                     crate::app::state::library::ChannelFilter::Surround71,
                                     channel_filter,
                                     theme.clone(),
                                     cx,
                                 ))
                                 .child(self.render_filter_button(
-                                    &format!(">7.1 ({})", surround_plus_count),
+                                    &format!(">7.1 ({surround_plus_count})"),
                                     crate::app::state::library::ChannelFilter::SurroundPlus,
                                     channel_filter,
                                     theme.clone(),
@@ -305,6 +316,10 @@ impl PlayerView {
             })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_remote_library_content(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = PhoneTranslations::for_language(self.state.read(cx).app.ui_state.language);
@@ -322,9 +337,10 @@ impl PlayerView {
                     .visible_album_page
                     || state.app.remote.refresh_requests.visible_album_page,
                 state.app.library_state.search_query.clone(),
-                selected
-                    .map(|server| server.friendly_name.clone())
-                    .unwrap_or_else(|| "Remote SOTF Player".to_string()),
+                selected.map_or_else(
+                    || "Remote SOTF Player".to_string(),
+                    |server| server.friendly_name.clone(),
+                ),
             )
         };
 
@@ -375,7 +391,7 @@ impl PlayerView {
             let title_for_add = title.clone();
             let title_for_play = title.clone();
             let artist = album.artist.clone();
-            let year = album.year.map(|year| year.to_string()).unwrap_or_default();
+            let year = album.year.map_or_default(|year| year.to_string());
             let track_count = album.track_count;
             let dynamic_range = album.dynamic_range.map(|dr| format!("DR{dr}"));
             let theme_for_card = theme.clone();
@@ -442,7 +458,7 @@ impl PlayerView {
                                     .text_color(theme.text_muted)
                                     .child(format!("{track_count} tracks"))
                                     .when(!year.is_empty(), |el| el.child(year))
-                                    .when_some(dynamic_range, |el, dr| el.child(dr)),
+                                    .when_some(dynamic_range, gpui::ParentElement::child),
                             ),
                     )
                     .when(is_selected, |el| {
@@ -529,7 +545,14 @@ impl PlayerView {
     }
 
     /// Render library content - either selection UI or album grid based on sort order
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPUI rendering and callback interfaces accept the complete UI context"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_library_content(
         &self,
         sort_order: crate::app::LibrarySortOrder,
@@ -637,6 +660,10 @@ impl PlayerView {
     }
 
     /// Render Year tab with filter bar and album grid
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_year_tab_content(
         &self,
         selected_decade: Option<(i32, i32)>,
@@ -672,6 +699,14 @@ impl PlayerView {
     }
 
     /// Render year filter bar with decades and years
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_year_filter_bar(
         &self,
         selected_decade: Option<(i32, i32)>,
@@ -700,10 +735,10 @@ impl PlayerView {
                     .gap(d.grid)
                     .children(decade_counts.into_iter().map(|(start, end, count)| {
                         let is_selected = selected_decade == Some((start, end));
-                        let label = format!("{}s ({})", start, count);
+                        let label = format!("{start}s ({count})");
 
                         Button::new(
-                            SharedString::from(format!("decade-{}", start)),
+                            SharedString::from(format!("decade-{start}")),
                             SharedString::from(label),
                         )
                         .variant(if is_selected {
@@ -751,10 +786,10 @@ impl PlayerView {
                         .mt(d.grid)
                         .children(years_in_decade.into_iter().map(|(year, count)| {
                             let is_selected = selected_year == Some(year);
-                            let label = format!("{} ({})", year, count);
+                            let label = format!("{year} ({count})");
 
                             Button::new(
-                                SharedString::from(format!("year-{}", year)),
+                                SharedString::from(format!("year-{year}")),
                                 SharedString::from(label),
                             )
                             .variant(if is_selected {
@@ -783,6 +818,10 @@ impl PlayerView {
     }
 
     /// Render Album tab with letter filter bar and album grid
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_album_tab_content(
         &self,
         selected_letter: Option<char>,
@@ -814,6 +853,14 @@ impl PlayerView {
     }
 
     /// Render album letter filter bar (A-Z, #)
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_album_letter_filter_bar(
         &self,
         selected_letter: Option<char>,
@@ -847,7 +894,7 @@ impl PlayerView {
                 let is_selected = selected_letter == Some(letter);
 
                 Button::new(
-                    SharedString::from(format!("letter-{}", letter)),
+                    SharedString::from(format!("letter-{letter}")),
                     SharedString::from(letter.to_string()),
                 )
                 .variant(if is_selected {
@@ -874,6 +921,10 @@ impl PlayerView {
     }
 
     /// Render Artist tab with letter filter bar and artist album entries
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_artist_tab_content(
         &self,
         selected_letter: Option<char>,
@@ -909,6 +960,18 @@ impl PlayerView {
     }
 
     /// Render artist filter bar with letters and artist names (top 20)
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_artist_filter_bar(
         &self,
         selected_letter: Option<char>,
@@ -973,7 +1036,7 @@ impl PlayerView {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
-                            SharedString::from(format!("artist-letter-{}", letter)),
+                            SharedString::from(format!("artist-letter-{letter}")),
                             SharedString::from(letter.to_string()),
                         )
                         .variant(if is_selected {
@@ -1019,7 +1082,7 @@ impl PlayerView {
 
                             Button::new(
                                 SharedString::from(format!("artist-name-{}", artist.clone())),
-                                SharedString::from(format!("{} ({})", artist, count)),
+                                SharedString::from(format!("{artist} ({count})")),
                             )
                             .variant(if is_selected {
                                 ButtonVariant::Primary
@@ -1051,6 +1114,10 @@ impl PlayerView {
     }
 
     /// Render Composer tab with letter filter bar, composer names, and album grid
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_composer_tab_content(
         &self,
         selected_letter: Option<char>,
@@ -1086,6 +1153,18 @@ impl PlayerView {
     }
 
     /// Render composer filter bar with letters and composer names (top 20)
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_composer_filter_bar(
         &self,
         selected_letter: Option<char>,
@@ -1150,7 +1229,7 @@ impl PlayerView {
                         let is_selected = selected_letter == Some(letter);
 
                         Button::new(
-                            SharedString::from(format!("composer-letter-{}", letter)),
+                            SharedString::from(format!("composer-letter-{letter}")),
                             SharedString::from(letter.to_string()),
                         )
                         .variant(if is_selected {
@@ -1196,7 +1275,7 @@ impl PlayerView {
 
                             Button::new(
                                 SharedString::from(format!("composer-name-{}", composer.clone())),
-                                SharedString::from(format!("{} ({})", composer, count)),
+                                SharedString::from(format!("{composer} ({count})")),
                             )
                             .variant(if is_selected {
                                 ButtonVariant::Primary
@@ -1239,6 +1318,10 @@ impl PlayerView {
     }
 
     /// Render content for Genre tab that uses selection UI
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_selection_based_content(
         &self,
         _sort_order: crate::app::LibrarySortOrder,
@@ -1306,6 +1389,10 @@ impl PlayerView {
         }
     }
     /// Render genre selection grid
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub(super) fn render_genre_selection(
         &self,
         genre_counts: std::collections::HashMap<String, usize>,
@@ -1331,7 +1418,7 @@ impl PlayerView {
             genres
                 .into_iter()
                 .map(|(genre, count)| {
-                    let label = format!("{} ({})", genre, count);
+                    let label = format!("{genre} ({count})");
                     let size = (80.0 + (count as f32).sqrt() * 20.0).min(250.0);
                     (
                         format!("genre-{}", genre.clone()),
@@ -1347,6 +1434,10 @@ impl PlayerView {
     }
 
     /// Helper to render empty selection message
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_empty_selection(
         &self,
         message: &str,
@@ -1366,6 +1457,14 @@ impl PlayerView {
     }
 
     /// Generic helper to render a selection grid
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_selection_grid(
         &self,
         title: &str,
@@ -1413,7 +1512,7 @@ impl PlayerView {
                                     view.state.update(cx, |state, _cx| {
                                         match action {
                                             SelectionAction::Genre(g) => {
-                                                state.app.library_state.selected_genre = Some(g)
+                                                state.app.library_state.selected_genre = Some(g);
                                             }
                                         }
                                         state.app.library_state.selected_index = 0;
@@ -1452,6 +1551,10 @@ impl PlayerView {
     }
 
     /// Render album grid view with thumbnails
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_library_grid(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let accessible_album_labels = {
@@ -1517,8 +1620,7 @@ impl PlayerView {
                     artist
                         .chars()
                         .next()
-                        .map(|c| c.to_uppercase().to_string())
-                        .unwrap_or_else(|| "#".to_string())
+                        .map_or_else(|| "#".to_string(), |c| c.to_uppercase().to_string())
                 }
                 crate::app::LibrarySortOrder::Composer => {
                     let composer = album
@@ -1533,8 +1635,7 @@ impl PlayerView {
                         composer
                             .chars()
                             .next()
-                            .map(|c| c.to_uppercase().to_string())
-                            .unwrap_or_else(|| "#".to_string())
+                            .map_or_else(|| "#".to_string(), |c| c.to_uppercase().to_string())
                     }
                 }
                 // No dividers for Album, Tracks, Popularity sort orders
@@ -1556,7 +1657,7 @@ impl PlayerView {
             let album_card = dev_track!(
                 div()
                     .id(album_element_id)
-                    .debug_selector(move || format!("library-album-wrapper-{}", idx))
+                    .debug_selector(move || format!("library-album-wrapper-{idx}"))
                     .focusable()
                     .focus_visible(move |style| {
                         style.border_2().border_color(focus_theme.border_focused)
@@ -1670,6 +1771,10 @@ impl PlayerView {
     }
 
     /// Render a section divider with label and horizontal line
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_section_divider(
         &self,
         label: &str,
@@ -1697,6 +1802,14 @@ impl PlayerView {
     }
 
     /// Render a filter button with active state styling
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_filter_button(
         &self,
         label: &str,
@@ -1732,7 +1845,7 @@ impl PlayerView {
 
         dev_track_selected!(
             Button::new(
-                SharedString::from(format!("filter-btn-{}", label)),
+                SharedString::from(format!("filter-btn-{label}")),
                 SharedString::from(label_owned),
             )
             .variant(if is_active {

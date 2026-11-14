@@ -45,6 +45,7 @@ impl TargetId {
         Self::Configbar,
     ];
 
+    #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
             Self::DesktopGpui => "desktop-gpui",
@@ -61,8 +62,8 @@ impl TargetId {
 }
 
 impl std::fmt::Display for TargetId {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.write_str(self.as_str())
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 

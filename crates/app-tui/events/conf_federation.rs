@@ -356,9 +356,8 @@ pub fn poll_federation_scan(app: &mut App) -> bool {
 /// Poll for federation connection test completion. Call from the main tick loop.
 /// Returns true if the UI needs a redraw.
 pub fn poll_federation_test(app: &mut App) -> bool {
-    let rx = match &app.federation.receivers.test {
-        Some(rx) => rx,
-        None => return false,
+    let Some(rx) = &app.federation.receivers.test else {
+        return false;
     };
 
     match rx.try_recv() {

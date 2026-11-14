@@ -24,7 +24,10 @@ use crate::components::themed_tooltip as make_tooltip;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, AppContext, ClickEvent, Div, ElementId, FontWeight, MouseButton, Rgba,
+    SharedString, Stateful, TextAlign, Window, canvas, div, px, relative, rems,
+};
 use gpui::{MouseMoveEvent, MouseUpEvent};
 use gpui_audio_kit::db_to_position;
 use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
@@ -48,6 +51,10 @@ macro_rules! dev_track {
 }
 
 /// Brief description for each plugin type (shown in add-plugin menu tooltips).
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn plugin_description(
     plugin_type: &PluginType,
     text: PluginCommonTranslations,
@@ -55,6 +62,10 @@ pub(crate) fn plugin_description(
     text.description(plugin_type)
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn output_meter_width_bounds(state: &crate::app::AppState) -> (f32, f32) {
     let (_, output_channels) = state.app.plugin_state.graph.compute_channel_flow();
     let num_output_groups = state.app.level_meters.groups.len();
@@ -93,6 +104,10 @@ fn plugin_theme_from_select_value(value: &str) -> PluginThemeId {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_plugins_screen(
         &self,
         solved_rack_width: Option<f32>,
@@ -160,7 +175,7 @@ impl PlayerView {
                             });
                         });
                     },
-                    |_, _, _, _| {},
+                    |_, (), _, _| {},
                 )
                 .absolute()
                 .size_full(),
@@ -199,7 +214,7 @@ impl PlayerView {
                     // predictable fine-adjust mode for precise edits.
                     let range = drag.max - drag.min;
                     let drag_distance = if event.modifiers.shift { 1500.0 } else { 150.0 };
-                    let value_delta = (delta_y as f64 / drag_distance) * range;
+                    let value_delta = (f64::from(delta_y) / drag_distance) * range;
                     let new_value = (drag.start_value + value_delta).clamp(drag.min, drag.max);
 
                     // Update the parameter value via the plugin editing system
@@ -258,7 +273,7 @@ impl PlayerView {
                         if had_divider_drag {
                             let layout = state.layout.read(cx).clone();
                             if let Err(e) = state.app.save_config(&layout) {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                log::warn!("Failed to save panel layout: {e}");
                             }
                         }
                     });
@@ -449,9 +464,7 @@ impl PlayerView {
         &self,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
-        use gpui_ui_kit::{
-            Button, ButtonVariant, Card, StackSpacing, Text, TextSize, TextWeight, VStack,
-        };
+        use gpui_ui_kit::{Card, StackSpacing, Text, TextSize, TextWeight, VStack};
         let d = Ds::from_cx(cx);
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
@@ -496,6 +509,10 @@ impl PlayerView {
     }
 
     /// Render the horizontal plugin rack strip
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_plugin_rack(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
         let (
@@ -570,7 +587,7 @@ impl PlayerView {
         // Latency is the buffer-frame round-trip estimate (one full buffer at
         // the configured sample rate).
         let chain_latency_ms =
-            (chain_buffer_frames as f64 / chain_sample_rate.max(1) as f64) * 1000.0;
+            (f64::from(chain_buffer_frames) / f64::from(chain_sample_rate.max(1))) * 1000.0;
         let chain_plugin_count =
             PluginCommonTranslations::for_language(self.state.read(cx).app.ui_state.language)
                 .plugin_count(plugins_data.len());
@@ -698,7 +715,7 @@ impl PlayerView {
                                 })
                                 .when(!enabled, |d| d.opacity(0.5))
                                 .shadow_sm()
-                                .when(!is_permanent, |d| d.cursor_grab())
+                                .when(!is_permanent, gpui::Styled::cursor_grab)
                                 .hover(|s| s.border_color(color))
                                 // Drag-over feedback
                                 .drag_over::<PluginDragInfo>({
@@ -726,8 +743,7 @@ impl PlayerView {
                                                     .app
                                                     .plugin_state.graph
                                                     .get_plugin(source)
-                                                    .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
-                                                    .unwrap_or(false);
+                                                    .is_some_and(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor));
                                                 if source_is_monitor && target != 0 && target != chain_len - 1 {
                                                     state.app.ui_state.toast_message = Some(
                                                         crate::app::ToastMessage::info(
@@ -840,7 +856,7 @@ impl PlayerView {
                                                 .flex()
                                                 .items_center()
                                                 .justify_center()
-                                                .when(!is_permanent, |el| el.cursor_grab())
+                                                .when(!is_permanent, gpui::Styled::cursor_grab)
                                                 .child(Icon::new(if is_permanent { IconName::Lock } else { IconName::GripVertical })
                                                     .small().color(theme_c.text_muted))
                                         )
@@ -1278,8 +1294,7 @@ impl PlayerView {
                                             .plugin_state
                                             .graph
                                             .get_plugin(source)
-                                            .map(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor))
-                                            .unwrap_or(false);
+                                            .is_some_and(|p| matches!(p.plugin_type(), PluginType::LoudnessMonitor));
                                         let chain_len =
                                             state.app.plugin_state.graph.len();
                                         if source_is_monitor && target != chain_len - 1 {
@@ -1449,6 +1464,10 @@ impl PlayerView {
 
     /// Render a side level meter group for the detail panel
     /// Matches the style of the queue screen meters with vertical dB legend
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub fn render_side_meter(
         &self,
         cx: &mut Context<Self>,
@@ -1601,7 +1620,7 @@ impl PlayerView {
                     .w(rems(1.5))
                     .overflow_hidden()
                     .children(ticks.into_iter().map(move |db| {
-                        let pos = db_to_position(db as f64);
+                        let pos = db_to_position(f64::from(db));
                         // Use top positioning: top = (1 - pos), then offset by half line height
                         let top_fraction = 1.0 - pos;
 
@@ -1621,7 +1640,7 @@ impl PlayerView {
                             .text_size(d.text_xs)
                             .text_color(theme.text_muted)
                             .mt(label_offset)
-                            .child(format!("{}", db));
+                            .child(format!("{db}"));
 
                         let tick = div().w(d.grid).h(d.half_grid).bg(theme.border);
 
@@ -1658,6 +1677,10 @@ impl PlayerView {
     }
 
     /// Render add plugin buttons grouped by category
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_add_plugin_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -1807,6 +1830,10 @@ impl PlayerView {
     }
 
     /// Render the plugin detail/settings panel
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_plugin_detail_panel(
         &self,
         solved_rack_width: Option<f32>,
@@ -1855,7 +1882,7 @@ impl PlayerView {
         let plugin_ui_view = plugin_data
             .as_ref()
             .filter(|plugin| super::super::ui_simple::supports_parameter_views(&plugin.settings))
-            .map(|_| {
+            .map_or(PluginUiView::UI, |_| {
                 self.state
                     .read(cx)
                     .app
@@ -1863,8 +1890,7 @@ impl PlayerView {
                     .plugin_ui_state
                     .plugin_ui_view
                     .clone()
-            })
-            .unwrap_or(PluginUiView::UI);
+            });
         let scroll_owner = self
             .state
             .read(cx)
@@ -1945,8 +1971,7 @@ impl PlayerView {
                         let editor_width = state.app.plugin_state.plugin_ui_state.rack_editor_width
                             .or_else(|| solved_rack_width.map(|width| width - shell_padding
                                 - if output_collapsed { 0.0 } else { output_meter_width }))
-                            .map(|width| (width - shell_padding - 2.0).max(1.0))
-                            .unwrap_or(320.0 * layout_scale);
+                            .map_or(320.0 * layout_scale, |width| (width - shell_padding - 2.0).max(1.0));
                         let measured_editor = self.state.downgrade();
                         let measured_editor_height = self.state.downgrade();
 
@@ -1996,7 +2021,7 @@ impl PlayerView {
                                                         state.app.plugin_state.plugin_ui_state.rack_editor_width = Some(width);
                                                         cx.notify();
                                                     }));
-                                                }, |_, _, _, _| {}).w_full().h(rems(0.0)))
+                                                }, |_, (), _, _| {}).w_full().h(rems(0.0)))
                     .child(canvas(move |bounds, _window, cx| {
                         let height = f32::from(bounds.size.height);
                         let Some(state) = measured_editor_height.upgrade() else { return; };
@@ -2008,7 +2033,7 @@ impl PlayerView {
                             state.app.plugin_state.plugin_ui_state.rack_editor_height = Some(height);
                             cx.notify();
                         }));
-                    }, |_, _, _, _| {}).absolute().top(px(0.0)).left(px(0.0)).w_full().h_full())
+                    }, |_, (), _, _| {}).absolute().top(px(0.0)).left(px(0.0)).w_full().h_full())
                     .child(dev_track!(
                         div().w_full().h(px(1.0)),
                         "rack.params.scroll-target"
@@ -2077,11 +2102,7 @@ impl PlayerView {
                                     let plugin_graph = app_st.app.plugin_state.graph.clone();
                                     let midi_overlay = app_st.app.plugin_state.midi_mapping.build_overlay(&[]);
 
-                                    let midi_ref = if midi_overlay.has_controller() {
-                                        Some(midi_overlay)
-                                    } else {
-                                        None
-                                    };
+                                    let midi_ref = midi_overlay.has_controller().then_some(midi_overlay);
 
                                     let d = Ds::from_cx(cx);
 
@@ -2291,6 +2312,10 @@ impl PlayerView {
     /// Gear popover for plugin setup. Keeps the plugin body to two visible
     /// zones (`Main | Output`) while still exposing view, skin, and setup
     /// controls on demand.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_rack_config_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = PluginRackTranslations::for_language(self.state.read(cx).app.ui_state.language);
@@ -2653,7 +2678,7 @@ impl PlayerView {
                                             .rack_skin_picker_open = false;
                                         let layout = state.layout.read(cx);
                                         if let Err(e) = state.app.save_config(layout) {
-                                            log::error!("Failed to save plugin skin: {}", e);
+                                            log::error!("Failed to save plugin skin: {e}");
                                         }
                                     });
                                 }),
@@ -2767,7 +2792,11 @@ impl PlayerView {
             )
     }
 
-    /// Render chain-level control buttons (Bypass, AutoGain, Mono, M/S) in a 2×2 grid
+    /// Render chain-level control buttons (Bypass, `AutoGain`, Mono, M/S) in a 2×2 grid
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_chain_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();

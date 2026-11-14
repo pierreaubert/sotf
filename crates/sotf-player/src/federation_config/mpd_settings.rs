@@ -17,7 +17,7 @@ pub struct MpdSettings {
     /// Authentication mode (default: Certificate/mTLS).
     #[serde(default)]
     pub auth_mode: MpdAuthMode,
-    /// Password (only used when auth_mode == Password).
+    /// Password (only used when `auth_mode` == Password).
     #[serde(default)]
     pub password: Option<String>,
     /// SHA-256 fingerprints of trusted client certificates (for mTLS auth).

@@ -13,7 +13,7 @@ use crate::components::plugins::ui_layout_renderer::{
 use crate::components::plugins::ui_multiband_common::{band_tab_label, primary_uses_columns};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Entity, SharedString, div};
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, Text,
@@ -27,6 +27,10 @@ use sotf_plugins::plugin_multiband_expander::target_attenuation_db;
 
 /// Snapshot of global and selected-band settings for the editor.
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct MbExpanderRenderState {
     pub num_bands: usize,
     pub crossover_preset: i32,
@@ -56,6 +60,14 @@ pub struct MbExpanderRenderState {
 }
 
 /// Render primary controls before the response and secondary configuration.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_mb_expander_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -206,7 +218,7 @@ pub fn render_mb_expander_plugin(
         .w_full()
         .min_w_0()
         .gap(d.grid)
-        .when(!primary_columns, |row| row.flex_col())
+        .when(!primary_columns, gpui::Styled::flex_col)
         .child(left)
         .child(right);
     let mut secondary = div()
@@ -265,7 +277,7 @@ pub fn render_mb_expander_plugin(
         .min_w_0()
         .flex()
         .gap(d.grid)
-        .when(!wide, |row| row.flex_col())
+        .when(!wide, gpui::Styled::flex_col)
         .child(global_controls)
         .child(secondary);
     let app = &entity.read(cx).app;
@@ -336,6 +348,14 @@ pub fn render_mb_expander_plugin(
 }
 
 /// Draw the DSP's static expansion target before envelope and makeup processing.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_response(
     d: &Ds,
     state: &MbExpanderRenderState,

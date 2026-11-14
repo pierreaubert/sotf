@@ -120,6 +120,10 @@ impl RemoteState {
         merged
     }
 
+    /// Adds manual server record.
+    ///
+    /// # Errors
+    /// Returns an error if server connection fields are invalid or the server record cannot be added.
     pub fn add_manual_server_record(
         &mut self,
         friendly_name: impl Into<String>,
@@ -145,6 +149,10 @@ impl RemoteState {
         self.manual_auth_token = token.into();
     }
 
+    /// Adds manual server from inputs.
+    ///
+    /// # Errors
+    /// Returns an error if server connection fields are invalid or the server record cannot be added.
     pub fn add_manual_server_from_inputs(&mut self) -> Result<String, String> {
         let name = self.manual_server_name.trim().to_string();
         let mut api_base_url = self.manual_api_base_url.trim().to_string();

@@ -4,7 +4,10 @@ use super::consts::WAVEFORM_MIN_HEIGHT_PX;
 use super::consts::WAVEFORM_NUM_BARS;
 use super::consts::waveform_bar_x_and_width;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    App, Bounds, Corners, Edges, ElementId, GlobalElementId, Hsla, InspectorElementId, LayoutId,
+    PaintQuad, Pixels, Size, Style, Window, point, px, relative, size,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -87,6 +90,12 @@ impl Element for WaveformElement {
     ) -> Self::PrepaintState {
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn paint(
         &mut self,
         _id: Option<&GlobalElementId>,
@@ -104,15 +113,14 @@ impl Element for WaveformElement {
         let samples = self
             .waveform
             .as_deref()
-            .map(|samples| &samples[..])
-            .unwrap_or(&DEFAULT_WAVEFORM);
+            .map_or(&DEFAULT_WAVEFORM[..], |samples| &samples[..]);
 
         let progress_bar_idx = (self.progress * WAVEFORM_NUM_BARS as f32) as usize;
 
         let center_y = bounds.origin.y + bounds.size.height / 2.0;
 
         for (idx, amplitude) in samples.iter().enumerate() {
-            let height_ratio = *amplitude as f32 / 255.0;
+            let height_ratio = f32::from(*amplitude) / 255.0;
             let bar_height = WAVEFORM_MIN_HEIGHT_PX
                 + (WAVEFORM_MAX_HEIGHT_PX - WAVEFORM_MIN_HEIGHT_PX) * height_ratio;
             let bar_color = if idx < progress_bar_idx {
@@ -133,7 +141,7 @@ impl Element for WaveformElement {
                 background: bar_color.into(),
                 border_widths: Edges::default(),
                 border_color: Hsla::transparent_black(),
-                border_style: Default::default(),
+                border_style: gpui::BorderStyle::default(),
             });
         }
     }

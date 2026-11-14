@@ -1,6 +1,6 @@
 //! Album Card Component
 //!
-//! A reusable RenderOnce component for displaying album information.
+//! A reusable `RenderOnce` component for displaying album information.
 //! Used in both grid and list views.
 
 use crate::app::AppState;
@@ -9,7 +9,10 @@ use crate::components::icons::{Icon, IconName};
 use crate::theme::Theme;
 use crate::ui::{ALBUM_CARD_WIDTH_REMS, DEFAULT_MIN_FONT_SIZE_PX, compute_combined_scale};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, Div, Entity, FontWeight, MouseButton, ObjectFit, Rems, SharedString, Stateful,
+    Window, div, img, rems,
+};
 use sotf_audio_player::Album;
 use std::sync::Arc;
 
@@ -23,10 +26,9 @@ pub use misc::*;
 pub use types::*;
 
 use album_card_text_sizes::AlbumCardTextSizes;
-use misc::image_from_jpeg_bytes;
 
 /// A single album card for the library view
-#[derive(IntoElement)]
+#[derive(IntoElement, Debug)]
 pub struct AlbumCard {
     /// Album data
     album: Arc<Album>,
@@ -44,6 +46,7 @@ pub struct AlbumCard {
 
 impl AlbumCard {
     /// Create a new album card
+    #[must_use]
     pub fn new(album: Arc<Album>, index: usize, is_selected: bool, theme: Theme) -> Self {
         Self {
             album,
@@ -56,12 +59,14 @@ impl AlbumCard {
     }
 
     /// Set the display mode
+    #[must_use]
     pub fn mode(mut self, mode: AlbumCardMode) -> Self {
         self.mode = mode;
         self
     }
 
     /// Set the app state entity for favorite toggling
+    #[must_use]
     pub fn state(mut self, state: Entity<AppState>) -> Self {
         self.state = Some(state);
         self
@@ -69,29 +74,32 @@ impl AlbumCard {
 }
 
 impl RenderOnce for AlbumCard {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render(self, window: &mut Window, cx: &mut App) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let fallback_rem_px: f32 = window.rem_size().into();
-        let typography = self
-            .state
-            .as_ref()
-            .map(|state| {
-                let state = state.read(cx);
-                let ui = &state.app.ui_state;
-                let effective_rem_px = 16.0
-                    * compute_combined_scale(
-                        ui.window_width,
-                        ui.window_height,
-                        ui.font_scale,
-                        ui.min_font_size_px,
-                        ui.max_font_size_px,
-                    );
-                (
-                    ui.min_font_size_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX),
-                    effective_rem_px,
-                )
-            })
-            .unwrap_or((DEFAULT_MIN_FONT_SIZE_PX, fallback_rem_px));
+        let typography =
+            self.state
+                .as_ref()
+                .map_or((DEFAULT_MIN_FONT_SIZE_PX, fallback_rem_px), |state| {
+                    let state = state.read(cx);
+                    let ui = &state.app.ui_state;
+                    let effective_rem_px = 16.0
+                        * compute_combined_scale(
+                            ui.window_width,
+                            ui.window_height,
+                            ui.font_scale,
+                            ui.min_font_size_px,
+                            ui.max_font_size_px,
+                        );
+                    (
+                        ui.min_font_size_px.unwrap_or(DEFAULT_MIN_FONT_SIZE_PX),
+                        effective_rem_px,
+                    )
+                });
         let text_sizes = AlbumCardTextSizes::from_design(d, typography.0, typography.1);
         let album_art_corner_radius_ratio = (d.r_lg.to_f64() as f32
             / (ALBUM_CARD_WIDTH_REMS * fallback_rem_px.max(1.0)))
@@ -133,12 +141,12 @@ impl AlbumCard {
         album: &Album,
         index: usize,
         theme: &Theme,
-        state: &Option<Entity<AppState>>,
+        state: Option<&Entity<AppState>>,
     ) -> Stateful<Div> {
         let is_fav = album.is_favorite;
         let album_id = album.id;
         let heart = div()
-            .id(SharedString::from(format!("album-fav-{}", index)))
+            .id(SharedString::from(format!("album-fav-{index}")))
             .cursor_pointer()
             .child(
                 Icon::new(if is_fav {
@@ -154,7 +162,7 @@ impl AlbumCard {
                 }),
             );
 
-        if let (Some(aid), Some(state)) = (album_id, state.clone()) {
+        if let (Some(aid), Some(state)) = (album_id, state.cloned()) {
             heart.on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
                 state.update(cx, |state, _cx| {
                     state.app.toggle_album_favorite(aid);
@@ -170,7 +178,7 @@ impl AlbumCard {
         album: &Album,
         index: usize,
         theme: &Theme,
-        state: &Option<Entity<AppState>>,
+        state: Option<&Entity<AppState>>,
         d: &Ds,
         metadata_text_size: Rems,
     ) -> impl IntoElement {
@@ -198,11 +206,11 @@ impl AlbumCard {
                     .whitespace_nowrap()
                     .gap(d.grid)
                     // Format (e.g., FLAC) - no wrapper div needed
-                    .when_some(format, |el, fmt| el.child(fmt))
+                    .when_some(format, gpui::ParentElement::child)
                     // Sample rate info (e.g., 24/44.1k)
-                    .when_some(sample_info, |el, info| el.child(info))
+                    .when_some(sample_info, gpui::ParentElement::child)
                     // Channel layout/count for non-stereo albums (e.g., 5.1, 10ch)
-                    .when_some(channel_info, |el, info| el.child(info))
+                    .when_some(channel_info, gpui::ParentElement::child)
                     // Dynamic range with icon
                     .when_some(dr, |el, dr_val| {
                         el.child(
@@ -338,7 +346,7 @@ impl AlbumCard {
                         &album,
                         index,
                         &theme,
-                        &state,
+                        state.as_ref(),
                         &d,
                         text_sizes.metadata,
                     )),
@@ -387,7 +395,7 @@ impl AlbumCard {
                         &album,
                         index,
                         &theme,
-                        &state,
+                        state.as_ref(),
                         &d,
                         text_sizes.metadata,
                     )),
@@ -438,7 +446,12 @@ impl AlbumCard {
                             .text_color(theme.text_secondary)
                             .child("#")
                             .child(album.tracks.len().to_string())
-                            .child(Self::build_heart_icon(&album, index, &theme, &state)),
+                            .child(Self::build_heart_icon(
+                                &album,
+                                index,
+                                &theme,
+                                state.as_ref(),
+                            )),
                     ),
             )
             .into_any_element()

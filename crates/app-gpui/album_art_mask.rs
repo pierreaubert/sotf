@@ -2,7 +2,7 @@ use image::{DynamicImage, RgbaImage};
 
 /// Center-crop decoded artwork to the square shown by `ObjectFit::Cover`, then
 /// apply the alpha mask to the pixels that will actually remain visible.
-pub(crate) fn prepare_album_art_image(image: DynamicImage, corner_radius_ratio: f32) -> RgbaImage {
+pub(crate) fn prepare_album_art_image(image: &DynamicImage, corner_radius_ratio: f32) -> RgbaImage {
     let side = image.width().min(image.height());
     if side == 0 {
         return RgbaImage::new(0, 0);
@@ -21,6 +21,12 @@ pub(crate) fn prepare_album_art_image(image: DynamicImage, corner_radius_ratio: 
 /// content, so album thumbnails carry their own alpha mask. Scaling the
 /// source alpha by boundary coverage avoids the jagged binary edge produced
 /// by an all-or-nothing mask.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+)]
 pub(crate) fn apply_album_art_corner_mask(image: &mut RgbaImage, corner_radius_ratio: f32) {
     let min_dimension = image.width().min(image.height());
     if min_dimension == 0 || corner_radius_ratio <= 0.0 {
@@ -55,7 +61,7 @@ pub(crate) fn apply_album_art_corner_mask(image: &mut RgbaImage, corner_radius_r
                     continue;
                 }
                 let alpha = &mut image.get_pixel_mut(pixel_x, pixel_y).0[3];
-                *alpha = ((*alpha as f32) * coverage).round() as u8;
+                *alpha = (f32::from(*alpha) * coverage).round() as u8;
             }
         }
     }
@@ -96,7 +102,7 @@ mod tests {
             *pixel = Rgba([x as u8, 40, 60, 255]);
         }
 
-        let prepared = prepare_album_art_image(DynamicImage::ImageRgba8(source), 0.25);
+        let prepared = prepare_album_art_image(&DynamicImage::ImageRgba8(source), 0.25);
 
         assert_eq!(prepared.dimensions(), (4, 4));
         assert_eq!(prepared.get_pixel(0, 2).0[0], 1);
@@ -116,7 +122,7 @@ mod tests {
 
     #[test]
     fn empty_and_tiny_images_are_safe_and_symmetric() {
-        let empty = prepare_album_art_image(DynamicImage::ImageRgba8(RgbaImage::new(0, 3)), 0.25);
+        let empty = prepare_album_art_image(&DynamicImage::ImageRgba8(RgbaImage::new(0, 3)), 0.25);
         assert_eq!(empty.dimensions(), (0, 0));
 
         let mut single = RgbaImage::from_pixel(1, 1, Rgba([20, 40, 60, 123]));

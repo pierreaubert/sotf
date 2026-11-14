@@ -38,7 +38,7 @@
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_seed_enabled_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             seed_toggle = seed_toggle.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -68,7 +68,7 @@
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref h) = on_seed_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 seed_input = seed_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
             }
 

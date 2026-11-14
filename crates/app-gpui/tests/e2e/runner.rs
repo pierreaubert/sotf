@@ -113,6 +113,7 @@ use sotf_audio_player_gpui::app::{App, AppState};
 use sotf_audio_player_gpui::ui::PlayerView;
 
 /// Runner for executing E2E test scenarios.
+#[derive(Debug)]
 pub struct E2ERunner<S: TestScenario> {
     scenario: S,
 }

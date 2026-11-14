@@ -37,6 +37,7 @@ pub struct ProcessTarget {
 }
 
 impl ProcessTarget {
+    #[must_use]
     pub fn new(config: ProcessTargetConfig) -> Self {
         Self {
             config,
@@ -145,7 +146,7 @@ impl ProcessTarget {
         };
         self.active_child = None;
 
-        let process = process_from_status(pid, &status);
+        let process = process_from_status(pid, status);
         let logs = [stdout_path, stderr_path]
             .iter()
             .flat_map(|path| read_bounded_lines(path).unwrap_or_default())
@@ -168,7 +169,7 @@ impl ProcessTarget {
         let pid = child.id();
         child.kill()?;
         let status = child.wait()?;
-        Ok(process_from_status(pid, &status))
+        Ok(process_from_status(pid, status))
     }
 }
 
@@ -322,7 +323,7 @@ fn read_bounded_lines(path: &Path) -> std::io::Result<Vec<String>> {
         .collect())
 }
 
-fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
+fn process_from_status(pid: u32, status: ExitStatus) -> ProcessObservation {
     let signal_or_exception = status_signal(status);
     ProcessObservation {
         pid: Some(pid),
@@ -335,12 +336,21 @@ fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
 }
 
 #[cfg(unix)]
-fn status_signal(status: &ExitStatus) -> Option<String> {
+fn status_signal(status: ExitStatus) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
     status.signal().map(|signal| format!("signal {signal}"))
 }
 
 #[cfg(not(unix))]
-fn status_signal(_status: &ExitStatus) -> Option<String> {
+fn status_signal(_status: ExitStatus) -> Option<String> {
     None
+}
+
+impl std::fmt::Debug for ProcessTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProcessTarget")
+            .field("revision", &self.revision)
+            .field("launches", &self.launches)
+            .finish_non_exhaustive()
+    }
 }

@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Frame, LibraryViewMode, List, ListItem, ListState, Modifier,
+    Rect, Style, TreeItem, clean_text, truncate_with_ellipsis,
+};
 
 fn album_list_inner_width(area: Rect) -> usize {
     area.width.saturating_sub(2) as usize
@@ -37,6 +40,10 @@ pub(crate) fn tree_album_name_width(area: Rect, play_count: usize) -> usize {
         .max(1)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: bool) {
     use ratatui::widgets::StatefulWidget;
 
@@ -45,8 +52,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
         .playback
         .loudness_info
         .as_ref()
-        .map(|info| info.channel_peaks.len())
-        .unwrap_or(2);
+        .map_or(2, |info| info.channel_peaks.len());
 
     match app.library_view.mode {
         LibraryViewMode::Flat => {
@@ -71,7 +77,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                     let display_text = if album.play_count > 0 {
                         format!("{}{}  \u{1F3B5} {}", fav_prefix, content, album.play_count)
                     } else {
-                        format!("{}{}", fav_prefix, content)
+                        format!("{fav_prefix}{content}")
                     };
 
                     let style = if i == app.library_view.selected_album_index {
@@ -136,7 +142,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                             let cleaned_name = clean_text(name);
                             let truncated_name =
                                 truncate_with_ellipsis(&cleaned_name, tree_artist_name_width(area));
-                            let content = format!("{}{}", prefix, truncated_name);
+                            let content = format!("{prefix}{truncated_name}");
                             let mut style = Style::default()
                                 .fg(app.theme.accent_primary)
                                 .add_modifier(Modifier::BOLD);
@@ -159,7 +165,7 @@ pub(crate) fn draw_album_list(f: &mut Frame, area: Rect, app: &App, is_focused: 
                                 let content = if album.play_count > 0 {
                                     format!("  └─ {}  \u{1F3B5} {}", truncated, album.play_count)
                                 } else {
-                                    format!("  └─ {}", truncated)
+                                    format!("  └─ {truncated}")
                                 };
 
                                 let style = if i == app.library_view.selected_tree_index {

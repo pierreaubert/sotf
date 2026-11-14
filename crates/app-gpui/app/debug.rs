@@ -1,8 +1,8 @@
 //! Debug utilities for state transition tracking and action logging.
 //!
 //! Provides:
-//! - StateHistory: Captures state snapshots before major transitions
-//! - Logging helpers for InputMode, Screen, and AudioDevice changes
+//! - `StateHistory`: Captures state snapshots before major transitions
+//! - Logging helpers for `InputMode`, Screen, and `AudioDevice` changes
 //! - Action dispatch logging with blocked action tracking
 
 use std::collections::VecDeque;
@@ -36,6 +36,7 @@ impl Default for StateHistory {
 }
 
 impl StateHistory {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             history: VecDeque::with_capacity(MAX_HISTORY_SIZE),
@@ -74,6 +75,7 @@ impl StateHistory {
     }
 
     /// Get the last N snapshots
+    #[must_use]
     pub fn last_n(&self, n: usize) -> Vec<&StateSnapshot> {
         self.history.iter().rev().take(n).collect()
     }
@@ -89,27 +91,29 @@ impl StateHistory {
     }
 
     /// Get the number of snapshots
+    #[must_use]
     pub fn len(&self) -> usize {
         self.history.len()
     }
 
     /// Check if history is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.history.is_empty()
     }
 }
 
-/// Log an InputMode transition
+/// Log an `InputMode` transition
 pub fn log_input_mode_transition(from: InputMode, to: InputMode, trigger: &str) {
     if from != to {
-        log::info!("[InputMode] {:?} -> {:?} (trigger: {})", from, to, trigger);
+        log::info!("[InputMode] {from:?} -> {to:?} (trigger: {trigger})");
     }
 }
 
 /// Log a Screen transition
 pub fn log_screen_transition(from: Screen, to: Screen, trigger: &str) {
     if from != to {
-        log::info!("[Screen] {:?} -> {:?} (trigger: {})", from, to, trigger);
+        log::info!("[Screen] {from:?} -> {to:?} (trigger: {trigger})");
     }
 }
 
@@ -127,19 +131,10 @@ pub fn log_device_change(from: Option<&str>, to: Option<&str>, trigger: &str) {
 
 /// Log action dispatch
 pub fn log_action_dispatch(action_name: &str, handler: &str) {
-    log::debug!(
-        "[Action] Dispatched '{}' to handler '{}'",
-        action_name,
-        handler
-    );
+    log::debug!("[Action] Dispatched '{action_name}' to handler '{handler}'");
 }
 
 /// Log blocked action (due to input mode)
 pub fn log_action_blocked(action_name: &str, input_mode: InputMode, reason: &str) {
-    log::debug!(
-        "[Action] Blocked '{}' in {:?} mode: {}",
-        action_name,
-        input_mode,
-        reason
-    );
+    log::debug!("[Action] Blocked '{action_name}' in {input_mode:?} mode: {reason}");
 }

@@ -17,13 +17,21 @@ use crate::components::plugins::ui_layout_renderer::{
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Empty, Entity, SharedString, div};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, Text,
 };
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::param_specs::xtc::PARAMS;
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_header(
     d: &Ds,
     entity: Entity<AppState>,
@@ -68,6 +76,10 @@ pub(crate) fn render_header(
     row.into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn render_xtc(
     ctx: &CustomViewRenderContext,
     cx: &mut Context<PlayerView>,
@@ -151,7 +163,7 @@ pub(crate) fn render_xtc(
         .min_w_0()
         .flex()
         .gap(d.grid)
-        .when(!wide, |row| row.flex_col())
+        .when(!wide, gpui::Styled::flex_col)
         .child(geometry)
         .child(cancellation);
     let group = |indices: &[usize], enabled: bool| {
@@ -263,14 +275,16 @@ pub(crate) fn render_xtc(
         .as_ref()
         .and_then(|data| data.downcast_ref::<sotf_plugins::plugin_xtc::XtcData>())
         .filter(|data| data.auto_gain.gain_db.is_finite() && data.limiter_envelope.is_finite())
-        .map(|data| {
-            format!(
-                "Auto gain {:+.1} dB · Limiter {:.1} dB",
-                data.auto_gain.gain_db,
-                -20.0 * data.limiter_envelope.clamp(1e-9, 1.0).log10()
-            )
-        })
-        .unwrap_or_else(|| text.label("No live data").to_string());
+        .map_or_else(
+            || text.label("No live data").to_string(),
+            |data| {
+                format!(
+                    "Auto gain {:+.1} dB · Limiter {:.1} dB",
+                    data.auto_gain.gain_db,
+                    -20.0 * data.limiter_envelope.clamp(1e-9, 1.0).log10()
+                )
+            },
+        );
     div()
         .w_full()
         .min_w_0()
@@ -285,6 +299,10 @@ pub(crate) fn render_xtc(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_room_ir(
     ctx: &CustomViewRenderContext,
     path: Option<&str>,

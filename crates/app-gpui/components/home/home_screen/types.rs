@@ -15,7 +15,9 @@ use crate::components::home::album_card::{AlbumCard, AlbumCardMode};
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, ClickEvent, FontWeight, MouseButton, MouseUpEvent, SharedString, div, px, relative,
+};
 use gpui_ui_kit::accessibility::{AccessibilityExt, AccessibilityNode, AriaProps, AriaRole};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Heading, IconButton, IconButtonSize, IconButtonVariant,
@@ -200,7 +202,8 @@ fn selected_home_entry_index(
 pub(crate) fn move_home_album_selection(state: &mut crate::app::AppState, forward: bool) {
     let entries = visible_home_album_entries(state);
     if entries.is_empty() {
-        state.app.library_state.home_album_selection = Default::default();
+        state.app.library_state.home_album_selection =
+            crate::app::state::library::HomeAlbumSelection::default();
         return;
     }
 
@@ -208,10 +211,9 @@ pub(crate) fn move_home_album_selection(state: &mut crate::app::AppState, forwar
         selected_home_entry_index(&entries, &state.app.library_state.home_album_selection);
     let next = match (current, forward) {
         (Some(index), true) => (index + 1) % entries.len(),
-        (Some(0), false) => entries.len() - 1,
+        (Some(0) | None, false) => entries.len() - 1,
         (Some(index), false) => index - 1,
         (None, true) => 0,
-        (None, false) => entries.len() - 1,
     };
     let entry = &entries[next];
     state.app.library_state.home_album_selection.shelf_id = Some(entry.shelf_id.clone());
@@ -221,7 +223,8 @@ pub(crate) fn move_home_album_selection(state: &mut crate::app::AppState, forwar
 fn selected_home_album(state: &mut crate::app::AppState) -> Option<HomeAlbumEntry> {
     let entries = visible_home_album_entries(state);
     if entries.is_empty() {
-        state.app.library_state.home_album_selection = Default::default();
+        state.app.library_state.home_album_selection =
+            crate::app::state::library::HomeAlbumSelection::default();
         return None;
     }
 
@@ -281,6 +284,10 @@ pub(crate) fn queue_selected_home_album(state: &mut crate::app::AppState) {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_home_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         if self
             .state
@@ -361,7 +368,7 @@ impl PlayerView {
                         "home.browse"
                     )),
             )
-            .when_some(continue_listening, |el, resume| el.child(resume))
+            .when_some(continue_listening, gpui::ParentElement::child)
             .when(is_loading, |el| {
                 el.child(
                     div()
@@ -404,6 +411,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_home_shelf_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let (theme, text, album_label, active_shelf_id, shelf) = {
@@ -436,10 +451,10 @@ impl PlayerView {
         };
 
         let state_for_back = self.state.clone();
-        let navigation_id = active_shelf_id
-            .as_deref()
-            .map(|id| format!("home-shelf-navigation-{id}"))
-            .unwrap_or_else(|| "home-shelf-navigation-missing".to_string());
+        let navigation_id = active_shelf_id.as_deref().map_or_else(
+            || "home-shelf-navigation-missing".to_string(),
+            |id| format!("home-shelf-navigation-{id}"),
+        );
         #[cfg(feature = "dev-api")]
         let navigation_selector = navigation_id.clone();
 
@@ -577,8 +592,7 @@ impl PlayerView {
                     .remote
                     .current_album_page
                     .as_ref()
-                    .map(|page| page.albums.clone())
-                    .unwrap_or_default(),
+                    .map_or_default(|page| page.albums.clone()),
                 state.app.ui_state.expanded_home_sections.clone(),
                 state
                     .app
@@ -586,13 +600,10 @@ impl PlayerView {
                     .cache_refresh_requests_in_progress
                     .visible_album_page
                     || state.app.remote.refresh_requests.visible_album_page,
-                state
-                    .app
-                    .remote
-                    .server_store
-                    .selected_server()
-                    .map(|server| server.friendly_name.clone())
-                    .unwrap_or_else(|| "Remote SOTF Player".to_string()),
+                state.app.remote.server_store.selected_server().map_or_else(
+                    || "Remote SOTF Player".to_string(),
+                    |server| server.friendly_name.clone(),
+                ),
             )
         };
         let shelves = build_remote_home_shelves(&remote_albums);
@@ -637,6 +648,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_home_shelf(
         &self,
         shelf: HomeShelf,
@@ -741,8 +760,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .gap(d.gap_md)
-                    .when(is_expanded, |el| el.flex_wrap())
-                    .when(!is_expanded, |el| el.overflow_hidden())
+                    .when(is_expanded, gpui::Styled::flex_wrap)
+                    .when(!is_expanded, gpui::Styled::overflow_hidden)
                     .children(shelf.albums.into_iter().take(limit).enumerate().map(
                         |(idx, album)| {
                             let is_selected = selection.shelf_id.as_deref()
@@ -761,6 +780,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_remote_home_shelf(
         &self,
         shelf: RemoteHomeShelf,
@@ -856,8 +883,8 @@ impl PlayerView {
                 div()
                     .flex()
                     .gap(d.gap_md)
-                    .when(is_expanded, |el| el.flex_wrap())
-                    .when(!is_expanded, |el| el.overflow_hidden())
+                    .when(is_expanded, gpui::Styled::flex_wrap)
+                    .when(!is_expanded, gpui::Styled::overflow_hidden)
                     .children(
                         shelf
                             .album_indices
@@ -964,6 +991,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_remote_home_album_card(
         &self,
         shelf_id: &str,
@@ -985,7 +1016,7 @@ impl PlayerView {
         let album_id_for_add = album_id.clone();
         let album_id_for_play = album_id.clone();
         let shelf_id_for_click = shelf_id.to_string();
-        let year = album.year.map(|year| year.to_string()).unwrap_or_default();
+        let year = album.year.map_or_default(|year| year.to_string());
         let dynamic_range = album.dynamic_range.map(|dr| format!("DR{dr}"));
         let hover_bg = theme.surface_hover;
 
@@ -1053,7 +1084,7 @@ impl PlayerView {
                             .text_color(theme.text_muted)
                             .child(format!("{} tracks", album.track_count))
                             .when(!year.is_empty(), |el| el.child(year))
-                            .when_some(dynamic_range, |el, dr| el.child(dr)),
+                            .when_some(dynamic_range, gpui::ParentElement::child),
                     )
                     .child(
                         div()

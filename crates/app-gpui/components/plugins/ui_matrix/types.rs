@@ -1,4 +1,5 @@
 /// State for rendering the Matrix plugin
+#[derive(Debug)]
 pub struct MatrixRenderState<'a> {
     pub plugin_instance_id: usize,
     pub input_channels: usize,
@@ -12,7 +13,7 @@ pub struct MatrixRenderState<'a> {
     pub speaker_config: Option<String>,
     pub is_editing: bool,
     pub selected_param: usize,
-    /// Currently selected cell (input_idx, output_idx) for editing
+    /// Currently selected cell (`input_idx`, `output_idx`) for editing
     pub selected_cell: Option<(usize, usize)>,
     pub route_menu: Option<bool>,
     pub route_highlight: Option<usize>,

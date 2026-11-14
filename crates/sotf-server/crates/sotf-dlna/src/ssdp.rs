@@ -16,7 +16,7 @@ const SSDP_PORT: u16 = 1900;
 pub async fn send_alive(device: &DlnaDevice, local_ip: Ipv4Addr) -> Result<(), String> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
         .await
-        .map_err(|e| format!("Failed to bind SSDP socket: {}", e))?;
+        .map_err(|e| format!("Failed to bind SSDP socket: {e}"))?;
 
     let location = format!("http://{}:{}/description.xml", local_ip, device.http_port);
     let target = SocketAddr::V4(SocketAddrV4::new(SSDP_MULTICAST, SSDP_PORT));
@@ -39,7 +39,7 @@ pub async fn send_alive(device: &DlnaDevice, local_ip: Ipv4Addr) -> Result<(), S
     socket
         .send_to(notify.as_bytes(), target)
         .await
-        .map_err(|e| format!("Failed to send SSDP alive: {}", e))?;
+        .map_err(|e| format!("Failed to send SSDP alive: {e}"))?;
 
     log::debug!(
         "[SSDP] Sent alive for {} at {}",
@@ -54,7 +54,7 @@ pub async fn send_alive(device: &DlnaDevice, local_ip: Ipv4Addr) -> Result<(), S
 pub async fn send_byebye(device: &DlnaDevice) -> Result<(), String> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
         .await
-        .map_err(|e| format!("Failed to bind SSDP socket: {}", e))?;
+        .map_err(|e| format!("Failed to bind SSDP socket: {e}"))?;
 
     let target = SocketAddr::V4(SocketAddrV4::new(SSDP_MULTICAST, SSDP_PORT));
 
@@ -72,7 +72,7 @@ pub async fn send_byebye(device: &DlnaDevice) -> Result<(), String> {
     socket
         .send_to(notify.as_bytes(), target)
         .await
-        .map_err(|e| format!("Failed to send SSDP byebye: {}", e))?;
+        .map_err(|e| format!("Failed to send SSDP byebye: {e}"))?;
 
     log::debug!("[SSDP] Sent byebye for {}", device.friendly_name);
 
@@ -87,20 +87,16 @@ pub async fn listen_and_respond(
 ) -> Result<(), String> {
     let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, SSDP_PORT))
         .await
-        .map_err(|e| format!("Failed to bind SSDP listener: {}", e))?;
+        .map_err(|e| format!("Failed to bind SSDP listener: {e}"))?;
 
     socket
         .join_multicast_v4(SSDP_MULTICAST, Ipv4Addr::UNSPECIFIED)
-        .map_err(|e| format!("Failed to join SSDP multicast: {}", e))?;
+        .map_err(|e| format!("Failed to join SSDP multicast: {e}"))?;
 
     let location = format!("http://{}:{}/description.xml", local_ip, device.http_port);
     let mut buf = [0u8; 2048];
 
-    log::info!(
-        "[SSDP] Listening for M-SEARCH on {}:{}",
-        SSDP_MULTICAST,
-        SSDP_PORT
-    );
+    log::info!("[SSDP] Listening for M-SEARCH on {SSDP_MULTICAST}:{SSDP_PORT}");
 
     loop {
         let mut cancel = cancel.clone();
@@ -123,14 +119,14 @@ pub async fn listen_and_respond(
                                 usn = device.usn(),
                             );
                             if let Err(e) = socket.send_to(response.as_bytes(), from).await {
-                                log::warn!("[SSDP] Failed to respond to M-SEARCH from {}: {}", from, e);
+                                log::warn!("[SSDP] Failed to respond to M-SEARCH from {from}: {e}");
                             } else {
-                                log::debug!("[SSDP] Responded to M-SEARCH from {}", from);
+                                log::debug!("[SSDP] Responded to M-SEARCH from {from}");
                             }
                         }
                     }
                     Err(e) => {
-                        log::warn!("[SSDP] Receive error: {}", e);
+                        log::warn!("[SSDP] Receive error: {e}");
                     }
                 }
             }

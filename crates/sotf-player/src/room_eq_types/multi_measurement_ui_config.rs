@@ -8,7 +8,7 @@ pub struct MultiMeasurementUiConfig {
     pub strategy: String,
     pub variance_lambda: f64,
     pub weights: Vec<f64>,
-    /// Bootstrap-uncertainty configuration (used when strategy = "minimax_uncertainty").
+    /// Bootstrap-uncertainty configuration (used when strategy = "`minimax_uncertainty`").
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootstrap_uncertainty: Option<BootstrapUncertaintyUiConfig>,
 }

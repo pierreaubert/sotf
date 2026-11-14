@@ -1,4 +1,8 @@
-use super::*;
+use super::{
+    App, Block, Borders, Constraint, Direction, Frame, Layout, Line, List, ListItem, ListState,
+    Modifier, Paragraph, Rect, Span, Style, autocomplete_dropdown_height, draw_help_box_with_text,
+    render_autocomplete_dropdown,
+};
 
 pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
     // Calculate constraints based on whether we have autocomplete suggestions
@@ -71,6 +75,8 @@ pub(crate) fn draw_directory_manager(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::StatefulWidget;
+
     // Directory list with tree view
     let tree_items = app.get_directory_tree_items();
 
@@ -78,33 +84,6 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
         .iter()
         .enumerate()
         .map(|(i, (path, level, expanded))| {
-            let indent = "  ".repeat(*level);
-            let expand_indicator = if *level == 0 {
-                if *expanded { "▼ " } else { "▶ " }
-            } else {
-                "└─ "
-            };
-
-            let path_str = if *level == 0 {
-                path.display().to_string()
-            } else {
-                // For subdirectories, just show the name
-                path.file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_else(|| path.display().to_string())
-            };
-
-            // For all directories, add track/album count and last scan time
-            // We need to find the DirectoryInfo corresponding to this path
-            // Since we flattened the tree, we can't easily look it up by index in the original list
-            // But we can search by path in the flattened list or just search the whole tree?
-            // Actually, get_directory_tree_items returns (PathBuf, level, expanded)
-            // It doesn't return the DirectoryInfo itself.
-            // We should probably update get_directory_tree_items to return more info or look it up here.
-            // Looking up by path in the recursive structure is expensive if we do it for every item.
-            // But for a TUI it might be fine.
-
-            // Helper to find directory info by path
             fn find_dir_info<'a>(
                 directories: &'a [sotf_audio_player::DirectoryInfo],
                 path: &std::path::Path,
@@ -119,6 +98,35 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
                 }
                 None
             }
+
+            let indent = "  ".repeat(*level);
+            let expand_indicator = if *level == 0 {
+                if *expanded { "▼ " } else { "▶ " }
+            } else {
+                "└─ "
+            };
+
+            let path_str = if *level == 0 {
+                path.display().to_string()
+            } else {
+                // For subdirectories, just show the name
+                path.file_name().map_or_else(
+                    || path.display().to_string(),
+                    |n| n.to_string_lossy().to_string(),
+                )
+            };
+
+            // For all directories, add track/album count and last scan time
+            // We need to find the DirectoryInfo corresponding to this path
+            // Since we flattened the tree, we can't easily look it up by index in the original list
+            // But we can search by path in the flattened list or just search the whole tree?
+            // Actually, get_directory_tree_items returns (PathBuf, level, expanded)
+            // It doesn't return the DirectoryInfo itself.
+            // We should probably update get_directory_tree_items to return more info or look it up here.
+            // Looking up by path in the recursive structure is expensive if we do it for every item.
+            // But for a TUI it might be fine.
+
+            // Helper to find directory info by path
 
             let info_str = if let Some(dir_info) = find_dir_info(&app.library.directories, path) {
                 let track_count = dir_info.file_count;
@@ -161,7 +169,7 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
                 String::new()
             };
 
-            let content = format!("{}{}{}{}", indent, expand_indicator, path_str, info_str);
+            let content = format!("{indent}{expand_indicator}{path_str}{info_str}");
 
             let style = if i == app.library_view.selected_directory_index {
                 Style::default()
@@ -195,10 +203,17 @@ pub(crate) fn draw_directory_list(f: &mut Frame, area: Rect, app: &App) {
     let mut state = ListState::default();
     state.select(Some(app.library_view.selected_directory_index));
 
-    use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
     let paused = app
         .scan
@@ -259,19 +274,19 @@ pub(crate) fn draw_directory_status(f: &mut Frame, area: Rect, app: &App) {
                         total: usize|
      -> Line {
         let status_span = if in_progress {
-            Span::styled(format!("{:<20}", status_text), progress_style)
+            Span::styled(format!("{status_text:<20}"), progress_style)
         } else {
-            Span::styled(format!("{:<20}", status_text), idle_style)
+            Span::styled(format!("{status_text:<20}"), idle_style)
         };
         Line::from(vec![
-            Span::styled(format!("{:<12}", name), label_style),
+            Span::styled(format!("{name:<12}"), label_style),
             status_span,
-            Span::styled(format!("{:>4}", succeeded), ok_style),
+            Span::styled(format!("{succeeded:>4}"), ok_style),
             Span::styled(
-                format!("{:>6}", failed),
+                format!("{failed:>6}"),
                 if failed > 0 { err_style } else { idle_style },
             ),
-            Span::styled(format!("{:>7}", total), idle_style),
+            Span::styled(format!("{total:>7}"), idle_style),
         ])
     };
 

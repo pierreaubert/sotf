@@ -18,7 +18,7 @@ use crate::discovery::CastDevice;
 use std::net::{Ipv4Addr, SocketAddrV4, UdpSocket};
 use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering};
 
-/// AirPlay audio format: 16-bit PCM at 44100Hz stereo.
+/// `AirPlay` audio format: 16-bit PCM at 44100Hz stereo.
 /// RAOP v1 supports 16-bit PCM (type 0x40) and ALAC (type 0x60).
 const FRAMES_PER_PACKET: usize = 352;
 const SAMPLE_RATE: u32 = 44100;
@@ -33,7 +33,7 @@ const RTP_HEADER_SIZE: usize = 12;
 /// Dynamic RTP payload type used by the ANNOUNCE SDP.
 const RTP_PAYLOAD_TYPE: u8 = 0x60;
 
-/// AirPlay connection state.
+/// `AirPlay` connection state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AirPlayState {
     Disconnected,
@@ -42,13 +42,13 @@ pub enum AirPlayState {
     Streaming,
 }
 
-/// AirPlay sender — streams audio to an AirPlay receiver.
+/// `AirPlay` sender — streams audio to an `AirPlay` receiver.
 pub struct AirPlaySender {
     /// Target device.
     device: CastDevice,
     /// Current connection state.
     state: AirPlayState,
-    /// RTSP CSeq counter.
+    /// RTSP `CSeq` counter.
     cseq: u32,
     /// RTSP session ID from SETUP response.
     session_id: Option<String>,
@@ -66,14 +66,21 @@ pub struct AirPlaySender {
     volume: f32,
     /// Mute state.
     muted: AtomicBool,
-    /// Pre-allocated RTP packet buffer.
-    #[allow(dead_code)]
-    packet_buf: Vec<u8>,
     /// Accumulation buffer for incomplete frames.
     pcm_buf: Vec<u8>,
 }
 
+impl std::fmt::Debug for AirPlaySender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AirPlaySender")
+            .field("device", &self.device)
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
+
 impl AirPlaySender {
+    #[must_use]
     pub fn new(device: CastDevice) -> Self {
         Self {
             device,
@@ -87,14 +94,16 @@ impl AirPlaySender {
             rtsp_stream: None,
             volume: 1.0,
             muted: AtomicBool::new(false),
-            packet_buf: vec![0u8; RTP_HEADER_SIZE + PACKET_SIZE],
             pcm_buf: Vec::with_capacity(PACKET_SIZE * 2),
         }
     }
 
-    /// Connect to the AirPlay receiver.
+    /// Connect to the `AirPlay` receiver.
     ///
     /// Performs the RTSP handshake: ANNOUNCE → SETUP → RECORD.
+    ///
+    /// # Errors
+    /// Returns an error if connection or the RTSP handshake fails.
     pub fn connect(&mut self) -> Result<(), String> {
         self.state = AirPlayState::Connecting;
 
@@ -103,10 +112,8 @@ impl AirPlaySender {
 
         // TCP connection for RTSP control
         let stream = std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))
-            .map_err(|e| format!("RTSP connect failed: {}", e))?;
-        stream
-            .set_read_timeout(Some(std::time::Duration::from_secs(5)))
-            .ok();
+            .map_err(|e| format!("RTSP connect failed: {e}"))?;
+        let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(5)));
         self.rtsp_stream = Some(stream);
 
         // ANNOUNCE
@@ -159,10 +166,10 @@ impl AirPlaySender {
 
         // Create UDP socket for RTP
         let rtp_socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
-            .map_err(|e| format!("RTP socket bind failed: {}", e))?;
+            .map_err(|e| format!("RTP socket bind failed: {e}"))?;
         rtp_socket
             .connect(SocketAddrV4::new(self.device.address, self.rtp_remote_port))
-            .map_err(|e| format!("RTP socket connect failed: {}", e))?;
+            .map_err(|e| format!("RTP socket connect failed: {e}"))?;
         self.rtp_socket = Some(rtp_socket);
 
         // RECORD — start streaming
@@ -182,10 +189,13 @@ impl AirPlaySender {
         Ok(())
     }
 
-    /// Write audio samples (interleaved f32) to the AirPlay stream.
+    /// Write audio samples (interleaved f32) to the `AirPlay` stream.
     ///
     /// Samples are converted to 16-bit PCM, packetized into RTP, and sent via UDP.
     /// Returns the number of samples consumed.
+    ///
+    /// # Errors
+    /// Returns an error if disconnected or RTP transmission fails.
     pub fn write_audio(&mut self, samples: &[f32]) -> Result<usize, String> {
         if self.state != AirPlayState::Connected && self.state != AirPlayState::Streaming {
             return Err("Not connected".to_string());
@@ -199,6 +209,10 @@ impl AirPlaySender {
         // Convert f32 to 16-bit PCM bytes and accumulate
         for &sample in samples {
             let clamped = sample.clamp(-1.0, 1.0);
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "Clamping bounds PCM quantization to the i16 range"
+            )]
             let pcm16 = (clamped * 32767.0) as i16;
             self.pcm_buf.extend_from_slice(&pcm16.to_be_bytes()); // Network byte order
         }
@@ -221,13 +235,13 @@ impl AirPlaySender {
         let db = if self.volume < 0.01 {
             -144.0
         } else {
-            30.0 * (self.volume as f64).log10()
+            30.0 * f64::from(self.volume).log10()
         };
 
         // Send via RTSP SET_PARAMETER
-        let body = format!("volume: {:.6}\r\n", db);
+        let body = format!("volume: {db:.6}\r\n");
         if let Err(e) = self.rtsp_request("SET_PARAMETER", "*", Some(&body)) {
-            log::debug!("[AirPlay] Volume update failed: {}", e);
+            log::debug!("[AirPlay] Volume update failed: {e}");
         }
     }
 
@@ -236,11 +250,11 @@ impl AirPlaySender {
         self.muted.store(muted, Ordering::Relaxed);
     }
 
-    /// Disconnect from the AirPlay receiver.
+    /// Disconnect from the `AirPlay` receiver.
     pub fn disconnect(&mut self) {
         if self.state != AirPlayState::Disconnected {
             if let Err(e) = self.rtsp_request("TEARDOWN", "*", None) {
-                log::debug!("[AirPlay] TEARDOWN failed: {}", e);
+                log::debug!("[AirPlay] TEARDOWN failed: {e}");
             }
             self.rtp_socket = None;
             self.rtsp_stream = None;
@@ -267,9 +281,10 @@ impl AirPlaySender {
         let socket = self.rtp_socket.as_ref().ok_or("No RTP socket")?;
 
         let seq = self.rtp_seq.fetch_add(1, Ordering::Relaxed);
-        let ts = self
-            .rtp_timestamp
-            .fetch_add(FRAMES_PER_PACKET as u32, Ordering::Relaxed);
+        let ts = self.rtp_timestamp.fetch_add(
+            u32::try_from(FRAMES_PER_PACKET).expect("fixed RTP packet frame count fits u32"),
+            Ordering::Relaxed,
+        );
 
         // Build RTP header (12 bytes)
         let mut packet = Vec::with_capacity(RTP_HEADER_SIZE + pcm_data.len());
@@ -290,7 +305,7 @@ impl AirPlaySender {
 
         socket
             .send(&packet)
-            .map_err(|e| format!("RTP send failed: {}", e))?;
+            .map_err(|e| format!("RTP send failed: {e}"))?;
 
         Ok(())
     }
@@ -323,24 +338,25 @@ impl AirPlaySender {
         );
 
         if let Some(ref session) = self.session_id {
-            request.push_str(&format!("Session: {}\r\n", session));
+            request.push_str("Session: ");
+            request.push_str(session);
+            request.push_str("\r\n");
         }
 
         request.push_str(extra_headers);
 
         if let Some(body) = body {
-            request.push_str(&format!(
-                "Content-Type: application/sdp\r\nContent-Length: {}\r\n\r\n{}",
-                body.len(),
-                body,
-            ));
+            request.push_str("Content-Type: application/sdp\r\nContent-Length: ");
+            request.push_str(&body.len().to_string());
+            request.push_str("\r\n\r\n");
+            request.push_str(body);
         } else {
             request.push_str("\r\n");
         }
 
         stream
             .write_all(request.as_bytes())
-            .map_err(|e| format!("RTSP write failed: {}", e))?;
+            .map_err(|e| format!("RTSP write failed: {e}"))?;
 
         log::debug!("[AirPlay] RTSP >> {} {} (CSeq {})", method, uri, self.cseq);
 
@@ -354,7 +370,7 @@ impl AirPlaySender {
             let mut line = String::new();
             reader
                 .read_line(&mut line)
-                .map_err(|e| format!("RTSP read failed: {}", e))?;
+                .map_err(|e| format!("RTSP read failed: {e}"))?;
 
             if line.trim().is_empty() {
                 break;
@@ -375,7 +391,7 @@ impl AirPlaySender {
         if content_length > 0 {
             let mut body_buf = vec![0u8; content_length];
             std::io::Read::read_exact(&mut reader, &mut body_buf)
-                .map_err(|e| format!("RTSP body read failed: {}", e))?;
+                .map_err(|e| format!("RTSP body read failed: {e}"))?;
             response.push_str(&String::from_utf8_lossy(&body_buf));
         }
 
@@ -389,7 +405,7 @@ impl AirPlaySender {
         if let Some(status_line) = response.lines().next()
             && !status_line.contains("200")
         {
-            return Err(format!("RTSP error: {}", status_line));
+            return Err(format!("RTSP error: {status_line}"));
         }
 
         Ok(response)

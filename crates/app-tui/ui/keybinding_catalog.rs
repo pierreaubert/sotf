@@ -1475,14 +1475,13 @@ pub(super) fn keybindings_for_contexts(
 
 pub(super) fn keybindings_for_screen(screen: Screen) -> &'static [TuiKeybindingHelp] {
     match screen {
-        Screen::Loading => &[],
         Screen::Library => LIBRARY_KEYBINDINGS,
         Screen::Configure => CONFIGURE_KEYBINDINGS,
         Screen::Queue => QUEUE_KEYBINDINGS,
         Screen::Plugins => PLUGIN_KEYBINDINGS,
         Screen::Playlists => PLAYLIST_KEYBINDINGS,
         Screen::Devices => DEVICE_KEYBINDINGS,
-        Screen::Tools | Screen::AbTesting => &[],
+        Screen::Loading | Screen::Tools | Screen::AbTesting => &[],
         Screen::EarTraining => EAR_TRAINING_KEYBINDINGS,
     }
 }

@@ -10,6 +10,10 @@ use super::types::PluginSandboxRuntimeStatus;
 use std::path::PathBuf;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// Install authorized runtime plugin sandbox.
+///
+/// # Errors
+/// Returns an error if sandbox authorization or runtime installation fails.
 pub fn install_authorized_runtime_plugin_sandbox(
     library_dirs: impl IntoIterator<Item = PathBuf>,
 ) -> Result<PluginSandboxRuntimeStatus, Box<dyn std::error::Error>> {
@@ -34,6 +38,10 @@ pub fn install_authorized_runtime_plugin_sandbox(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// Install import plugin sandbox.
+///
+/// # Errors
+/// Returns an error if sandbox authorization or runtime installation fails.
 pub fn install_import_plugin_sandbox(
     protected_media_paths: impl IntoIterator<Item = PathBuf>,
 ) -> Result<PluginSandboxRuntimeStatus, Box<dyn std::error::Error>> {

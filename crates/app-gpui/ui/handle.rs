@@ -44,8 +44,7 @@ impl PlayerView {
                         Err(e) => {
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(format!(
-                                    "Failed to load APO file: {}",
-                                    e
+                                    "Failed to load APO file: {e}"
                                 )));
                         }
                     }
@@ -110,8 +109,7 @@ impl PlayerView {
                         Err(e) => {
                             state.app.ui_state.toast_message =
                                 Some(crate::app::ToastMessage::error(format!(
-                                    "Failed to load SOFA file: {}",
-                                    e
+                                    "Failed to load SOFA file: {e}"
                                 )));
                         }
                     }
@@ -182,7 +180,8 @@ impl PlayerView {
 
                     if state.app.ui_state.pending_studio_close {
                         state.app.ui_state.pending_studio_close = false;
-                        state.app.ui_state.current_screen = state.app.ui_state.navigation.last_screen;
+                        state.app.ui_state.current_screen =
+                            state.app.ui_state.navigation.last_screen;
                     }
                 });
                 cx.notify();
@@ -381,9 +380,6 @@ impl PlayerView {
                         }
                     }
                 }
-                Screen::Settings => {
-                    // Enter key in Settings screen - no action needed
-                }
                 _ => {}
             }
         });
@@ -418,14 +414,9 @@ impl PlayerView {
                 cx.notify();
             }
 
-            "escape" => {
+            "escape" | "enter" => {
 
                 // Already handled by Cancel action
-            }
-
-            "enter" => {
-
-                // Already handled by Enter action (adds directory)
             }
 
             _ => {

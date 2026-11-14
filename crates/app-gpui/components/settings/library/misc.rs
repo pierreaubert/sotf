@@ -7,7 +7,9 @@ use crate::app::types::ReplayGainMode;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    App, ClickEvent, Div, ElementId, FontWeight, SharedString, Stateful, WeakEntity, div, rems,
+};
 use gpui_ui_kit::accessibility::{
     AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, apply_native_accessibility,
 };
@@ -127,6 +129,10 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_replay_gain_settings(
         &self,
         playback: bool,
@@ -322,7 +328,6 @@ impl PlayerView {
                                                     .map(|button| {
                                                         #[cfg(feature = "dev-api")]
                                                         {
-                                                            use crate::app::dev_api::DevTrackExt;
                                                             button
                                                                 .dev_track("settings.rg-mode-track")
                                                         }
@@ -368,7 +373,6 @@ impl PlayerView {
                                                     .map(|button| {
                                                         #[cfg(feature = "dev-api")]
                                                         {
-                                                            use crate::app::dev_api::DevTrackExt;
                                                             button
                                                                 .dev_track("settings.rg-mode-album")
                                                         }
@@ -434,6 +438,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_library_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -634,7 +642,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
-                                    .child(format!("{}", album_count)),
+                                    .child(format!("{album_count}")),
                             ),
                     )
                     .child(
@@ -651,7 +659,7 @@ impl PlayerView {
                                 div()
                                     .text_size(d.text_sm)
                                     .font_weight(FontWeight::BOLD)
-                                    .child(format!("{}", track_count)),
+                                    .child(format!("{track_count}")),
                             ),
                     )
                     .child(
@@ -1078,6 +1086,11 @@ impl PlayerView {
     }
 
     /// Render the scanner threads section for library settings
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric selectors round worker counts before clamping to the available range"
+    )]
     pub(super) fn render_scanner_threads_section(
         &self,
         cx: &mut Context<Self>,
@@ -1091,10 +1104,9 @@ impl PlayerView {
 
         let max_allowed = max_cores.unwrap_or_else(|| {
             std::thread::available_parallelism()
-                .map(|n| n.get() as u8)
-                .unwrap_or(4)
+                .map_or(4, |n| u8::try_from(n.get()).unwrap_or(u8::MAX))
         });
-        let current_value = current_threads.unwrap_or(max_allowed.min(4)) as f64;
+        let current_value = f64::from(current_threads.unwrap_or(max_allowed.min(4)));
 
         let state_entity = self.state.clone();
 
@@ -1152,7 +1164,7 @@ impl PlayerView {
                                 NumberInput::new("scanner-threads-input")
                                     .label(text.thread_count)
                                     .value(current_value)
-                                    .range(1.0, max_allowed as f64)
+                                    .range(1.0, f64::from(max_allowed))
                                     .step(1.0)
                                     .decimals(0)
                                     .size(NumberInputSize::Sm)

@@ -14,7 +14,10 @@ use crate::types::TidalSession;
 use crate::types::TidalStreamInfo;
 use crate::types::TidalTokenResponse;
 use crate::types::TidalTrack;
-use sotf_services::{redact_secret, *};
+use sotf_services::{
+    AudioQuality, ServiceAlbum, ServiceCredentials, ServiceError, ServiceStreamResult,
+    ServiceTrack, StreamingService, redact_secret,
+};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -101,7 +104,7 @@ impl std::fmt::Debug for TidalService {
             .field("user_id", &self.user_id)
             .field("quality", &self.quality)
             .field("pending_device_auth", &self.pending_device_auth.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -112,6 +115,11 @@ impl Default for TidalService {
 }
 
 impl TidalService {
+    #[must_use]
+    /// Create a Tidal client.
+    ///
+    /// # Panics
+    /// Panics if the asynchronous runtime cannot be created.
     pub fn new() -> Self {
         let rt = AsyncRuntime::new().expect("Failed to create async runtime for TidalService");
         Self {
@@ -135,26 +143,31 @@ impl TidalService {
         }
     }
 
+    #[must_use]
     pub fn with_client_id(mut self, client_id: &str) -> Self {
         self.client_id = client_id.to_string();
         self
     }
 
+    #[must_use]
     pub fn with_country_code(mut self, code: &str) -> Self {
         self.country_code = code.to_string();
         self
     }
 
+    #[must_use]
     pub fn with_quality(mut self, quality: AudioQuality) -> Self {
         self.quality = quality;
         self
     }
 
+    #[must_use]
     pub fn with_api_base(mut self, api_base: &str) -> Self {
         self.api_base = api_base.trim_end_matches('/').to_string();
         self
     }
 
+    #[must_use]
     pub fn with_auth_base(mut self, auth_base: &str) -> Self {
         self.auth_base = auth_base.trim_end_matches('/').to_string();
         self
@@ -183,8 +196,7 @@ impl TidalService {
 
     pub(super) fn quality_to_tidal_quality(&self) -> &str {
         match self.quality {
-            AudioQuality::Low => "LOW",
-            AudioQuality::Normal => "LOW",
+            AudioQuality::Low | AudioQuality::Normal => "LOW",
             AudioQuality::High => "HIGH",
             AudioQuality::Lossless => "LOSSLESS",
             AudioQuality::HiRes => "HI_RES_LOSSLESS",
@@ -192,16 +204,19 @@ impl TidalService {
     }
 
     /// Current access token, if any. Redact before logging.
+    #[must_use]
     pub fn access_token(&self) -> Option<&str> {
         self.access_token.as_deref()
     }
 
     /// Current refresh token, if any. Redact before logging.
+    #[must_use]
     pub fn refresh_token(&self) -> Option<&str> {
         self.refresh_token.as_deref()
     }
 
     /// Tidal user id captured during authentication, if known.
+    #[must_use]
     pub fn user_id(&self) -> Option<u64> {
         self.user_id
     }
@@ -214,8 +229,11 @@ impl TidalService {
         self.refresh_token = refresh_token;
     }
 
-    /// Begin the OAuth2 device-code flow: request a device code and store it
+    /// Begin the `OAuth2` device-code flow: request a device code and store it
     /// as pending. Returns the prompt a UI should display to the user.
+    ///
+    /// # Errors
+    /// Returns an error if credentials are missing or the authorization request fails.
     pub fn begin_device_auth(&mut self) -> Result<DeviceAuthPrompt, ServiceError> {
         if self.client_id.is_empty() {
             return Err(ServiceError::AuthError(
@@ -223,14 +241,14 @@ impl TidalService {
             ));
         }
 
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let client = self.client.clone();
         let client_id = self.client_id.clone();
         let auth_base = self.auth_base.clone();
 
         let device_auth = rt.block_on(async move {
             let resp = client
-                .post(format!("{}/device_authorization", auth_base))
+                .post(format!("{auth_base}/device_authorization"))
                 .form(&[
                     ("client_id", client_id.as_str()),
                     ("scope", "r_usr+w_usr+w_sub"),
@@ -244,8 +262,7 @@ impl TidalService {
                 let body = resp.text().await.unwrap_or_default();
                 let body = truncate_for_log(&body, 512);
                 return Err(ServiceError::AuthError(format!(
-                    "Device code request failed: HTTP {} ({})",
-                    status, body
+                    "Device code request failed: HTTP {status} ({body})"
                 )));
             }
 
@@ -280,14 +297,14 @@ impl TidalService {
         &self,
         pending: &PendingTidalDeviceAuth,
     ) -> Result<RawDevicePoll, ServiceError> {
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let client = self.client.clone();
         let client_id = self.client_id.clone();
         let auth_base = self.auth_base.clone();
         let device_code = pending.device_code.clone();
         rt.block_on(async move {
             let resp = client
-                .post(format!("{}/token", auth_base))
+                .post(format!("{auth_base}/token"))
                 .form(&[
                     ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                     ("device_code", device_code.as_str()),
@@ -322,6 +339,9 @@ impl TidalService {
 
     /// Poll the device-code flow once. On success the access/refresh tokens
     /// are stored and the pending state is cleared.
+    ///
+    /// # Errors
+    /// Returns an error if authorization is absent, expired, rejected, or its polling request fails.
     pub fn poll_device_auth(&mut self) -> Result<DeviceAuthPoll, ServiceError> {
         let pending = self.pending_device_auth.clone().ok_or_else(|| {
             ServiceError::AuthError(
@@ -349,8 +369,7 @@ impl TidalService {
                 // of polling until the local expiry.
                 self.pending_device_auth = None;
                 Err(ServiceError::AuthError(format!(
-                    "Tidal device authorization failed: HTTP {} ({})",
-                    status, body
+                    "Tidal device authorization failed: HTTP {status} ({body})"
                 )))
             }
         }
@@ -359,19 +378,22 @@ impl TidalService {
     /// Exchange the stored refresh token for a new access token. Tidal rotates
     /// refresh tokens; when the response carries a new one it replaces the
     /// stored token.
+    ///
+    /// # Errors
+    /// Returns an error if the refresh token is missing or cannot be exchanged.
     pub fn authenticate_refresh(&mut self) -> Result<(), ServiceError> {
         let refresh_token = self.refresh_token.clone().ok_or_else(|| {
             ServiceError::AuthError("No refresh token available; authenticate first".to_string())
         })?;
 
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let client = self.client.clone();
         let client_id = self.client_id.clone();
         let auth_base = self.auth_base.clone();
 
         let tokens: TidalTokenResponse = rt.block_on(async move {
             let resp = client
-                .post(format!("{}/token", auth_base))
+                .post(format!("{auth_base}/token"))
                 .form(&[
                     ("grant_type", "refresh_token"),
                     ("refresh_token", refresh_token.as_str()),
@@ -386,8 +408,7 @@ impl TidalService {
                 let body = resp.text().await.unwrap_or_default();
                 let body = truncate_for_log(&body, 512);
                 return Err(ServiceError::AuthError(format!(
-                    "Token refresh failed: HTTP {} ({})",
-                    status, body
+                    "Token refresh failed: HTTP {status} ({body})"
                 )));
             }
 
@@ -399,10 +420,7 @@ impl TidalService {
         if let Some(new_refresh) = tokens.refresh_token {
             self.refresh_token = Some(new_refresh);
         }
-        log::info!(
-            "[Tidal] Refreshed access token (refresh token rotated: {})",
-            rotated
-        );
+        log::info!("[Tidal] Refreshed access token (refresh token rotated: {rotated})");
         Ok(())
     }
 
@@ -424,7 +442,7 @@ impl TidalService {
             .as_ref()
             .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?
             .clone();
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let client = self.client.clone();
         let country_code = self.country_code.clone();
         let api_base = self.api_base.clone();
@@ -433,7 +451,7 @@ impl TidalService {
         let limit_str = FAVORITES_PAGE_LIMIT.to_string();
         rt.block_on(async move {
             let resp = client
-                .get(format!("{}{}", api_base, path))
+                .get(format!("{api_base}{path}"))
                 .bearer_auth(&token)
                 .query(&[
                     ("limit", limit_str.as_str()),
@@ -449,8 +467,7 @@ impl TidalService {
                 let body = resp.text().await.unwrap_or_default();
                 let body = truncate_for_log(&body, 512);
                 return Err(ServiceError::NetworkError(format!(
-                    "Favorites request failed: HTTP {} ({})",
-                    status, body
+                    "Favorites request failed: HTTP {status} ({body})"
                 )));
             }
 
@@ -463,6 +480,9 @@ impl TidalService {
     }
 
     /// All albums in the user's favorites, paged through the Tidal API.
+    ///
+    /// # Errors
+    /// Returns an error if authentication is missing or a favorites page cannot be retrieved.
     pub fn favorites_albums(&self) -> Result<Vec<ServiceAlbum>, ServiceError> {
         let user_id = self.user_id.ok_or_else(|| {
             ServiceError::AuthError(
@@ -475,7 +495,7 @@ impl TidalService {
         let mut pages = 0usize;
         loop {
             let (count, total) = self.favorites_page(
-                &format!("/users/{}/favorites/albums", user_id),
+                &format!("/users/{user_id}/favorites/albums"),
                 offset,
                 tidal_album_to_service,
                 &mut albums,
@@ -497,6 +517,9 @@ impl TidalService {
     }
 
     /// All tracks in the user's favorites, paged through the Tidal API.
+    ///
+    /// # Errors
+    /// Returns an error if authentication is missing or a favorites page cannot be retrieved.
     pub fn favorites_tracks(&self) -> Result<Vec<ServiceTrack>, ServiceError> {
         let user_id = self.user_id.ok_or_else(|| {
             ServiceError::AuthError(
@@ -509,7 +532,7 @@ impl TidalService {
         let mut pages = 0usize;
         loop {
             let (count, total) = self.favorites_page(
-                &format!("/users/{}/favorites/tracks", user_id),
+                &format!("/users/{user_id}/favorites/tracks"),
                 offset,
                 tidal_track_to_service,
                 &mut tracks,
@@ -537,7 +560,7 @@ pub(super) fn tidal_track_to_service(t: TidalTrack) -> ServiceTrack {
         title: t.title,
         artist: t.artist.name,
         album: t.album.title,
-        duration_secs: t.duration as f64,
+        duration_secs: f64::from(t.duration),
         track_number: Some(t.track_number),
         album_art_url: t.album.cover.as_deref().and_then(tidal_cover_url),
         available_qualities: vec![AudioQuality::High, AudioQuality::Lossless],
@@ -563,12 +586,12 @@ impl StreamingService for TidalService {
                 // log files.
                 log::debug!("[Tidal] Validating access token {}", redact_secret(&token));
                 self.access_token = Some(token);
-                let rt = self.rt.clone();
+                let rt = Arc::clone(&self.rt);
                 let result: Result<(), ServiceError> = rt.block_on(async {
                     let resp = self.api_get_async("/sessions").await?;
                     if resp.status().is_success() {
                         let session: TidalSession = read_bounded_json(resp).await?;
-                        self.country_code = session.country_code.clone();
+                        self.country_code.clone_from(&session.country_code);
                         self.user_id = Some(session.user_id);
                         log::info!(
                             "[Tidal] Authenticated as user {} (country: {})",
@@ -581,8 +604,7 @@ impl StreamingService for TidalService {
                         let body = resp.text().await.unwrap_or_default();
                         let body = truncate_for_log(&body, 512);
                         Err(ServiceError::AuthError(format!(
-                            "Token validation failed: HTTP {} ({})",
-                            status, body
+                            "Token validation failed: HTTP {status} ({body})"
                         )))
                     }
                 });
@@ -636,8 +658,7 @@ impl StreamingService for TidalService {
                         // instead of waiting for the local expiry.
                         self.pending_device_auth = None;
                         Err(ServiceError::AuthError(format!(
-                            "Tidal device authorization failed: HTTP {} ({})",
-                            status, body
+                            "Tidal device authorization failed: HTTP {status} ({body})"
                         )))
                     }
                 }
@@ -659,12 +680,12 @@ impl StreamingService for TidalService {
             .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?
             .clone();
 
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let api_base = self.api_base.clone();
         rt.block_on(async {
             let resp = self
                 .client
-                .get(format!("{}/search/tracks", api_base))
+                .get(format!("{api_base}/search/tracks"))
                 .bearer_auth(&token)
                 .query(&[
                     ("query", query),
@@ -680,8 +701,7 @@ impl StreamingService for TidalService {
                 let body = resp.text().await.unwrap_or_default();
                 let body = truncate_for_log(&body, 512);
                 return Err(ServiceError::NetworkError(format!(
-                    "Search failed: HTTP {} ({})",
-                    status, body
+                    "Search failed: HTTP {status} ({body})"
                 )));
             }
 
@@ -702,12 +722,12 @@ impl StreamingService for TidalService {
             .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?
             .clone();
 
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let api_base = self.api_base.clone();
         rt.block_on(async {
             let resp = self
                 .client
-                .get(format!("{}/search/albums", api_base))
+                .get(format!("{api_base}/search/albums"))
                 .bearer_auth(&token)
                 .query(&[
                     ("query", query),
@@ -723,8 +743,7 @@ impl StreamingService for TidalService {
                 let body = resp.text().await.unwrap_or_default();
                 let body = truncate_for_log(&body, 512);
                 return Err(ServiceError::NetworkError(format!(
-                    "Album search failed: HTTP {} ({})",
-                    status, body
+                    "Album search failed: HTTP {status} ({body})"
                 )));
             }
 
@@ -739,16 +758,15 @@ impl StreamingService for TidalService {
     }
 
     fn album_tracks(&self, album_id: &str) -> Result<Vec<ServiceTrack>, ServiceError> {
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         rt.block_on(async {
             let resp = self
-                .api_get_async(&format!("/albums/{}/tracks", album_id))
+                .api_get_async(&format!("/albums/{album_id}/tracks"))
                 .await?;
 
             if !resp.status().is_success() {
                 return Err(ServiceError::NotFound(format!(
-                    "Album {} not found",
-                    album_id
+                    "Album {album_id} not found"
                 )));
             }
 
@@ -762,7 +780,7 @@ impl StreamingService for TidalService {
                     title: t.title,
                     artist: t.artist.name,
                     album: t.album.title,
-                    duration_secs: t.duration as f64,
+                    duration_secs: f64::from(t.duration),
                     track_number: Some(t.track_number),
                     album_art_url: None,
                     available_qualities: vec![AudioQuality::High, AudioQuality::Lossless],
@@ -785,7 +803,7 @@ impl StreamingService for TidalService {
             .ok_or_else(|| ServiceError::AuthError("Not authenticated".to_string()))?
             .clone();
 
-        let rt = self.rt.clone();
+        let rt = Arc::clone(&self.rt);
         let client = self.client.clone();
         let country_code = self.country_code.clone();
         let api_base = self.api_base.clone();
@@ -793,8 +811,7 @@ impl StreamingService for TidalService {
         rt.block_on(async move {
             let resp = client
                 .get(format!(
-                    "{}/tracks/{}/urlpostpaywall",
-                    api_base, track_id_owned
+                    "{api_base}/tracks/{track_id_owned}/urlpostpaywall"
                 ))
                 .bearer_auth(&token)
                 .query(&[
@@ -817,13 +834,11 @@ impl StreamingService for TidalService {
                     // Stale or rejected token — surface as AuthError so the
                     // caller can refresh the token and retry.
                     return Err(ServiceError::AuthError(format!(
-                        "Tidal stream access denied for track {} (HTTP {}): {}",
-                        track_id_owned, status, body
+                        "Tidal stream access denied for track {track_id_owned} (HTTP {status}): {body}"
                     )));
                 }
                 return Err(ServiceError::NotFound(format!(
-                    "Track {} not available (HTTP {}): {}",
-                    track_id_owned, status, body
+                    "Track {track_id_owned} not available (HTTP {status}): {body}"
                 )));
             }
 
@@ -831,9 +846,8 @@ impl StreamingService for TidalService {
 
             // Tidal provides a direct URL — let the engine's HTTP decoder handle it.
             let format_hint = match stream_info.codec.as_deref() {
-                Some("FLAC") => Some("flac".to_string()),
+                Some("FLAC" | "MQA") => Some("flac".to_string()),
                 Some("AAC") => Some("aac".to_string()),
-                Some("MQA") => Some("flac".to_string()), // MQA is FLAC-encapsulated
                 _ => None,
             };
 
@@ -855,7 +869,7 @@ impl StreamingService for TidalService {
         // Tidal streams are HTTP URLs — nothing to clean up.
     }
 
-    fn service_name(&self) -> &str {
+    fn service_name(&self) -> &'static str {
         "Tidal"
     }
 }

@@ -1,5 +1,17 @@
-use super::*;
+use super::{
+    Alignment, App, Axis, Block, Borders, Chart, Color, Dataset, Frame, GraphType, Paragraph, Rect,
+    Span, Style, symbols,
+};
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_loss_chart(
     f: &mut Frame,
     area: Rect,
@@ -10,7 +22,7 @@ pub(crate) fn draw_loss_chart(
         return;
     }
 
-    let x_bound = history.last().map(|h| h.0).unwrap_or(1) as f64;
+    let x_bound = history.last().map_or(1, |h| h.0) as f64;
     let min_loss = history.iter().map(|h| h.1).fold(f64::INFINITY, f64::min);
     let max_loss = history
         .iter()
@@ -40,12 +52,12 @@ pub(crate) fn draw_loss_chart(
     let x_labels = vec![
         Span::raw("0"),
         Span::raw(format!("{:.0}", x_bound / 2.0)),
-        Span::raw(format!("{:.0}", x_bound)),
+        Span::raw(format!("{x_bound:.0}")),
     ];
     let y_labels = vec![
-        Span::raw(format!("{:.4}", y_lo)),
-        Span::raw(format!("{:.4}", (y_lo + y_hi) / 2.0)),
-        Span::raw(format!("{:.4}", y_hi)),
+        Span::raw(format!("{y_lo:.4}")),
+        Span::raw(format!("{:.4}", f64::midpoint(y_lo, y_hi))),
+        Span::raw(format!("{y_hi:.4}")),
     ];
 
     let title = crate::tui_text!(
@@ -78,6 +90,10 @@ pub(crate) fn draw_loss_chart(
     f.render_widget(chart, area);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_freq_response_chart(
     f: &mut Frame,
     area: Rect,
@@ -163,15 +179,15 @@ pub(crate) fn draw_freq_response_chart(
     ];
 
     let x_labels = vec![
-        Span::raw(format!("{:.0}", x_min)),
+        Span::raw(format!("{x_min:.0}")),
         Span::raw("1k"),
         Span::raw("5k"),
-        Span::raw(format!("{:.0}", x_max)),
+        Span::raw(format!("{x_max:.0}")),
     ];
     let y_labels = vec![
-        Span::raw(format!("{:.0}", y_bound_lo)),
-        Span::raw(format!("{:.0}", (y_bound_lo + y_bound_hi) / 2.0)),
-        Span::raw(format!("{:.0}", y_bound_hi)),
+        Span::raw(format!("{y_bound_lo:.0}")),
+        Span::raw(format!("{:.0}", f64::midpoint(y_bound_lo, y_bound_hi))),
+        Span::raw(format!("{y_bound_hi:.0}")),
     ];
 
     let chart = Chart::new(datasets)

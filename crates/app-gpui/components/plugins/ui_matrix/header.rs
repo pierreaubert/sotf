@@ -14,6 +14,10 @@ use sotf_audio_player::{
 };
 
 /// Render the connected preset dropdown beside the Matrix title.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn render_header(
     d: &Ds,
     entity: Entity<AppState>,

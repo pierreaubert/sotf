@@ -2,7 +2,7 @@ use super::types::OptimizationStage;
 pub use autoeq_workflow::ProgressUpdate;
 
 /// Data passed to the optimization callback at each interval
-/// This wraps autoeq_workflow::ProgressUpdate with additional stage information
+/// This wraps `autoeq_workflow::ProgressUpdate` with additional stage information
 #[derive(Debug, Clone)]
 pub struct SpeakerOptimizationProgress {
     /// Current iteration number

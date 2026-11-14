@@ -169,7 +169,10 @@ impl EventTrace {
         self.events.push(event.to_string());
     }
 
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     fn next_timestamp(&mut self) -> u64 {
         self.timestamp_counter += 1;
         self.timestamp_counter

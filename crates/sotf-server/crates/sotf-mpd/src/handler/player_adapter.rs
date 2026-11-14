@@ -1,7 +1,7 @@
 use super::mpd_song_info::MpdSongInfo;
 use super::types::MpdDirEntry;
 use super::types::MpdStatus;
-use crate::protocol::*;
+use crate::protocol::FilterExpr;
 
 /// Trait that bridges MPD commands to the actual SOTF player.
 ///
@@ -9,6 +9,9 @@ use crate::protocol::*;
 /// the Player/QueueController/LibraryController APIs.
 pub trait PlayerAdapter: Send + Sync + 'static {
     // Playback control
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn play(&self, pos: Option<u32>) -> Result<(), String>;
     /// Pause / resume the player.
     ///
@@ -17,15 +20,39 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     /// - `Some(true)`  — pause if currently playing (`pause 1`).
     /// - `Some(false)` — resume if currently paused (`pause 0`).
     /// - `None`        — toggle (`pause` without argument).
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn pause(&self, state: Option<bool>) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn stop(&self) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn next(&self) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn previous(&self) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn seek_pos(&self, song_pos: u32, time: f64) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn seek_cur(&self, time: f64) -> Result<(), String>;
 
     // Volume
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn set_volume(&self, volume: u8) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn volume_change(&self, delta: i8) -> Result<(), String>;
 
     // Status
@@ -56,9 +83,21 @@ pub trait PlayerAdapter: Send + Sync + 'static {
         self.playlist_song_by_id(id).map(|s| s.pos)
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn add(&self, uri: &str) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn add_id(&self, uri: &str, pos: Option<u32>) -> Result<u32, String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn delete(&self, pos: u32) -> Result<(), String>;
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn clear(&self) -> Result<(), String>;
 
     /// `playid <id>` — play the queue entry with the given song id.
@@ -67,6 +106,9 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     /// [`find_pos_by_id`](PlayerAdapter::find_pos_by_id) and delegates to
     /// [`play`](PlayerAdapter::play). Implementors with a direct id-keyed API
     /// should override so the lookup is atomic.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn play_id(&self, id: u32) -> Result<(), String> {
         match self.find_pos_by_id(id) {
             Some(pos) => self.play(Some(pos)),
@@ -75,6 +117,9 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     }
 
     /// `seekid <id> <time>` — seek within the queue entry with the given id.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn seek_id(&self, id: u32, time: f64) -> Result<(), String> {
         match self.find_pos_by_id(id) {
             Some(pos) => self.seek_pos(pos, time),
@@ -83,6 +128,9 @@ pub trait PlayerAdapter: Send + Sync + 'static {
     }
 
     /// `deleteid <id>` — remove the queue entry with the given id.
+    ///
+    /// # Errors
+    /// Returns an error if the player cannot apply the requested command.
     fn delete_id(&self, id: u32) -> Result<(), String> {
         match self.find_pos_by_id(id) {
             Some(pos) => self.delete(pos),

@@ -6,6 +6,10 @@ use std::fmt;
 pub struct SotfRemoteAuthToken(pub(super) String);
 
 impl SotfRemoteAuthToken {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if the token is empty or contains invalid header characters.
     pub fn new(token: impl Into<String>) -> SotfApiResult<Self> {
         let token = token.into();
         let token = token.trim();

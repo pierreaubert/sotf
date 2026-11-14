@@ -114,13 +114,6 @@ impl SourceConnectionConfig {
                 password: String::new(),
                 legacy_auth: false,
             },
-            "mpd" => Self::Mpd {
-                host: "localhost".to_string(),
-                port: 6600,
-                auth_mode: MpdClientAuthMode::default(),
-                password: None,
-                httpd_port: 6601,
-            },
             "dlna" => Self::Dlna {
                 location_url: None,
                 friendly_name: None,
@@ -257,6 +250,10 @@ impl SourceConnectionConfig {
     }
 
     /// Set field value by index from UI input.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Connection field dispatch covers every persisted source variant"
+    )]
     pub fn set_field_value(&mut self, index: usize, value: &str) {
         match self {
             Self::Subsonic {

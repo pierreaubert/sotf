@@ -8,6 +8,11 @@ const HOME_SHELF_BASE_REM_PX: f32 = 16.0;
 
 pub(super) const EXPANDED_ALBUM_LIMIT: usize = 24;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 pub(super) fn collapsed_album_limit_for_width(window_width: f32) -> usize {
     let card_width = ALBUM_CARD_WIDTH_REMS * HOME_SHELF_BASE_REM_PX;
     let card_gap = ALBUM_CARD_GAP_REMS * HOME_SHELF_BASE_REM_PX;
@@ -71,7 +76,7 @@ pub(super) fn arc_album_refs(albums: &[&Album], limit: usize) -> Vec<Arc<Album>>
 pub(super) fn stable_album_hash(album: &Album) -> u64 {
     let mut hash = 14_695_981_039_346_656_037u64;
     for byte in format!("{}:{}:{:?}", album.artist(), album.title, album.year).bytes() {
-        hash ^= byte as u64;
+        hash ^= u64::from(byte);
         hash = hash.wrapping_mul(1_099_511_628_211);
     }
     hash

@@ -1,6 +1,6 @@
 use crate::components::design::Ds;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Rgba, Window, div, px};
 
 /// Drag data for EQ control point manipulation (frequency/gain)
 #[derive(Clone)]
@@ -10,13 +10,25 @@ pub(crate) struct EqControlPointDrag {
     pub(super) color: u32,
     pub(super) border_color: Rgba,
     pub(super) radius: f32,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_freq: f64,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_gain: f64,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_x: f32,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_y: f32,
 }
 

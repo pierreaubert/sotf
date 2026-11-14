@@ -7,6 +7,7 @@ pub struct QueueEntry {
 }
 
 impl QueueEntry {
+    #[must_use]
     pub fn new(item: QueueItem) -> Self {
         Self {
             item,

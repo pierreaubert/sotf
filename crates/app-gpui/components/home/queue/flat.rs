@@ -5,7 +5,7 @@ use crate::components::icons::{Icon, IconName};
 use crate::queue_render::{FlatQueueRow, flat_queue_rows};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, ClickEvent, Window, div, uniform_list};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
 };
@@ -28,6 +28,10 @@ macro_rules! tracked {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_flat_queue(&self, cx: &mut Context<Self>) -> AnyElement {
         let management_actions = self.render_queue_management_actions(cx).into_any_element();
         let state = self.state.read(cx);
@@ -89,7 +93,7 @@ impl PlayerView {
                                     match state.app.undo_remove_from_queue() {
                                         QueuePlaybackEffect::Play(source)
                                         | QueuePlaybackEffect::Reload(source) => {
-                                            Self::play_track(state, source)
+                                            Self::play_track(state, source);
                                         }
                                         QueuePlaybackEffect::Stop => {
                                             if let Err(error) = state.player.stop() {
@@ -172,10 +176,10 @@ impl PlayerView {
                                     .title
                                     .clone()
                                     .unwrap_or_else(|| track.path.to_string_lossy().into_owned());
-                                let duration = track
-                                    .duration_secs
-                                    .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
-                                    .unwrap_or_else(|| "—".into());
+                                let duration = track.duration_secs.map_or_else(
+                                    || "—".into(),
+                                    |seconds| format!("{}:{:02}", seconds / 60, seconds % 60),
+                                );
                                 let view_state = view.state.clone();
                                 let mut buttons = Vec::new();
                                 for (action, label, disabled) in [

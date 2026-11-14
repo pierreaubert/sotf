@@ -13,18 +13,25 @@ pub struct PluginSandboxPermissionController {
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
 impl PluginSandboxPermissionController {
+    /// Load.
+    ///
+    /// # Errors
+    /// Returns an error if sandbox grants cannot be loaded, validated, or persisted.
     pub fn load() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(Self::new(load_plugin_sandbox_grants()?))
     }
 
+    #[must_use]
     pub fn new(grants: sotf_plugins::PluginSandboxGrantStore) -> Self {
         Self { grants }
     }
 
+    #[must_use]
     pub fn grants(&self) -> &sotf_plugins::PluginSandboxGrantStore {
         &self.grants
     }
 
+    #[must_use]
     pub fn into_grants(self) -> sotf_plugins::PluginSandboxGrantStore {
         self.grants
     }
@@ -44,6 +51,10 @@ impl PluginSandboxPermissionController {
         self.decide_with_optional_broker(request, Some(broker))
     }
 
+    /// Decide or deny and save.
+    ///
+    /// # Errors
+    /// Returns an error if sandbox grants cannot be loaded, validated, or persisted.
     pub fn decide_or_deny_and_save(
         &mut self,
         request: sotf_plugins::PluginSandboxPermissionRequest,
@@ -53,6 +64,10 @@ impl PluginSandboxPermissionController {
         Ok(resolution)
     }
 
+    /// Decide with broker and save.
+    ///
+    /// # Errors
+    /// Returns an error if sandbox grants cannot be loaded, validated, or persisted.
     pub fn decide_with_broker_and_save(
         &mut self,
         request: sotf_plugins::PluginSandboxPermissionRequest,

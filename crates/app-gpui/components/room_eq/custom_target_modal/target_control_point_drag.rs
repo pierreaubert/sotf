@@ -1,16 +1,22 @@
 // intentional-file: fixed pixel values here are graph and plugin control geometry.
 use super::consts::CONTROL_POINT_RADIUS;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Window, div, px};
 use gpui_ui_kit::theme::ThemeExt;
 
 /// Drag data for control point manipulation
 #[derive(Clone)]
 pub(super) struct TargetControlPointDrag {
     pub(super) point_idx: usize,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_freq: f64,
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) start_level: f64,
 }
 

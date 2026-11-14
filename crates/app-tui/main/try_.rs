@@ -30,6 +30,7 @@ pub(super) fn try_acquire_lock(config_dir: &Path) -> (Option<File>, bool) {
         }
     };
 
+    // SAFETY: The owned file keeps this descriptor valid throughout flock; the call accepts no pointers.
     let exclusive = unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 };
     (Some(file), exclusive)
 }
@@ -118,12 +119,11 @@ pub(super) fn try_acquire_lock(_config_dir: &Path) -> (Option<File>, bool) {
 /// A missing config dir or an unopenable lock file degrades to `(None,
 /// false)` — the caller starts in read-only mode instead of crashing.
 pub(super) fn acquire_startup_lock(config_dir: Option<&Path>) -> (Option<File>, bool) {
-    match config_dir {
-        Some(dir) => try_acquire_lock(dir),
-        None => {
-            log::warn!("Could not determine config directory — starting in read-only mode");
-            (None, false)
-        }
+    if let Some(dir) = config_dir {
+        try_acquire_lock(dir)
+    } else {
+        log::warn!("Could not determine config directory — starting in read-only mode");
+        (None, false)
     }
 }
 

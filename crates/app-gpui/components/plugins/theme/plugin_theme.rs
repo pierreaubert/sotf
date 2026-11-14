@@ -31,6 +31,7 @@ use misc::with_alpha;
 /// The persisted rack/per-plugin choice remains unchanged. Light app themes
 /// always use Studio Cream. Dark app themes use Graphite unless the user has
 /// explicitly selected Brutalist.
+#[must_use]
 pub fn plugin_theme_id_for_app_theme(
     selected_theme_id: PluginThemeId,
     app_theme: &Theme,
@@ -124,7 +125,7 @@ pub struct PluginTheme {
     /// Glow halo intensity on the value arc, [0.0, 1.0].
     pub knob_arc_glow: f32,
     /// `AudioDesignTokens::LABEL_BOXED` (default) or `LABEL_UNDERLINED` —
-    /// also drives the VerticalSlider chassis.
+    /// also drives the `VerticalSlider` chassis.
     pub meter_label_style: u8,
     /// True to render meter fills as a luminance gradient.
     pub meter_use_gradient: bool,
@@ -161,6 +162,7 @@ impl PluginTheme {
     /// - Toast / progress / button colors
     /// - Sizing-related design tokens — only the four "look" tokens
     ///   (`knob_label_style`, `knob_arc_glow`, `meter_*`) are overridden.
+    #[must_use]
     pub fn apply_to(&self, base: &Theme) -> Theme {
         let mut out = base.clone();
 
@@ -209,10 +211,11 @@ impl PluginTheme {
 ///
 /// Cascade: per-plugin override (if any) → rack default. Returns an owned
 /// snapshot — call site is responsible for caching when redrawing.
-pub fn resolve_plugin_theme(
+#[must_use]
+pub fn resolve_plugin_theme<S: ::std::hash::BuildHasher>(
     plugin_idx: usize,
     rack_theme_id: PluginThemeId,
-    overrides: &HashMap<usize, PluginThemeId>,
+    overrides: &HashMap<usize, PluginThemeId, S>,
 ) -> PluginTheme {
     overrides
         .get(&plugin_idx)

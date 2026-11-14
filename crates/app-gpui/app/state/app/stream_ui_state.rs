@@ -43,6 +43,7 @@ impl StreamUiState {
         self.last_error = None;
     }
 
+    #[must_use]
     pub fn format_hint(&self) -> Option<String> {
         let hint = self.format_hint_input.trim();
         (!hint.is_empty()).then(|| hint.to_string())

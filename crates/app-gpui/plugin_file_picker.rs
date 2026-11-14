@@ -6,6 +6,7 @@ pub enum FilePickerOpenTarget {
     AbConfig(&'static str),
 }
 
+#[must_use]
 pub fn file_picker_open_target(engine_key: &str) -> Option<FilePickerOpenTarget> {
     match engine_key {
         "sofa_file" => Some(FilePickerOpenTarget::Sofa),
@@ -20,6 +21,7 @@ pub fn file_picker_open_target(engine_key: &str) -> Option<FilePickerOpenTarget>
 /// ui.md Phase 3 pilot: the convolution resource row shows the IR file's base
 /// name so long paths cannot widen the editor. The full path remains
 /// available on demand through the row tooltip.
+#[must_use]
 pub fn convolution_ir_display_name(ir_file: &str) -> &str {
     ir_file
         .rsplit(['/', '\\'])

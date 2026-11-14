@@ -1,7 +1,12 @@
 use crate::ui::PlayerView;
 use gpui::prelude::*;
+use std::fmt::Write as _;
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn load_room_eq_from_recording(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             // Check if there are valid recordings first
@@ -142,28 +147,33 @@ impl PlayerView {
                     .speaker_configs
                     .truncate(max_channels);
                 state.app.measurement_state.room_eq_state.status_message = format!(
-                    "Loaded {} channel(s) (truncated from {} — upgrade release channel for more)",
-                    max_channels, channel_count
+                    "Loaded {max_channels} channel(s) (truncated from {channel_count} — upgrade release channel for more)"
                 );
                 state.app.measurement_state.room_eq_state.error_message = None;
             } else {
                 state.app.measurement_state.room_eq_state.status_message = format!(
-                    "Successfully loaded {} channel(s) from recording session",
-                    channel_count
+                    "Successfully loaded {channel_count} channel(s) from recording session"
                 );
                 if !source_quality.is_empty() {
-                    state
+                    let _ = write!(state
                         .app
                         .measurement_state
                         .room_eq_state
-                        .status_message
-                        .push_str(&format!(" · Take quality: {source_quality}"));
+                        .status_message, " · Take quality: {source_quality}");
                 }
                 state.app.measurement_state.room_eq_state.error_message = None;
             }
         });
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn load_room_eq_from_file(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -181,8 +191,8 @@ impl PlayerView {
 
             if let Some(file) = file {
                 let file_path = file.path().to_path_buf();
-                let file_dir = file_path.parent().map(|p| p.to_path_buf());
-                log::info!("Loading measurements from {:?}", file_path);
+                let file_dir = file_path.parent().map(std::path::Path::to_path_buf);
+                log::info!("Loading measurements from {}", file_path.display());
 
                 // Read file content
                 match std::fs::read_to_string(&file_path) {
@@ -192,9 +202,9 @@ impl PlayerView {
                         // First try to parse as new RoomConfig format
                         if let Ok(room_config) = serde_json::from_str::<roomeq_model::RoomConfig>(&json) {
                             log::info!(
-                                "Successfully parsed {} speakers from {:?} (RoomConfig format)",
+                                "Successfully parsed {} speakers from {} (RoomConfig format)",
                                 room_config.speakers.len(),
-                                file_path
+                                file_path.display()
                             );
 
                             // Capture optimizer config before speakers are consumed
@@ -231,9 +241,8 @@ impl PlayerView {
                                         });
                                         if has_multi {
                                             log::warn!(
-                                                "Channel '{}' is a group speaker with multi-position measurements — \
-                                                 multi-measurement optimization is not yet supported for group speakers",
-                                                channel_name
+                                                "Channel '{channel_name}' is a group speaker with multi-position measurements — \
+                                                 multi-measurement optimization is not yet supported for group speakers"
                                             );
                                         }
                                     }
@@ -249,11 +258,11 @@ impl PlayerView {
                                 match RoomEqMeasurementsFile::load_from_json(&json, file_dir.as_deref()) {
                                     Ok(channels) => channels,
                                     Err(e) => {
-                                        log::error!("Failed to parse measurements: {}", e);
+                                        log::error!("Failed to parse measurements: {e}");
                                         state_entity.update(cx, |state, cx| {
                                 cx.notify();
                                             state.app.measurement_state.room_eq_state.error_message =
-                                                Some(format!("Failed to parse measurements: {}", e));
+                                                Some(format!("Failed to parse measurements: {e}"));
                                         });
                                         return;
                                     }
@@ -281,8 +290,7 @@ impl PlayerView {
                                 .count();
                             if empty_count > 0 {
                                 log::warn!(
-                                    "{} channel(s) have empty frequency data and will be skipped",
-                                    empty_count
+                                    "{empty_count} channel(s) have empty frequency data and will be skipped"
                                 );
                             }
                             channel_measurements
@@ -419,11 +427,11 @@ impl PlayerView {
                         });
                     }
                     Err(e) => {
-                        log::error!("File read error: {}", e);
+                        log::error!("File read error: {e}");
                         state_entity.update(cx, |state, cx| {
                                 cx.notify();
                             state.app.measurement_state.room_eq_state.error_message =
-                                Some(format!("Failed to read file: {}", e));
+                                Some(format!("Failed to read file: {e}"));
                         });
                     }
                 }

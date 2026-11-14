@@ -1,16 +1,25 @@
 use std::sync::{Arc, Mutex};
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static SPEAKERS_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<Vec<String>, String>>>>,
 > = std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::SpeakerOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<(usize, usize, f64, f32, Option<f64>)>>>,
 > = std::sync::OnceLock::new();

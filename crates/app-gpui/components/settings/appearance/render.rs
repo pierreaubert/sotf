@@ -6,10 +6,14 @@ use super::types::set_schedule_boundary;
 use crate::components::design::Ds;
 use crate::theme::ThemeAccentPreference;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Entity, FontWeight, Rgba, SharedString, div, rems};
 use gpui_themes::TimeOfDay;
 use gpui_ui_kit::{NumberInput, NumberInputSize};
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(super) fn render_settings_heading(
     d: Ds,
     theme: crate::theme::Theme,
@@ -22,6 +26,10 @@ pub(super) fn render_settings_heading(
         .child(label.into())
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(super) fn render_schedule_time_row(
     d: Ds,
     theme: crate::theme::Theme,
@@ -46,7 +54,7 @@ pub(super) fn render_schedule_time_row(
         .child({
             let state_entity = state_entity.clone();
             NumberInput::new(SharedString::from(format!("{id_prefix}-hour")))
-                .value(time.hour as f64)
+                .value(f64::from(time.hour))
                 .range(0.0, 23.0)
                 .step(1.0)
                 .decimals(0)
@@ -73,7 +81,7 @@ pub(super) fn render_schedule_time_row(
         .child({
             let state_entity = state_entity.clone();
             NumberInput::new(SharedString::from(format!("{id_prefix}-minute")))
-                .value(time.minute as f64)
+                .value(f64::from(time.minute))
                 .range(0.0, 59.0)
                 .step(15.0)
                 .decimals(0)
@@ -99,6 +107,10 @@ pub(super) fn render_schedule_time_row(
         })
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(super) fn render_accent_swatch(
     d: Ds,
     theme: crate::theme::Theme,

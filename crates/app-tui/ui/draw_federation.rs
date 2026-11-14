@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Cell, Constraint, Direction, Frame, Layout, Line, List,
+    ListItem, ListState, Modifier, Paragraph, Rect, Row, Span, Style, Table, Wrap,
+};
 use crate::app::{ADD_SOURCE_TYPE_IDX, FederationMode, SOURCE_TYPE_NAMES};
 use sotf_audio_player::federation_config::ConnectionStatus;
 
@@ -12,7 +15,7 @@ pub(crate) fn draw_federation_screen(f: &mut Frame, area: Rect, app: &App) {
         .sources
         .get(state.selected_idx)
         .and_then(|s| state.statuses.get(&s.source_id))
-        .is_some_and(|s| s.is_diagnostic());
+        .is_some_and(sotf_audio_player::federation_config::ConnectionStatus::is_diagnostic);
     let has_panel = has_login || has_diagnostic;
 
     let chunks = Layout::default()
@@ -270,17 +273,15 @@ fn draw_add_source(f: &mut Frame, area: Rect, app: &App) {
 }
 
 fn draw_diagnostic_panel(f: &mut Frame, area: Rect, app: &App) {
-    let state = &app.federation.state;
-    let source = match state.sources.get(state.selected_idx) {
-        Some(s) => s,
-        None => return,
-    };
-    let diag = match state.statuses.get(&source.source_id) {
-        Some(ConnectionStatus::Diagnostic(d)) => d,
-        _ => return,
-    };
-
     use sotf_audio_player::federation_config::StepResult;
+
+    let state = &app.federation.state;
+    let Some(source) = state.sources.get(state.selected_idx) else {
+        return;
+    };
+    let Some(ConnectionStatus::Diagnostic(diag)) = state.statuses.get(&source.source_id) else {
+        return;
+    };
 
     let mut lines: Vec<Line> = Vec::new();
     lines.push(Line::from(Span::styled(

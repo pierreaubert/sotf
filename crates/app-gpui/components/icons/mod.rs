@@ -3,7 +3,7 @@
 //! This module provides a type-safe way to use Lucide icons in the GPUI player.
 
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{App, Pixels, Rems, Rgba, Window, px, rems, svg};
 
 /// Available application and Lucide icon names
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -140,6 +140,11 @@ pub enum IconName {
 
 impl IconName {
     /// Get the asset path for this icon
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn path(&self) -> &'static str {
         match self {
             IconName::FilterPeak => "icons/eq-filter-peak.svg",
@@ -283,6 +288,7 @@ impl IconSize {
         note = "Use `IconSize::to_rems()` (or the `Icon` component) so icons scale with font zoom. \
                 Raw pixel sizes bypass `window.rem_size` and break zoom consistency."
     )]
+    #[must_use]
     pub fn px(&self) -> Pixels {
         match self {
             IconSize::Xs => px(12.0),
@@ -295,6 +301,7 @@ impl IconSize {
     }
 
     /// Get the rem-based size (scales with window for responsive design)
+    #[must_use]
     pub fn to_rems(&self) -> Rems {
         match self {
             IconSize::Xs => rems(0.75),  // 12px at 16px rem
@@ -308,7 +315,7 @@ impl IconSize {
 }
 
 /// Icon component that renders Lucide SVG icons
-#[derive(IntoElement)]
+#[derive(IntoElement, Debug)]
 pub struct Icon {
     name: IconName,
     size: IconSize,
@@ -317,6 +324,7 @@ pub struct Icon {
 
 impl Icon {
     /// Create a new icon with the given name
+    #[must_use]
     pub fn new(name: IconName) -> Self {
         Self {
             name,
@@ -326,48 +334,56 @@ impl Icon {
     }
 
     /// Set the icon size
+    #[must_use]
     pub fn size(mut self, size: IconSize) -> Self {
         self.size = size;
         self
     }
 
     /// Set extra small size
+    #[must_use]
     pub fn xs(mut self) -> Self {
         self.size = IconSize::Xs;
         self
     }
 
     /// Set small size
+    #[must_use]
     pub fn small(mut self) -> Self {
         self.size = IconSize::Sm;
         self
     }
 
     /// Set medium size (default)
+    #[must_use]
     pub fn medium(mut self) -> Self {
         self.size = IconSize::Md;
         self
     }
 
     /// Set large size
+    #[must_use]
     pub fn large(mut self) -> Self {
         self.size = IconSize::Lg;
         self
     }
 
     /// Set extra large size
+    #[must_use]
     pub fn xl(mut self) -> Self {
         self.size = IconSize::Xl;
         self
     }
 
     /// Set extra extra large size
+    #[must_use]
     pub fn xxl(mut self) -> Self {
         self.size = IconSize::Xxl;
         self
     }
 
     /// Set the icon color
+    #[must_use]
     pub fn color(mut self, color: impl Into<Rgba>) -> Self {
         self.color = Some(color.into());
         self

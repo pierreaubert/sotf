@@ -1,6 +1,6 @@
 //! Application state definitions.
 //!
-//! Contains the main App struct and AppState wrapper.
+//! Contains the main App struct and `AppState` wrapper.
 
 use super::ui::LayoutState;
 use super::{InputState, LibraryState, PlaybackState, PluginState, UIState};
@@ -76,6 +76,7 @@ pub struct ScanState {
     pub ctrl: sotf_audio_player::ScanController,
 }
 
+#[derive(Debug)]
 pub struct ModalState {
     pub metadata_editor: Option<crate::app::MetadataEditorState>,
     pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
@@ -83,6 +84,11 @@ pub struct ModalState {
     pub channel_conflict_track_channels: usize,
 }
 
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct WorkspaceLayoutState {
     pub divider_click_start: Option<std::time::Instant>,
     pub orientation: LayoutOrientation,
@@ -98,11 +104,17 @@ pub struct WorkspaceLayoutState {
     pub spectrum_visible: bool,
 }
 
+#[derive(Debug)]
 pub struct DragState {
     pub volume_drag: Option<VolumeDragState>,
     pub knob_drag: Option<KnobDragState>,
 }
 
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct PluginUiState {
     /// The open long-choice selector, scoped to stable plugin instance and parameter.
     pub layout_choice_menu: Option<(usize, usize)>,
@@ -119,6 +131,7 @@ pub struct PluginUiState {
     pub plugin_auto_overflow_open: std::collections::HashMap<usize, bool>,
 }
 
+#[derive(Debug)]
 pub struct PlaylistState {
     pub controller: sotf_audio_player::PlaylistController,
     /// Avoid repeated database reads from the render-time lazy loader.
@@ -131,6 +144,7 @@ pub struct PlaylistState {
     pub deleted_playlist: Option<DeletedPlaylist>,
 }
 
+#[derive(Debug)]
 pub struct DeletedPlaylist {
     pub name: String,
     pub description: Option<String>,
@@ -210,6 +224,7 @@ pub struct KeybindingSettingsState {
     pub confirm_reset_all: bool,
 }
 
+#[derive(Debug)]
 pub struct TutorialState {
     pub completed: bool,
     pub seen_hints: Vec<String>,
@@ -224,6 +239,7 @@ pub struct TutorialState {
     pub listening_break_prompt_open: bool,
 }
 
+#[derive(Debug)]
 pub struct GeometryState {
     pub last_saved_geometry: Option<crate::config::WindowGeometry>,
 }
@@ -299,6 +315,11 @@ impl Default for App {
 }
 
 impl App {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn new() -> Self {
         let mut app = Self {
             library_view: LibraryViewState {
@@ -430,6 +451,10 @@ impl App {
         app
     }
 
+    /// Saves stream from inputs.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid, the selected stream is missing, or stream persistence and queue updates fail.
     pub fn save_stream_from_inputs(&mut self) -> Result<(), String> {
         let stream = sotf_audio_player::SavedStream::new(
             self.stream_state.name_input.clone(),
@@ -447,6 +472,14 @@ impl App {
         Ok(())
     }
 
+    /// Adds stream to queue.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid, the selected stream is missing, or stream persistence and queue updates fail.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned commands in the application state and plugin update interfaces"
+    )]
     pub fn add_stream_to_queue(
         &mut self,
         stream: sotf_audio_player::SavedStream,
@@ -458,6 +491,14 @@ impl App {
         Ok(None)
     }
 
+    /// Plays stream now.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid, the selected stream is missing, or stream persistence and queue updates fail.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned commands in the application state and plugin update interfaces"
+    )]
     pub fn play_stream_now(
         &mut self,
         stream: sotf_audio_player::SavedStream,
@@ -475,6 +516,10 @@ impl App {
         Ok(None)
     }
 
+    /// Removes stream at.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid, the selected stream is missing, or stream persistence and queue updates fail.
     pub fn remove_stream_at(&mut self, index: usize) -> Result<(), String> {
         let Some(stream) = self.stream_state.store.streams.get(index).cloned() else {
             return Err("No stream selected".to_string());
@@ -505,6 +550,10 @@ impl App {
         }
     }
 
+    /// Saves remote media stream.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid, the selected stream is missing, or stream persistence and queue updates fail.
     pub fn save_remote_media_stream(
         &mut self,
         name: impl Into<String>,
@@ -621,12 +670,14 @@ impl App {
         self.sync_spectrum_visible();
         self.update_level_meter_groups();
         self.ui_state.toast_message = Some(ToastMessage::error(format!(
-            "Plugin update failed: {}",
-            error
+            "Plugin update failed: {error}"
         )));
     }
 
     /// Dispatch a message to the appropriate manager
+    ///
+    /// # Errors
+    /// Returns an error if the requested application command cannot be applied.
     pub fn dispatch(&mut self, msg: AppMessage) -> Result<(), ManagerError> {
         match msg {
             AppMessage::Library(event) => self.library_state.handle_event(event),
@@ -646,7 +697,7 @@ impl App {
                 self.ui_state.current_screen,
                 mode,
                 self.audio_device_state.current_output_device_name.clone(),
-                format!("input_mode: {}", trigger),
+                format!("input_mode: {trigger}"),
             );
             self.ui_state.input_mode = mode;
         }
@@ -672,6 +723,10 @@ impl App {
 
     /// Set current screen with debug logging and state history capture.
     /// If the screen's maturity exceeds the current release channel, redirects to Library.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn set_screen(&mut self, screen: crate::app::Screen, trigger: &str) {
         self.ui_state.navigation.studio_picker_open = false;
         self.ui_state.navigation.studio_picker_highlight = None;
@@ -745,13 +800,15 @@ impl App {
             }
         }
         if old_screen != target {
+            use crate::components::dialogs::tutorial::HintId;
+
             crate::app::debug::log_screen_transition(old_screen, target, trigger);
             self.ui_state.navigation.last_screen = old_screen;
             self.state_history.capture(
                 target,
                 self.ui_state.input_mode,
                 self.audio_device_state.current_output_device_name.clone(),
-                format!("screen: {}", trigger),
+                format!("screen: {trigger}"),
             );
             self.ui_state.current_screen = target;
             self.ui_state.navigation.remember_studio(target);
@@ -784,7 +841,6 @@ impl App {
             self.plugin_state.clear_confirmations();
 
             // Trigger contextual hints for first-time screen visits
-            use crate::components::dialogs::tutorial::HintId;
             match target {
                 crate::app::Screen::Studio => self.try_show_hint(HintId::StudioFirstVisit),
                 crate::app::Screen::RoomEq => self.try_show_hint(HintId::RoomEqFirstVisit),
@@ -823,9 +879,9 @@ impl App {
     // ─────────────────────────────────────────────────────────────────────────
 
     /// Handle a toast action button click.
-    /// Override this to add custom action_id handlers for different toast actions.
+    /// Override this to add custom `action_id` handlers for different toast actions.
     pub fn handle_toast_action(&mut self, action_id: &str) {
-        log::info!("Toast action triggered: {}", action_id);
+        log::info!("Toast action triggered: {action_id}");
         match action_id {
             "rescan-library" => {
                 if let Err(err) = self.scan_library() {
@@ -834,7 +890,7 @@ impl App {
                 }
             }
             _ => {
-                log::warn!("Unhandled toast action: {}", action_id);
+                log::warn!("Unhandled toast action: {action_id}");
             }
         }
     }
@@ -858,7 +914,7 @@ impl App {
         self.ui_state.release_channel.allows(plugin_type.maturity())
     }
 
-    /// Maximum number of RoomEQ channels at the current release channel.
+    /// Maximum number of `RoomEQ` channels at the current release channel.
     pub fn max_room_eq_channels(&self) -> usize {
         match self.ui_state.release_channel {
             sotf_audio_player::ReleaseChannel::Prod => 0,
@@ -890,7 +946,7 @@ impl App {
                 self.ui_state.current_screen,
                 self.ui_state.input_mode,
                 device_name.clone(),
-                format!("device: {}", trigger),
+                format!("device: {trigger}"),
             );
             self.audio_device_state.current_output_device_name = device_name;
         }
@@ -1002,6 +1058,11 @@ impl App {
     }
 
     /// Check if current track has been played for 30+ seconds and record it
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Playback bookkeeping deliberately quantizes seconds to whole timing units"
+    )]
     pub fn check_and_record_play(&mut self) {
         if self.track_tracking.already_recorded {
             return;
@@ -1050,7 +1111,7 @@ impl App {
             match db.toggle_track_favorite(track_path) {
                 Ok(state) => state,
                 Err(e) => {
-                    log::error!("Failed to toggle track favorite: {}", e);
+                    log::error!("Failed to toggle track favorite: {e}");
                     return;
                 }
             }
@@ -1083,7 +1144,7 @@ impl App {
             match db.toggle_album_favorite(album_id) {
                 Ok(state) => state,
                 Err(e) => {
-                    log::error!("Failed to toggle album favorite: {}", e);
+                    log::error!("Failed to toggle album favorite: {e}");
                     return;
                 }
             }
@@ -1110,6 +1171,9 @@ impl App {
     }
 
     /// Load library from database if available
+    ///
+    /// # Errors
+    /// Returns an error if the music database cannot be read or its library rows cannot be decoded.
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library_state.load_from_database()?;
         self.library_state.ensure_cache_valid();
@@ -1141,7 +1205,7 @@ impl App {
         // Try to load from database
         let t0 = std::time::Instant::now();
         if let Err(e) = self.load_library_from_database() {
-            log::warn!("Failed to load library from database: {}", e);
+            log::warn!("Failed to load library from database: {e}");
         }
         log::info!(
             "[startup] check_library_on_startup: {:.1}ms ({} albums)",
@@ -1183,6 +1247,10 @@ impl App {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn load_audio_devices(&mut self) {
         use crate::app::state::audio_device::AudioDeviceState;
 
@@ -1218,11 +1286,13 @@ impl App {
                         self.measurement_state
                             .recording_state
                             .playback_config
-                            .device_name = device.name.clone();
+                            .device_name
+                            .clone_from(&device.name);
                         self.measurement_state
                             .recording_state
                             .playback_config
-                            .device_id = device.name.clone();
+                            .device_id
+                            .clone_from(&device.name);
                         if let Some(ref config) = device.default_config {
                             self.measurement_state
                                 .recording_state
@@ -1232,7 +1302,8 @@ impl App {
                         self.measurement_state
                             .recording_state
                             .playback_config
-                            .available_sample_rates = device.available_sample_rates.clone();
+                            .available_sample_rates
+                            .clone_from(&device.available_sample_rates);
                         self.measurement_state
                             .recording_state
                             .playback_config
@@ -1244,7 +1315,9 @@ impl App {
                 }
             }
             if let Some(input_devices) = devices_map.get("input") {
-                self.audio_device_state.input_devices = input_devices.clone();
+                self.audio_device_state
+                    .input_devices
+                    .clone_from(input_devices);
                 // Find the default device
                 if let Some(default_idx) = input_devices.iter().position(|d| d.is_default) {
                     self.audio_device_state.selected_input_device_index = default_idx;
@@ -1260,11 +1333,13 @@ impl App {
                         self.measurement_state
                             .recording_state
                             .recording_config
-                            .device_name = device.name.clone();
+                            .device_name
+                            .clone_from(&device.name);
                         self.measurement_state
                             .recording_state
                             .recording_config
-                            .device_id = device.name.clone();
+                            .device_id
+                            .clone_from(&device.name);
                         if let Some(ref config) = device.default_config {
                             self.measurement_state
                                 .recording_state
@@ -1274,7 +1349,8 @@ impl App {
                         self.measurement_state
                             .recording_state
                             .recording_config
-                            .available_sample_rates = device.available_sample_rates.clone();
+                            .available_sample_rates
+                            .clone_from(&device.available_sample_rates);
                         self.measurement_state
                             .recording_state
                             .recording_config
@@ -1307,6 +1383,10 @@ impl App {
         }
     }
 
+    /// Loads config.
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn load_config(&mut self) -> Result<LayoutState, Box<dyn std::error::Error>> {
         use crate::config::Config;
         let config = Config::load()?;
@@ -1314,6 +1394,13 @@ impl App {
     }
 
     /// Load configuration from an already-loaded Config (avoids duplicate disk read).
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn load_config_from(
         &mut self,
         config: crate::config::Config,
@@ -1405,8 +1492,10 @@ impl App {
             } else {
                 config.recording_config.signal_level_db
             };
-        self.measurement_state.recording_state.mic_calibration_path =
-            config.recording_config.mic_calibration_path.clone();
+        self.measurement_state
+            .recording_state
+            .mic_calibration_path
+            .clone_from(&config.recording_config.mic_calibration_path);
         // Migrate per-channel calibration paths
         let mut mic_cal_paths = config.recording_config.mic_calibration_paths;
         if mic_cal_paths.is_empty()
@@ -1464,7 +1553,7 @@ impl App {
                         Some(crate::app::types::PluginUpdateType::Structural);
                     self.sync_spectrum_visible();
                     if warnings.is_empty() {
-                        log::info!("Restored plugin preset: {}", preset_name);
+                        log::info!("Restored plugin preset: {preset_name}");
                     } else {
                         log::warn!(
                             "Restored plugin preset '{}' with {} skipped plugin(s)",
@@ -1472,7 +1561,7 @@ impl App {
                             warnings.len()
                         );
                         for w in &warnings {
-                            log::warn!("  {}", w);
+                            log::warn!("  {w}");
                         }
                         self.ui_state.toast_message =
                             Some(crate::app::ToastMessage::warning(format!(
@@ -1483,7 +1572,7 @@ impl App {
                     }
                 }
                 Err(e) => {
-                    log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                    log::warn!("Could not restore preset '{preset_name}': {e}");
                 }
             }
         }
@@ -1520,11 +1609,18 @@ impl App {
         Ok(layout_state)
     }
 
+    /// Saves config.
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn save_config(&mut self, layout: &LayoutState) -> Result<(), Box<dyn std::error::Error>> {
         self.save_config_with_geometry(layout, None)
     }
 
     /// Save config with optional window geometry
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn save_config_with_geometry(
         &mut self,
         layout: &LayoutState,
@@ -1678,6 +1774,10 @@ impl App {
         self.apply_community_theme(theme_id);
     }
 
+    /// Sets community theme from json.
+    ///
+    /// # Errors
+    /// Returns an error if community theme JSON is empty, malformed, or invalid.
     pub fn set_community_theme_from_json(&mut self, json: &str) -> Result<(), String> {
         let bundle = CommunityThemeBundle::from_json(json)
             .map_err(|error| format!("failed to parse community theme JSON: {error}"))?;
@@ -1696,6 +1796,10 @@ impl App {
         self.ui_state.community_theme_json_draft = json.into();
     }
 
+    /// Applies community theme json draft.
+    ///
+    /// # Errors
+    /// Returns an error if community theme JSON is empty, malformed, or invalid.
     pub fn apply_community_theme_json_draft(&mut self) -> Result<(), String> {
         let json = self.ui_state.community_theme_json_draft.clone();
         let trimmed = json.trim();
@@ -1884,12 +1988,13 @@ impl App {
 
     /// Compute library statistics from scratch.
     /// This is expensive - O(n) over all albums and tracks.
+    #[must_use]
     pub fn compute_library_stats_static(albums: &[sotf_audio_player::Album]) -> LibraryStats {
         LibraryStats::compute(albums)
     }
 
     /// Get library statistics, returning currently cached values.
-    /// If stats are invalid, they should be updated via compute_library_stats_async.
+    /// If stats are invalid, they should be updated via `compute_library_stats_async`.
     pub fn get_library_stats(&self) -> &LibraryStats {
         &self.library_view.stats
     }
@@ -1897,7 +2002,12 @@ impl App {
     // ============== Dynamic Text Truncation ==============
 
     /// Helper to calculate max characters based on panel width and text properties.
-    /// Formula: ((panel_width - fixed_offset).max(min_width) / char_width).clamp(min_chars, max_chars)
+    /// Formula: ((`panel_width` - `fixed_offset).max(min_width`) / `char_width).clamp(min_chars`, `max_chars`)
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Text layout quantizes the available width to a clamped character count"
+    )]
     fn calculate_max_chars(
         panel_width: f32,
         fixed_offset: f32,
@@ -1921,28 +2031,56 @@ impl App {
         self.ui_state.window_width * center_ratio
     }
 
-    /// Maximum characters for queue list album title (text_sm ~7px).
+    /// Maximum characters for queue list album title (`text_sm` ~7px).
     pub fn max_chars_queue_list_title(&self, layout: &LayoutState) -> usize {
         Self::calculate_max_chars(self.queue_list_width(layout), 56.0, 50.0, 7.0, 15, 100)
     }
 
-    /// Maximum characters for queue list artist (text_xs ~6px).
+    /// Maximum characters for queue list artist (`text_xs` ~6px).
     pub fn max_chars_queue_list_artist(&self, layout: &LayoutState) -> usize {
         Self::calculate_max_chars(self.queue_list_width(layout), 56.0, 50.0, 6.0, 15, 120)
     }
 
-    /// Maximum characters for Now Playing album title (text_lg ~9px).
+    /// Maximum characters for Now Playing album title (`text_lg` ~9px).
     pub fn max_chars_now_playing_title(&self, layout: &LayoutState) -> usize {
         Self::calculate_max_chars(self.center_panel_width(layout), 60.0, 0.0, 9.0, 6, 150)
     }
 
-    /// Maximum characters for Now Playing artist (text_sm ~7px).
+    /// Maximum characters for Now Playing artist (`text_sm` ~7px).
     pub fn max_chars_now_playing_artist(&self, layout: &LayoutState) -> usize {
         Self::calculate_max_chars(self.center_panel_width(layout), 60.0, 0.0, 7.0, 6, 180)
     }
 
-    /// Maximum characters for track titles (text_sm ~7px).
+    /// Maximum characters for track titles (`text_sm` ~7px).
     pub fn max_chars_track_title(&self, layout: &LayoutState) -> usize {
         Self::calculate_max_chars(self.center_panel_width(layout), 120.0, 100.0, 7.0, 20, 200)
+    }
+}
+
+impl std::fmt::Debug for ScanState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScanState")
+            .field("needs_rescan", &self.needs_rescan)
+            .field("total_files", &self.total_files)
+            .field("progress_elapsed_secs", &self.progress_elapsed_secs)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for SettingsState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SettingsState")
+            .field("metadata_loading", &self.metadata_loading)
+            .field("expanded_sections", &self.expanded_sections)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for App {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("App")
+            .field("scan", &self.scan)
+            .field("geometry", &self.geometry)
+            .finish_non_exhaustive()
     }
 }

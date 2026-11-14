@@ -16,6 +16,7 @@ use sotf_audio_player_gpui::app::{ContextMenuState, ContextMenuType, Screen};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct AlbumContextMenuScenario;
 
 impl TestScenario for AlbumContextMenuScenario {
@@ -208,6 +209,7 @@ impl TestScenario for AlbumContextMenuScenario {
 }
 
 /// Test that adding an album that's already in the queue doesn't create duplicates
+#[derive(Debug)]
 pub struct AlbumNoDuplicateScenario;
 
 impl TestScenario for AlbumNoDuplicateScenario {
@@ -290,6 +292,7 @@ impl TestScenario for AlbumNoDuplicateScenario {
 }
 
 /// Clicks the actual rendered context-menu items and verifies they execute.
+#[derive(Debug)]
 pub struct AlbumContextMenuClickScenario;
 
 impl TestScenario for AlbumContextMenuClickScenario {
@@ -458,6 +461,7 @@ impl TestScenario for AlbumContextMenuClickScenario {
 /// Activates the context menu via keyboard after using the search box.
 /// This reproduces the regression where the search Input keeps focus and
 /// intercepts the 'a' / Enter shortcuts that should trigger menu actions.
+#[derive(Debug)]
 pub struct AlbumContextMenuKeyboardAfterSearchScenario;
 
 impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
@@ -611,6 +615,7 @@ impl TestScenario for AlbumContextMenuKeyboardAfterSearchScenario {
 }
 
 /// Control-click (macOS one-button / Magic Mouse) opens the album context menu.
+#[derive(Debug)]
 pub struct AlbumContextMenuControlClickScenario;
 
 impl TestScenario for AlbumContextMenuControlClickScenario {

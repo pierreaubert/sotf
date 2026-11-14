@@ -1,4 +1,4 @@
-use sotf_services::*;
+use sotf_services::ServiceError;
 
 /// Holds the runtime used to drive async HTTP calls when no ambient tokio
 /// runtime is available.
@@ -21,7 +21,7 @@ impl AsyncRuntime {
         let fallback = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
-            .map_err(|e| ServiceError::Other(format!("Failed to build tokio runtime: {}", e)))?;
+            .map_err(|e| ServiceError::Other(format!("Failed to build tokio runtime: {e}")))?;
         Ok(Self {
             fallback: Some(fallback),
         })

@@ -8,7 +8,7 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, FontWeight, SharedString, div, rems};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, NumberInput,
     NumberInputSize, Slider, SliderSize, StackSpacing, VStack,
@@ -16,6 +16,10 @@ use gpui_ui_kit::{
 use sotf_plugins::param_specs::{ParamType, find_by_key as pk, upmixer::PARAMS as UP};
 
 // Every lane uses the canonical numeric increment.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn numeric_step(param_idx: usize) -> f64 {
     match UP[param_idx].param_type {
         ParamType::Float { step, .. } => step,
@@ -60,6 +64,11 @@ fn upmixer_config_specs() -> &'static [UpmixerConfigSpec] {
 // sections cannot collapse at narrow widths; spacing and padding come
 // from the Ds design tokens.
 /// Render the upmixer plugin controls
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_upmixer_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -213,6 +222,14 @@ fn select_upmixer_param(state: &mut AppState, plugin_idx: usize, param_idx: usiz
 }
 
 /// Render the tab bar below the main blocks
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_tab_bar(
     d: &Ds,
     entity: Entity<AppState>,
@@ -228,7 +245,7 @@ fn render_tab_bar(
         .items_end()
         .justify_center()
         .w_full()
-        .when(layout == UpmixerLayout::Narrow, |el| el.justify_start())
+        .when(layout == UpmixerLayout::Narrow, gpui::Styled::justify_start)
         .border_b_1()
         .border_color(theme.border)
         .children(upmixer_config_specs().iter().map(|spec| {
@@ -257,6 +274,14 @@ fn render_tab_bar(
 }
 
 /// Render the main area: spatial field first, compact primary controls below.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_main_area(
     d: &Ds,
     entity: Entity<AppState>,
@@ -316,6 +341,14 @@ fn render_main_area(
 }
 
 /// Render the medium main area: speaker field with a side inspector.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_medium_area(
     d: &Ds,
     entity: Entity<AppState>,
@@ -400,6 +433,14 @@ fn render_medium_area(
 }
 
 /// Render the narrow main area: stacked field and immediately reachable primary lanes.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_narrow_area(
     d: &Ds,
     entity: Entity<AppState>,
@@ -480,6 +521,14 @@ fn focused_config_index(selected_config: usize) -> usize {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_compact_config_content(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1167,7 +1216,10 @@ fn render_compact_config_content(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 fn render_compact_resolution_choices(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1204,6 +1256,10 @@ fn render_compact_decorrelation_choices(
     )
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_compact_choice_row(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1310,7 +1366,10 @@ fn compact_lane(
     )
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 fn compact_lane_enabled(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1359,6 +1418,10 @@ fn render_compact_lane_group(
         .child(div().flex().flex_col().gap(d.grid).children(lanes))
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_compact_toggle_row(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1420,6 +1483,10 @@ fn render_compact_toggle_row(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_upmixer_summary_strip(
     d: &Ds,
     state: &UpmixerRenderState,
@@ -1504,6 +1571,14 @@ fn render_summary_chip(
         .child(div().text_color(theme.text_primary).child(value.into()))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_primary_control_strip(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1694,6 +1769,10 @@ struct ControlLaneRange {
     max: f64,
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "Exact parameter choices and changed-value detection preserve control semantics"
+)]
 fn sanitize_control_lane_range(spec: &ControlLaneSpec) -> ControlLaneRange {
     let (mut min, mut max) = if spec.min.is_finite() && spec.max.is_finite() {
         (spec.min.min(spec.max), spec.min.max(spec.max))
@@ -1742,6 +1821,18 @@ fn render_control_lane(
     render_control_lane_enabled(d, entity, plugin_idx, spec, true, layout_scale, theme)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_control_lane_enabled(
     d: &Ds,
     entity: Entity<AppState>,
@@ -1814,7 +1905,7 @@ fn render_control_lane_enabled(
                     select_upmixer_param(state, plugin_idx, spec.param_idx);
                     state
                         .app
-                        .set_plugin_param(plugin_idx, spec.param_idx, new_value as f64);
+                        .set_plugin_param(plugin_idx, spec.param_idx, f64::from(new_value));
                 });
             }
         })
@@ -1949,6 +2040,10 @@ fn render_section_header(d: &Ds, label: &str, theme: &Theme) -> impl IntoElement
 /// Permanent spider graph row below the tab bar. Always visible regardless
 /// of which tab is selected, so the user can watch the spatial field while
 /// editing parameters in any tab.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_spider_graph_row(
     d: &Ds,
     entity: Entity<AppState>,

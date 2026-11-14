@@ -1,7 +1,7 @@
 //! Plugin Shell Component
 //!
 //! Standardized wrapper for all plugin UIs providing a consistent visual frame:
-//! - Colored accent strip (from theme.plugin_palette.plugin_colors)
+//! - Colored accent strip (from `theme.plugin_palette.plugin_colors`)
 //! - Header bar with type icon and plugin name
 //! - Bypass toggle
 //! - Elevated background panel for plugin content
@@ -10,11 +10,12 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, FontWeight, Rgba, Window, div, px};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::PluginType;
 
 /// Get the category accent color from the active theme.
+#[must_use]
 pub fn plugin_category_color(category: &str, theme: &Theme) -> Rgba {
     let colors = &theme.plugin_palette.plugin_colors;
     match category {
@@ -29,6 +30,7 @@ pub fn plugin_category_color(category: &str, theme: &Theme) -> Rgba {
 }
 
 /// Get the category accent color for a plugin.
+#[must_use]
 pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
     let category = sotf_audio_player::plugin_categories::category_of(plugin_type).unwrap_or(
         match plugin_type {
@@ -45,6 +47,7 @@ pub fn plugin_accent_color(plugin_type: &PluginType, theme: &Theme) -> Rgba {
 ///
 /// Input and output monitors use the directional device artwork. Plugins
 /// without dedicated artwork retain an appropriate generic icon.
+#[must_use]
 pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: bool) -> IconName {
     match plugin_type {
         PluginType::EQ => IconName::PluginEq,
@@ -107,6 +110,7 @@ pub fn plugin_icon(plugin_type: &PluginType, is_input_mon: bool, is_output_mon: 
 }
 
 /// Get the display name for a plugin type (short form for rack cards).
+#[must_use]
 pub fn plugin_short_name(
     plugin_type: &PluginType,
     is_input_mon: bool,
@@ -182,11 +186,13 @@ pub fn plugin_short_name(
 ///
 /// The rack toggle and the shell toggle render at different sizes, but they
 /// must agree on state meaning, tooltip, and accessible name.
+#[must_use]
 pub fn bypass_label(enabled: bool, text: PluginCommonTranslations) -> &'static str {
     text.bypass_labels()[usize::from(!enabled)]
 }
 
 /// Shared enable/bypass tooltip and accessible name (ui.md Phase 2).
+#[must_use]
 pub fn bypass_tooltip(enabled: bool, text: PluginCommonTranslations) -> &'static str {
     text.bypass_labels()[2 + usize::from(!enabled)]
 }
@@ -202,7 +208,14 @@ pub fn bypass_tooltip(enabled: bool, text: PluginCommonTranslations) -> &'static
 /// │                                                      │
 /// └──────────────────────────────────────────────────────┘
 /// ```
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Widget callbacks retain their typed GPUI handler signatures"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub fn render_plugin_shell(
     d: &Ds,
     plugin_idx: usize,

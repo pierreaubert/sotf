@@ -1,15 +1,18 @@
 use crate::components::design::Ds;
 use crate::theme::Theme;
+use gpui::Div;
 use gpui::prelude::*;
-use gpui::*;
 
 /// Trait extension for applying parameter section styling to any Div
 pub trait ParamSectionStyle {
     /// Apply base param section styling (rounded, background, border) without padding
+    #[must_use]
     fn param_section_base(self, d: &Ds, theme: &Theme) -> Self;
     /// Apply param section styling with standard padding
+    #[must_use]
     fn param_section_style(self, d: &Ds, theme: &Theme) -> Self;
     /// Apply param section styling with larger padding
+    #[must_use]
     fn param_section_style_lg(self, d: &Ds, theme: &Theme) -> Self;
 }
 

@@ -26,10 +26,12 @@ pub struct MetadataPatch {
 }
 
 impl MetadataPatch {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self == &Self::default()
     }
 
+    #[must_use]
     pub fn sanitized(mut self) -> Self {
         fn clean(value: Option<String>) -> Option<String> {
             value.and_then(|s| {
@@ -73,6 +75,7 @@ pub struct MetadataEditPreview {
 }
 
 impl MetadataEditPreview {
+    #[must_use]
     pub fn can_apply(&self) -> bool {
         self.unsupported_writes.is_empty()
     }
@@ -94,14 +97,17 @@ pub struct MetadataImportCandidate {
 }
 
 impl MetadataImportCandidate {
+    #[must_use]
     pub fn preferred_album_title(&self) -> Option<&str> {
         self.album_title.as_deref().or(self.title.as_deref())
     }
 
+    #[must_use]
     pub fn preferred_track_title(&self) -> Option<&str> {
         self.title.as_deref().or(self.album_title.as_deref())
     }
 
+    #[must_use]
     pub fn into_patch(self) -> MetadataPatch {
         MetadataPatch {
             title: self.title,

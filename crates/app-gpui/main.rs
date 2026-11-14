@@ -2,9 +2,19 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 
 use clap::Parser;
-use gpui::*;
+use std::io::Write;
+
+use gpui::{
+    AppContext, Bounds, Menu, MenuItem, Point, Size, SystemMenuType, TitlebarOptions,
+    WindowBackgroundAppearance, WindowBounds, WindowKind, WindowOptions, actions, px,
+};
 use sotf_audio_player::{Player, ReleaseChannel};
-use sotf_audio_player_gpui::app::actions::*;
+use sotf_audio_player_gpui::app::actions::{
+    About, OpenConfig, QuitApp, SelectCommunityTheme, SelectDesign, SelectTheme,
+    SwitchToHeadphoneEQ, SwitchToLibrary, SwitchToListeningTest, SwitchToPluginGraph,
+    SwitchToRecording, SwitchToRoomEQ, SwitchToSpinorama, SwitchToStudio, ToggleHelp,
+    ToggleScreenGuide,
+};
 use sotf_audio_player_gpui::app::player_handle::PlayerHandle;
 use sotf_audio_player_gpui::app::state::ui::LayoutState;
 use sotf_audio_player_gpui::app::theme::{CommunityThemeId, ThemeId};
@@ -31,6 +41,10 @@ use assets::Assets;
 use assets::install_default_presets;
 use types::Args;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the complete theme mapping or ordered application startup and capture workflow together"
+)]
 fn main() {
     // Install a panic hook that writes to a crash log file.
     // On Windows, #[windows_subsystem = "windows"] detaches the console so
@@ -53,7 +67,7 @@ fn main() {
             let _ = std::fs::write(&crash_path, &crash_msg);
         }
         // Try stderr as last resort (works when run from a console)
-        eprintln!("{}", crash_msg);
+        eprintln!("{crash_msg}");
     }));
 
     // Parse command line arguments (handles --version and --help)
@@ -128,7 +142,7 @@ fn main() {
         match sotf_audio_player::server::run_server_mode() {
             Ok(()) => std::process::exit(0),
             Err(e) => {
-                eprintln!("Server error: {}", e);
+                eprintln!("Server error: {e}");
                 std::process::exit(1);
             }
         }
@@ -155,6 +169,10 @@ fn main() {
     );
 
     // Install signal handlers for clean shutdown on Ctrl-C (SIGINT) and SIGTERM
+    #[expect(
+        clippy::semicolon_outside_block,
+        reason = "Keep the cfg guard on a complete statement block"
+    )]
     #[cfg(unix)]
     {
         use std::sync::atomic::{AtomicBool, Ordering};
@@ -189,7 +207,6 @@ fn main() {
     let breadcrumb = |msg: &str| {
         if let Ok(exe) = std::env::current_exe() {
             let path = exe.with_file_name("sotf_startup.log");
-            use std::io::Write;
             if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(&path) {
                 let _ = writeln!(
                     f,
@@ -250,7 +267,7 @@ fn main() {
                 if let Some(file) = Assets::get(path) {
                     font_data.push(file.data);
                 } else {
-                    log::warn!("Failed to load font: {}", path);
+                    log::warn!("Failed to load font: {path}");
                 }
             }
 
@@ -263,10 +280,22 @@ fn main() {
             }
 
             // Load configuration to get language, keymap preset, and window geometry.
-            #[cfg_attr(not(feature = "dev-api"), allow(unused_variables))]
+            #[cfg_attr(
+                not(feature = "dev-api"),
+                allow(
+                    unused_variables,
+                    reason = "Platform-specific callbacks do not consume every parameter"
+                )
+            )]
             let config_path_exists =
                 sotf_audio_player::config::get_gpui_state_path().is_some_and(|path| path.exists());
-            #[cfg_attr(not(feature = "dev-api"), allow(unused_mut))]
+            #[cfg_attr(
+                not(feature = "dev-api"),
+                allow(
+                    unused_mut,
+                    reason = "Other platform and feature configurations require mutation"
+                )
+            )]
             let mut config = Config::load().ok();
             #[cfg(feature = "dev-api")]
             if qa_mode
@@ -275,24 +304,25 @@ fn main() {
             {
                 config.release_channel = ReleaseChannel::Alpha;
             }
-            let (language, keymap_preset, custom_keybindings, release_channel) = config
-                .as_ref()
-                .map(|c| {
-                    (
-                        c.language,
-                        c.keymap.preset,
-                        c.keymap.custom_keybindings.clone(),
-                        c.release_channel,
-                    )
-                })
-                .unwrap_or_else(|| {
-                    (
-                        Language::default(),
-                        KeymapPreset::default(),
-                        Vec::new(),
-                        ReleaseChannel::default(),
-                    )
-                });
+            let (language, keymap_preset, custom_keybindings, release_channel) =
+                config.as_ref().map_or_else(
+                    || {
+                        (
+                            Language::default(),
+                            KeymapPreset::default(),
+                            Vec::new(),
+                            ReleaseChannel::default(),
+                        )
+                    },
+                    |c| {
+                        (
+                            c.language,
+                            c.keymap.preset,
+                            c.keymap.custom_keybindings.clone(),
+                            c.release_channel,
+                        )
+                    },
+                );
 
             // Apply saved design language if present
             if let Some(dl) = config.as_ref().and_then(|c| c.design_language.as_ref()) {
@@ -340,6 +370,10 @@ fn main() {
                 MenuItem::separator(),
             ];
             // Services submenu is macOS-only (no equivalent on Windows/Linux)
+            #[expect(
+                clippy::semicolon_outside_block,
+                reason = "Keep the cfg guard on a complete statement block"
+            )]
             #[cfg(target_os = "macos")]
             {
                 app_menu_items.push(MenuItem::os_submenu("Services", SystemMenuType::Services));
@@ -417,8 +451,7 @@ fn main() {
             // user last placed it).
             let mut window_geometry = config
                 .as_ref()
-                .map(|c| c.window_geometry.clone())
-                .unwrap_or_default();
+                .map_or_default(|c| c.window_geometry.clone());
             if let Some((w, h)) = cli_size_override {
                 log::info!(
                     "--size override: {w}x{h} (was {}x{})",
@@ -481,7 +514,7 @@ fn main() {
                         match temp_app.load_config_from(cfg) {
                             Ok(l) => l,
                             Err(e) => {
-                                log::warn!("Could not load saved configuration: {}", e);
+                                log::warn!("Could not load saved configuration: {e}");
                                 LayoutState::default()
                             }
                         }
@@ -504,7 +537,7 @@ fn main() {
                     let player = Player::new();
                     // Apply loaded volume to player
                     if let Err(e) = player.set_volume(temp_app.playback.volume) {
-                        log::warn!("Failed to set initial volume: {}", e);
+                        log::warn!("Failed to set initial volume: {e}");
                     }
 
                     let layout = cx.new(|_| layout_state);

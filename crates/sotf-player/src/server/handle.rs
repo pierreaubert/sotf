@@ -73,6 +73,14 @@ pub(super) async fn handle_sotf_api_connection<S>(
     let _ = stream.shutdown().await;
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The request dispatcher keeps the complete supported API route table together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The request dispatcher owns the request through complete response construction "
+)]
 pub(super) fn handle_sotf_api_request(
     request: ApiRequest,
     state: &Arc<ServerState>,
@@ -262,10 +270,11 @@ pub(super) fn handle_sotf_api_request(
                 .get("volume")
                 .and_then(Value::as_u64)
                 .ok_or_else(|| "volume is required".to_string())?;
-            if volume > 100 {
-                return Err("volume must be between 0 and 100".to_string());
-            }
-            adapter.set_volume(volume as u8)
+            let volume = u8::try_from(volume)
+                .ok()
+                .filter(|&volume| volume <= 100)
+                .ok_or_else(|| "volume must be between 0 and 100".to_string())?;
+            adapter.set_volume(volume)
         }) {
             Ok(()) => api_json_response(200, json!({ "ok": true, "command": "volume" })),
             Err(err) => api_error_response(400, &err),

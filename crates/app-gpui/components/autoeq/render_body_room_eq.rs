@@ -27,7 +27,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_target_tilt_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 tilt_toggle = tilt_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -56,12 +56,12 @@
                 .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_tilt_type_toggle_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     tilt_select = tilt_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
 
                 if let Some(ref h) = on_tilt_type_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     tilt_select = tilt_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
@@ -80,7 +80,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_tilt_slope_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         slope_input = slope_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -96,7 +96,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_tilt_reference_freq_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         ref_freq_input = ref_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -123,7 +123,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_tilt_bass_shelf_db_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         shelf_db_input = shelf_db_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -140,7 +140,7 @@
                             .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_tilt_bass_shelf_freq_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         shelf_freq_input = shelf_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -165,7 +165,7 @@
                     .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_broadband_target_matching_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -192,7 +192,7 @@
 
             // Edit Custom Target Curve button
             if let Some(ref handler) = on_edit_custom_target_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 target_col = target_col.child(
                     Button::new(
                         "edit-custom-target",
@@ -233,7 +233,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_psychoacoustic_change_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -266,7 +266,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_smooth_change_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -305,7 +305,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref handler) = on_smooth_n_change_rc {
-                    let h = handler.clone();
+                    let h = std::rc::Rc::clone(handler);
                     smooth_n_input =
                         smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
@@ -332,7 +332,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref handler) = on_asymmetric_loss_change_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -364,7 +364,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_excursion_protection_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 excursion_toggle = excursion_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -386,7 +386,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -414,7 +414,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_excursion_manual_f3_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
                     options_col = options_col.child(f3_input);
@@ -433,12 +433,12 @@
                 .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_excursion_filter_type_toggle_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     hp_select = hp_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
 
                 if let Some(ref h) = on_excursion_filter_type_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
@@ -454,7 +454,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_excursion_filter_order_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     order_input =
                         order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
@@ -482,7 +482,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_excursion_margin_octaves_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -496,7 +496,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_schroeder_split_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 schroeder_toggle = schroeder_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -524,7 +524,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_freq_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     s_freq_input = s_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -542,7 +542,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_max_q_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     low_q_input = low_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -558,7 +558,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_max_q_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     high_q_input = high_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -579,7 +579,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_allow_boost_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     boost_toggle = boost_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -589,7 +589,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_shelving_only_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     shelve_toggle = shelve_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -634,7 +634,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_allow_delay_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 delay_toggle = delay_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -693,7 +693,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_vog_enabled_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 vog_toggle = vog_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -755,12 +755,12 @@
                 .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_vog_reference_channel_toggle_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     ref_select = ref_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
 
                 if let Some(ref h) = on_vog_reference_channel_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     ref_select = ref_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
@@ -775,7 +775,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_phase_alignment_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     phase_toggle = phase_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -803,7 +803,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_phase_min_freq_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -819,7 +819,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_phase_max_freq_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -840,7 +840,7 @@
                         .theme(toggle_theme.clone());
 
                     if let Some(ref h) = on_phase_optimize_polarity_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         polarity_toggle = polarity_toggle.on_change(move |v, w, cx| h(v, w, cx));
                     }
 
@@ -867,7 +867,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_phase_max_delay_ms_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         p_max_delay = p_max_delay.on_change(move |v, w, cx| h(v, w, cx));
                     }
                     options_col = options_col.child(p_max_delay);
@@ -882,7 +882,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_multi_seat_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     multi_seat_toggle = multi_seat_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -911,12 +911,12 @@
                 .theme(theme.select_theme.clone());
 
                     if let Some(ref h) = on_multi_seat_strategy_toggle_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
                     }
 
                     if let Some(ref h) = on_multi_seat_strategy_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         strategy_select =
                             strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                     }
@@ -937,7 +937,7 @@
                                 .theme(theme.number_input_theme.clone());
 
                         if let Some(ref h) = on_multi_seat_primary_seat_change_rc {
-                            let h = h.clone();
+                            let h = std::rc::Rc::clone(h);
                             primary_seat_input = primary_seat_input
                                 .on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                         }
@@ -956,7 +956,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_multi_seat_max_deviation_db_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         dev_input = dev_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
                     options_col = options_col.child(dev_input);
@@ -971,7 +971,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_use_multi_measurement_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     multi_meas_toggle = multi_meas_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -1001,12 +1001,12 @@
                         .theme(theme.select_theme.clone());
 
                     if let Some(ref h) = on_multi_measurement_strategy_toggle_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
                     }
 
                     if let Some(ref h) = on_multi_measurement_strategy_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         strategy_select =
                             strategy_select.on_change(move |v, w, cx| h(v.as_ref(), w, cx));
                     }
@@ -1029,7 +1029,7 @@
                                 .unwrap_or_else(|| format!("Meas {}", i + 1));
 
                             let mut weight_input =
-                                NumberInput::new((base_id.clone(), SharedString::from(format!("multi-meas-weight-{}", i))))
+                                NumberInput::new((base_id.clone(), SharedString::from(format!("multi-meas-weight-{i}"))))
                                     .scroll_requires_alt(true)
                                     .value(weight)
                                     .min(ParamLimits::WEIGHT.min)
@@ -1041,7 +1041,7 @@
                                     .theme(theme.number_input_theme.clone());
 
                             if let Some(ref h) = on_multi_measurement_weight_change_rc {
-                                let h = h.clone();
+                                let h = std::rc::Rc::clone(h);
                                 weight_input =
                                     weight_input.on_change(move |v, w, cx| h(i, v, w, cx));
                             }
@@ -1064,7 +1064,7 @@
                                 .theme(theme.number_input_theme.clone());
 
                         if let Some(ref h) = on_multi_measurement_variance_lambda_change_rc {
-                            let h = h.clone();
+                            let h = std::rc::Rc::clone(h);
                             lambda_input = lambda_input.on_change(move |v, w, cx| h(v, w, cx));
                         }
                         options_col = options_col.child(lambda_input);
@@ -1134,7 +1134,7 @@
                 let mut block_out = left_col;
                 include!("render_block_eq_design.rs");
                 left_col = block_out;
-            }
+            };
 
             // Right column: Optimisation params via shared block
             right_col = right_col.child(
@@ -1150,7 +1150,7 @@
                 let mut block_out = right_col;
                 include!("render_block_optimizer.rs");
                 right_col = block_out;
-            }
+            };
 
             // Always single column within the card
             section = section
@@ -1160,7 +1160,29 @@
             let opt_config_card = Card::new().content(section);
 
             // Assemble Room Config and Optimiser Config side-by-side when wide enough
-            if !is_narrow_layout {
+            if is_narrow_layout {
+                let on_block_focus_tilt = on_block_focus_rc.clone();
+                let on_block_focus_opt = on_block_focus_rc.clone();
+                form = form
+                    .child(
+                        div()
+                            .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                                if let Some(ref cb) = on_block_focus_tilt {
+                                    cb(docs::BLOCK_TARGET_TILT, window, cx);
+                                }
+                            })
+                            .child(room_config_card),
+                    )
+                    .child(
+                        div()
+                            .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
+                                if let Some(ref cb) = on_block_focus_opt {
+                                    cb(docs::BLOCK_OPTIMIZER, window, cx);
+                                }
+                            })
+                            .child(opt_config_card),
+                    );
+            } else {
                 let on_block_focus_tilt = on_block_focus_rc.clone();
                 let on_block_focus_opt = on_block_focus_rc.clone();
                 form = form.child(
@@ -1170,9 +1192,9 @@
                         .child(
                             div()
                                 .flex_1()
-                                .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                                     if let Some(ref cb) = on_block_focus_tilt {
-                                        cb(docs::BLOCK_TARGET_TILT, _window, _cx);
+                                        cb(docs::BLOCK_TARGET_TILT, window, cx);
                                     }
                                 })
                                 .child(room_config_card),
@@ -1180,36 +1202,14 @@
                         .child(
                             div()
                                 .flex_1()
-                                .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
+                                .on_mouse_down(MouseButton::Left, move |_event, window, cx| {
                                     if let Some(ref cb) = on_block_focus_opt {
-                                        cb(docs::BLOCK_OPTIMIZER, _window, _cx);
+                                        cb(docs::BLOCK_OPTIMIZER, window, cx);
                                     }
                                 })
                                 .child(opt_config_card),
                         ),
                 );
-            } else {
-                let on_block_focus_tilt = on_block_focus_rc.clone();
-                let on_block_focus_opt = on_block_focus_rc.clone();
-                form = form
-                    .child(
-                        div()
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
-                                if let Some(ref cb) = on_block_focus_tilt {
-                                    cb(docs::BLOCK_TARGET_TILT, _window, _cx);
-                                }
-                            })
-                            .child(room_config_card),
-                    )
-                    .child(
-                        div()
-                            .on_mouse_down(MouseButton::Left, move |_event, _window, _cx| {
-                                if let Some(ref cb) = on_block_focus_opt {
-                                    cb(docs::BLOCK_OPTIMIZER, _window, _cx);
-                                }
-                            })
-                            .child(opt_config_card),
-                    );
             }
         }
 

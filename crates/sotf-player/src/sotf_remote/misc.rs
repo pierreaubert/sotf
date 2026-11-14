@@ -1,4 +1,5 @@
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 pub(super) const REMOTE_SERVER_STORE_VERSION: u32 = 1;
 
@@ -8,7 +9,7 @@ pub(super) fn remote_server_id(api_base_url: &str) -> String {
     let digest = Sha256::digest(api_base_url.as_bytes());
     let mut out = String::from("sotf:");
     for byte in digest.iter().take(8) {
-        out.push_str(&format!("{byte:02x}"));
+        let _ = write!(out, "{byte:02x}");
     }
     out
 }

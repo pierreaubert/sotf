@@ -6,7 +6,7 @@ use std::path::Path;
 #[cfg(test)]
 mod tests;
 
-/// (frequencies, magnitude_db, phase_deg, wav_path, csv_path)
+/// (frequencies, `magnitude_db`, `phase_deg`, `wav_path`, `csv_path`)
 pub(super) type MeasurementData = (Vec<f32>, Vec<f32>, Vec<f32>, Option<String>, Option<String>);
 
 /// Wizard mode selected in the Process step. Determines which
@@ -37,6 +37,14 @@ pub(super) enum WavSubFormat {
     IeeeFloat,
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "PCM normalization and regression averages intentionally use floating-point values"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "WAV parsing keeps container traversal and sample-format decoding in one bounded reader"
+)]
 pub(super) fn read_first_wav_channel_f32(path: &Path) -> Result<(Vec<f32>, u32), String> {
     let bytes = std::fs::read(path)
         .map_err(|e| format!("failed to read WAV '{}': {}", path.display(), e))?;
@@ -181,7 +189,7 @@ pub(super) fn read_first_wav_channel_f32(path: &Path) -> Result<(Vec<f32>, u32),
                     ));
                 }
             },
-            (1, 16) => i16::from_le_bytes([frame[0], frame[1]]) as f32 / i16::MAX as f32,
+            (1, 16) => f32::from(i16::from_le_bytes([frame[0], frame[1]])) / f32::from(i16::MAX),
             (1, 24) => {
                 let value = i32::from_le_bytes([
                     frame[0],
@@ -262,7 +270,7 @@ pub struct ChannelMeasurement {
     pub multi_mic_measurements: Vec<RecordingResult>,
 }
 
-/// Speaker configuration type (duplicated from autoeq::types for UI use)
+/// Speaker configuration type (duplicated from `autoeq::types` for UI use)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum RoomEqSpeakerConfigType {
     /// Single full-range driver or measurement
@@ -282,6 +290,11 @@ pub type CrossoverType = RoomEqCrossoverType;
 ///
 /// Uses linear regression on the 200 Hz – 20 kHz range.
 /// Returns `(slope, recommendation_min, recommendation_max)`.
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "PCM normalization and regression averages intentionally use floating-point values"
+)]
 pub fn compute_lr_slope(measurements: &[ChannelMeasurement]) -> Option<(f64, f64, f64)> {
     let lr_names = ["L", "R"];
     let mut slopes = Vec::new();
@@ -315,7 +328,7 @@ pub fn compute_lr_slope(measurements: &[ChannelMeasurement]) -> Option<(f64, f64
         let n = log_freqs.len() as f64;
         let sum_x: f64 = log_freqs.iter().sum();
         let sum_y: f64 = dbs.iter().sum();
-        let sum_xy: f64 = log_freqs.iter().zip(dbs.iter()).map(|(x, y)| x * y).sum();
+        let sum_products: f64 = log_freqs.iter().zip(dbs.iter()).map(|(x, y)| x * y).sum();
         let sum_xx: f64 = log_freqs.iter().map(|x| x * x).sum();
 
         let denom = n * sum_xx - sum_x * sum_x;
@@ -325,7 +338,7 @@ pub fn compute_lr_slope(measurements: &[ChannelMeasurement]) -> Option<(f64, f64
 
         // slope in dB per log10(Hz) = dB/decade
         // Convert to dB/octave: 1 octave = log10(2) ≈ 0.301 in log10 space
-        let slope_log10 = (n * sum_xy - sum_x * sum_y) / denom;
+        let slope_log10 = (n * sum_products - sum_x * sum_y) / denom;
         let slope_db_per_octave = slope_log10 * std::f64::consts::LOG10_2;
 
         slopes.push(slope_db_per_octave);
@@ -377,7 +390,7 @@ pub struct DelayDetectionHints {
     pub probe_results: Option<DelayProbeResults>,
 }
 
-/// Field identifiers for AutoEQ form editing
+/// Field identifiers for `AutoEQ` form editing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutoEqField {
     NumFilters,
@@ -419,17 +432,17 @@ pub struct ChannelOptResult {
     pub original_response: Option<Vec<(f64, f64)>>,
     pub corrected_response: Option<Vec<(f64, f64)>>,
     pub normalized_response: Option<Vec<(f64, f64)>>,
-    /// Target curve points (frequency_hz, level_db)
+    /// Target curve points (`frequency_hz`, `level_db`)
     pub target_curve: Option<Vec<(f64, f64)>>,
-    /// Group delay before correction (frequency_hz, delay_ms)
+    /// Group delay before correction (`frequency_hz`, `delay_ms`)
     pub group_delay_before: Option<Vec<(f64, f64)>>,
-    /// Group delay after correction (frequency_hz, delay_ms)
+    /// Group delay after correction (`frequency_hz`, `delay_ms`)
     pub group_delay_after: Option<Vec<(f64, f64)>>,
-    /// Phase response before correction (frequency_hz, phase_radians)
+    /// Phase response before correction (`frequency_hz`, `phase_radians`)
     pub phase_response_before: Option<Vec<(f64, f64)>>,
-    /// Phase response after correction (frequency_hz, phase_radians)
+    /// Phase response after correction (`frequency_hz`, `phase_radians`)
     pub phase_response_after: Option<Vec<(f64, f64)>>,
-    /// Impulse response after correction (sample_index, amplitude)
+    /// Impulse response after correction (`sample_index`, amplitude)
     pub impulse_response: Option<Vec<(f64, f64)>>,
 }
 

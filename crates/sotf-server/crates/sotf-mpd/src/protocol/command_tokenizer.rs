@@ -48,7 +48,7 @@ impl<'a> CommandTokenizer<'a> {
                         self.pos += 1; // consume closing quote
                         return String::from_utf8(buf)
                             .map(Some)
-                            .map_err(|_| TokenizerError::InvalidUtf8);
+                            .map_err(|_error| TokenizerError::InvalidUtf8);
                     }
                     b'\\' => {
                         // Per MPD spec, only `\\` and `\"` are required
@@ -68,14 +68,13 @@ impl<'a> CommandTokenizer<'a> {
                     }
                 }
             }
-        } else {
-            // Unquoted token
-            let start = self.pos;
-            while self.pos < bytes.len() && bytes[self.pos] != b' ' && bytes[self.pos] != b'\t' {
-                self.pos += 1;
-            }
-            Ok(Some(self.input[start..self.pos].to_string()))
         }
+        // Unquoted token
+        let start = self.pos;
+        while self.pos < bytes.len() && bytes[self.pos] != b' ' && bytes[self.pos] != b'\t' {
+            self.pos += 1;
+        }
+        Ok(Some(self.input[start..self.pos].to_string()))
     }
 
     pub(super) fn skip_whitespace(&mut self) {
@@ -99,33 +98,33 @@ impl<'a> CommandTokenizer<'a> {
 
     pub(super) fn require_u32(&mut self, cmd: &str) -> Result<u32, MpdError> {
         let token = self.require_string(cmd)?;
-        token.parse().map_err(|_| {
+        token.parse().map_err(|_error| {
             MpdError::new(
                 MpdErrorCode::Arg,
                 cmd,
-                &format!("expected integer, got \"{}\"", token),
+                &format!("expected integer, got \"{token}\""),
             )
         })
     }
 
     pub(super) fn require_i32(&mut self, cmd: &str) -> Result<i32, MpdError> {
         let token = self.require_string(cmd)?;
-        token.parse().map_err(|_| {
+        token.parse().map_err(|_error| {
             MpdError::new(
                 MpdErrorCode::Arg,
                 cmd,
-                &format!("expected integer, got \"{}\"", token),
+                &format!("expected integer, got \"{token}\""),
             )
         })
     }
 
     pub(super) fn require_f64(&mut self, cmd: &str) -> Result<f64, MpdError> {
         let token = self.require_string(cmd)?;
-        token.parse().map_err(|_| {
+        token.parse().map_err(|_error| {
             MpdError::new(
                 MpdErrorCode::Arg,
                 cmd,
-                &format!("expected number, got \"{}\"", token),
+                &format!("expected number, got \"{token}\""),
             )
         })
     }
@@ -138,7 +137,7 @@ impl<'a> CommandTokenizer<'a> {
             _ => Err(MpdError::new(
                 MpdErrorCode::Arg,
                 cmd,
-                &format!("expected 0 or 1, got \"{}\"", token),
+                &format!("expected 0 or 1, got \"{token}\""),
             )),
         }
     }

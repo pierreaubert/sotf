@@ -76,6 +76,10 @@ pub(crate) struct PendingGeometrySave {
 }
 
 impl Render for PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if cx.has_global::<AccessibilityTree>() {
             cx.global_mut::<AccessibilityTree>().clear();
@@ -215,7 +219,7 @@ impl Render for PlayerView {
             // writes during the drag.
             if !self.geometry_save_pending {
                 self.geometry_save_pending = true;
-                let pending = self.pending_geometry_save.clone();
+                let pending = std::sync::Arc::clone(&self.pending_geometry_save);
                 let mut last_seen_sequence = geometry_sequence;
                 self.geometry_save_task = Some(cx.spawn(async move |this, cx| {
                     loop {
@@ -255,7 +259,7 @@ impl Render for PlayerView {
                                 if let Err(e) =
                                     state.app.save_config_with_geometry(layout, Some(geometry))
                                 {
-                                    log::warn!("Failed to save window geometry: {}", e);
+                                    log::warn!("Failed to save window geometry: {e}");
                                 } else {
                                     log::debug!("Debounced window geometry saved successfully");
                                 }
@@ -326,7 +330,7 @@ impl Render for PlayerView {
 
         // Keep gpui-ui-kit global theme in sync with app theme so components get consistent defaults.
         // This allows builder overrides but ensures out-of-the-box colors match the app theme.
-        let ui_kit_theme: gpui_ui_kit::Theme = theme.to_ui_kit_theme(theme_id, cx);
+        let ui_kit_theme = theme.to_ui_kit_theme(theme_id, cx);
         // Initialize toolkit defaults before applying the active app theme.
         let mut ui_kit_theme_state = UiKitThemeState::new();
         ui_kit_theme_state.theme = Arc::new(ui_kit_theme);
@@ -631,7 +635,6 @@ impl Render for PlayerView {
                         cx.stop_propagation();
                         view.handle_command_palette_key(event, window, cx);
                     }
-                    crate::app::InputMode::Search => {}
                     crate::app::InputMode::AddDirectory => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_directory_input(event, cx);
@@ -651,13 +654,6 @@ impl Render for PlayerView {
                     crate::app::InputMode::LoadPlugins => {
                         cx.stop_propagation(); // Prevent actions from processing this keystroke
                         view.handle_load_plugins_input(event, cx);
-                    }
-                    crate::app::InputMode::EditingParam => {
-                        // Stepper-based editing doesn't need keyboard input
-                    }
-                    crate::app::InputMode::SpinoramaSpeakerSearch => {
-                        // Let the GPUI Input component handle text natively via on_text_change.
-                        // Only intercept non-text keys like escape/enter (handled by actions).
                     }
                     crate::app::InputMode::ContextMenu => {
                         cx.stop_propagation();
@@ -985,11 +981,13 @@ impl PlayerView {
             Screen::HomeShelf => self.render_home_shelf_screen(cx).into_any_element(),
             Screen::Streams => self.render_streams_screen(cx).into_any_element(),
             Screen::Spectrum => self.render_spectrum_screen(cx).into_any_element(),
-            Screen::Settings => self.render_settings_screen(cx).into_any_element(),
-            Screen::SettingsDetail => self.render_settings_screen(cx).into_any_element(),
+            Screen::Settings | Screen::SettingsDetail => {
+                self.render_settings_screen(cx).into_any_element()
+            }
             Screen::StudioHub => self.render_desktop_studio_hub(cx),
-            Screen::EqCurve => self.render_plugins_screen(None, cx).into_any_element(),
-            Screen::Studio => self.render_plugins_screen(None, cx).into_any_element(),
+            Screen::EqCurve | Screen::Studio => {
+                self.render_plugins_screen(None, cx).into_any_element()
+            }
             Screen::Recording => self.render_recording_screen(cx).into_any_element(),
             Screen::RoomEq => self.render_room_eq_screen(cx).into_any_element(),
             Screen::HeadphoneEq => self.render_headphone_eq_screen(cx).into_any_element(),
@@ -1051,6 +1049,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_legacy_app_sidebar(&self, cx: &mut Context<Self>) -> AnyElement {
         reset_interactive_focus_order();
         let d = Ds::from_cx(cx);
@@ -1523,6 +1525,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_sidebar_section(
         &self,
         id: &'static str,
@@ -1557,6 +1563,10 @@ impl PlayerView {
         section.into_any_element()
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_sidebar_separator(&self, d: &Ds, theme: &crate::theme::Theme) -> AnyElement {
         div()
             .h(px(1.0))
@@ -1699,6 +1709,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_sidebar_action_button(
         &self,
         id: &'static str,
@@ -1727,6 +1741,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_sidebar_cast_group_label(
         &self,
         cast_discovery_running: bool,
@@ -1757,6 +1775,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_sidebar_output_device_item(
         &self,
         index: usize,
@@ -1794,7 +1816,7 @@ impl PlayerView {
                     .set_screen(Screen::Settings, "QuickOutputPreferences");
             });
         });
-        let mouse_activate = on_activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&on_activate);
         let key_activate = on_activate;
 
         let element = div()
@@ -1844,7 +1866,7 @@ impl PlayerView {
                     .child(display_name),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx)
+                mouse_activate(cx);
             })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
@@ -1876,6 +1898,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_sidebar_cast_device_item(
         &self,
         index: usize,
@@ -1913,7 +1939,7 @@ impl PlayerView {
                 }
             });
         });
-        let mouse_activate = on_activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&on_activate);
         let key_activate = on_activate;
 
         let element = div()
@@ -1974,7 +2000,7 @@ impl PlayerView {
                     .child(display_type.clone()),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                mouse_activate(cx)
+                mouse_activate(cx);
             })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
@@ -2006,6 +2032,14 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_sidebar_item_base(
         &self,
         id: &'static str,
@@ -2031,7 +2065,7 @@ impl PlayerView {
             props: accessibility_props.clone(),
         });
         let on_activate = std::rc::Rc::new(on_activate);
-        let mouse_activate = on_activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&on_activate);
         let key_activate = on_activate;
         let icon_color = if selected {
             theme.icon_on_accent

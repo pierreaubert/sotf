@@ -5,13 +5,14 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, FontWeight, Result, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, Heading, NumberInput, NumberInputSize,
     Progress, ProgressSize, ProgressVariant, Select, SelectOption, StackAlign, StackJustify,
     StackSpacing, Text, TextSize, VStack,
 };
 use sotf_audio_player::ui_models::recording::BatchNextAction;
+use std::fmt::Write as _;
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
@@ -140,7 +141,6 @@ impl PlayerView {
                         this.state.update(cx, |state, _| {
                             state.app.measurement_state.recording_state.signal_type =
                                 match value.as_ref() {
-                                    "Sweep" => RecordingSignalType::Sweep,
                                     "White Noise" => RecordingSignalType::WhiteNoise,
                                     "Pink Noise" => RecordingSignalType::PinkNoise,
                                     "MLS" => RecordingSignalType::Mls,
@@ -160,6 +160,10 @@ impl PlayerView {
     }
 
     /// Render duration dropdown
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The duration selector edits whole seconds within its bounded range"
+    )]
     pub(super) fn render_duration_dropdown(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -224,6 +228,14 @@ impl PlayerView {
     }
 
     /// Render per-channel sweep frequency configuration
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_channel_config_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -248,18 +260,14 @@ impl PlayerView {
             .channel_recordings
             .iter()
             .enumerate()
-            .filter_map(|(vec_idx, r)| {
-                if seen_speakers.insert(r.channel_index) {
-                    // Use the speaker name (strip " (Mic N)" suffix if present)
-                    let speaker_name = r
-                        .channel_name
-                        .find(" (Mic ")
-                        .map(|pos| r.channel_name[..pos].to_string())
-                        .unwrap_or_else(|| r.channel_name.clone());
-                    Some((vec_idx, speaker_name, r.sweep_start_freq, r.sweep_end_freq))
-                } else {
-                    None
-                }
+            .filter(|&(_vec_idx, r)| seen_speakers.insert(r.channel_index))
+            .map(|(vec_idx, r)| {
+                // Use the speaker name (strip " (Mic N)" suffix if present)
+                let speaker_name = r.channel_name.find(" (Mic ").map_or_else(
+                    || r.channel_name.clone(),
+                    |pos| r.channel_name[..pos].to_string(),
+                );
+                (vec_idx, speaker_name, r.sweep_start_freq, r.sweep_end_freq)
             })
             .collect();
         let _ = state;
@@ -285,7 +293,7 @@ impl PlayerView {
                                     .align(StackAlign::Center)
                                     .child(div().w(px(100.0)).child(
                                         // intentional: channel-label column
-                                        Text::label(format!("{}:", name)).color(theme.text_primary),
+                                        Text::label(format!("{name}:")).color(theme.text_primary),
                                     ))
                                     .child(
                                         HStack::new()
@@ -300,7 +308,7 @@ impl PlayerView {
                                                 NumberInput::new(SharedString::from(format!(
                                                     "ch_start_freq_{idx}"
                                                 )))
-                                                .value(*start_freq as f64)
+                                                .value(f64::from(*start_freq))
                                                 .min(1.0)
                                                 .max(20000.0)
                                                 .step(1.0)
@@ -351,7 +359,7 @@ impl PlayerView {
                                                 NumberInput::new(SharedString::from(format!(
                                                     "ch_end_freq_{idx}"
                                                 )))
-                                                .value(*end_freq as f64)
+                                                .value(f64::from(*end_freq))
                                                 .min(100.0)
                                                 .max(48000.0)
                                                 .step(100.0)
@@ -397,6 +405,14 @@ impl PlayerView {
     }
 
     /// Render per-channel recording metrics (avg SPL and noise floor)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_channel_metrics_section(
         &self,
         cx: &mut Context<Self>,
@@ -514,7 +530,7 @@ impl PlayerView {
                             .child(
                                 div().w(px(100.0)).child(
                                     // intentional: metrics-table column width
-                                    Text::new(format!("{}:", name))
+                                    Text::new(format!("{name}:"))
                                         .size(TextSize::Xs)
                                         .color(theme.text_primary),
                                 ),
@@ -530,14 +546,14 @@ impl PlayerView {
                             .child(
                                 div().w(px(80.0)).child(
                                     // intentional: metrics-table column width
-                                    Text::new(format!("{:.1} dB", avg_spl))
+                                    Text::new(format!("{avg_spl:.1} dB"))
                                         .size(TextSize::Xs)
                                         .color(spl_color),
                                 ),
                             )
                             .child(div().w(px(80.0)).child(
                                 // intentional: metrics-table column width
-                                Text::caption(format!("{:.1} dB", noise_floor)),
+                                Text::caption(format!("{noise_floor:.1} dB")),
                             ))
                             .into_any_element()
                     })),
@@ -546,6 +562,10 @@ impl PlayerView {
     }
 
     /// Render channel status section with recording controls
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_channel_status_section(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -608,8 +628,10 @@ impl PlayerView {
                     .stimulus_config
                     .as_ref()
                     .and_then(|config| config.level_dbfs)
-                    .map(|level| format!("{level:.1} dBFS"))
-                    .unwrap_or_else(|| unknown_label.to_string());
+                    .map_or_else(
+                        || unknown_label.to_string(),
+                        |level| format!("{level:.1} dBFS"),
+                    );
                 Some(format!("{}: {captured_label} {level}", take.channel_name))
             })
             .collect::<Vec<_>>();
@@ -865,9 +887,7 @@ impl PlayerView {
         };
 
         // −60 dBFS (left) to 0 dBFS (right, no headroom).
-        let fraction = peak_dbfs
-            .map(|peak| ((peak + 60.0) / 60.0).clamp(0.0, 1.0))
-            .unwrap_or(0.0);
+        let fraction = peak_dbfs.map_or(0.0, |peak| ((peak + 60.0) / 60.0).clamp(0.0, 1.0));
 
         let fmt_level = |value: Option<f32>| match value {
             Some(level) => format!("{level:.1}"),
@@ -880,10 +900,10 @@ impl PlayerView {
             fmt_level(hold_dbfs),
         );
         if let (Some(peak), Some(offset)) = (peak_dbfs, spl_offset_db) {
-            readout.push_str(&format!(" · ≈ {:.0} dB SPL", peak + offset));
+            let _ = write!(readout, " · ≈ {:.0} dB SPL", peak + offset);
         }
         if clipped_samples > 0 {
-            readout.push_str(&format!(" · CLIPPING ({clipped_samples} samples)"));
+            let _ = write!(readout, " · CLIPPING ({clipped_samples} samples)");
         }
 
         let meter = div()
@@ -937,8 +957,7 @@ impl PlayerView {
         use sotf_audio_player::signal_recorder::GainAdvice;
         let peak = snapshot
             .peak_hold_dbfs
-            .map(|level| format!("{level:.1}"))
-            .unwrap_or_else(|| "—".to_string());
+            .map_or_else(|| "—".to_string(), |level| format!("{level:.1}"));
         match (language, advice) {
             (crate::app::i18n::Language::French, GainAdvice::LowerMicrophoneGain) => format!(
                 "Gain du microphone trop élevé : écrêtage pendant la mesure (crête {peak} dBFS, aucune marge). Baissez le gain du microphone et réenregistrez."
@@ -969,9 +988,21 @@ impl PlayerView {
 
     /// Render the list of channels with their recording status.
     ///
-    /// Groups by speaker (channel_index). With multi-mic, shows mic sub-statuses
+    /// Groups by speaker (`channel_index`). With multi-mic, shows mic sub-statuses
     /// within each speaker row.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_channel_list(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        type SpeakerGroup = (
+            String,
+            usize,
+            usize,
+            usize,
+            Vec<(usize, ChannelRecordingState)>,
+        );
+
         let d = crate::components::design::Ds::from_cx(cx);
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -1003,13 +1034,6 @@ impl PlayerView {
 
         // Build grouped data:
         // Vec<(speaker_name, speaker_idx, mic_position, first_vec_idx, Vec<(mic_idx, state)>)>
-        type SpeakerGroup = (
-            String,
-            usize,
-            usize,
-            usize,
-            Vec<(usize, ChannelRecordingState)>,
-        );
         let mut speaker_groups: Vec<SpeakerGroup> = Vec::new();
         for (vec_idx, rec) in recording_state.channel_recordings.iter().enumerate() {
             if let Some(group) = speaker_groups.iter_mut().find(|(_, si, pos, _, _)| {
@@ -1017,11 +1041,10 @@ impl PlayerView {
             }) {
                 group.4.push((rec.mic_index, rec.state));
             } else {
-                let speaker_name = rec
-                    .channel_name
-                    .find(" (Mic ")
-                    .map(|pos| rec.channel_name[..pos].to_string())
-                    .unwrap_or_else(|| rec.channel_name.clone());
+                let speaker_name = rec.channel_name.find(" (Mic ").map_or_else(
+                    || rec.channel_name.clone(),
+                    |pos| rec.channel_name[..pos].to_string(),
+                );
                 speaker_groups.push((
                     speaker_name,
                     rec.channel_index,
@@ -1122,7 +1145,7 @@ impl PlayerView {
                                 .child(
                                     div().w(px(100.0)).child(
                                         // intentional: speaker-label column
-                                        Text::label(format!("{}:", speaker_name))
+                                        Text::label(format!("{speaker_name}:"))
                                             .color(theme.text_primary),
                                     ),
                                 )
@@ -1142,8 +1165,7 @@ impl PlayerView {
                                     dev_track!(
                                         Button::new(
                                             SharedString::from(format!(
-                                                "record_speaker_{}",
-                                                first_vec_idx
+                                                "record_speaker_{first_vec_idx}"
                                             )),
                                             button_label,
                                         )
@@ -1167,8 +1189,7 @@ impl PlayerView {
                                         dev_track!(
                                             Button::new(
                                                 SharedString::from(format!(
-                                                    "accept_take_{}",
-                                                    first_vec_idx
+                                                    "accept_take_{first_vec_idx}"
                                                 )),
                                                 recording_text.accept_anyway,
                                             )
@@ -1196,12 +1217,10 @@ impl PlayerView {
                                                                         .app
                                                                         .measurement_state
                                                                         .recording_state
-                                                                        .status_message =
-                                                                        recording_text
+                                                                        .status_message.clone_from(&recording_text
                                                                             .accepted_takes(
                                                                                 accepted,
-                                                                            )
-                                                                            .to_string();
+                                                                            ));
                                                                     state.app.measurement_state.recording_state.status_severity =
                                                                         crate::app::types::recording::RecordingStatusSeverity::Success;
                                                                 }
@@ -1435,8 +1454,63 @@ impl PlayerView {
     /// to the target speaker works (typically the first one for that speaker).
     /// With a single mic this behaves exactly as before; with N mics it captures
     /// all N input channels in one pass and populates every mic entry for the speaker.
-    #[allow(clippy::type_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        reason = "Widget callbacks retain their typed GPUI handler signatures"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub fn start_recording_channel(&mut self, channel_idx: usize, cx: &mut Context<Self>) {
+        struct RecParams {
+            signal_type: SignalType,
+            duration_secs: f32,
+            level_db: f32,
+            sweep_start_freq: f32,
+            sweep_end_freq: f32,
+            bass_octave_duration_s: f32,
+            pre_silence_s: f32,
+            post_silence_s: Option<f32>,
+            output_device: String,
+            input_device: String,
+            output_channel: u16,
+            sample_rate: u32,
+            speaker_name: String,
+            recording_directory: Option<String>,
+            mics: Vec<MicInfo>,
+            ctc_strategy: crate::app::types::CtcMatrixExportStrategy,
+            num_sweeps: u16,
+            #[cfg(feature = "dev-api")]
+            qa_capture: Option<QaCaptureRun>,
+        }
+
+        #[derive(Clone)]
+        struct MicInfo {
+            vec_idx: Option<usize>,
+            #[allow(
+                dead_code,
+                reason = "UI hooks and feature-gated state are retained across application configurations"
+            )]
+            mic_index: usize,
+            is_loopback: bool,
+            speaker_index: usize,
+            mic_position_index: usize,
+            input_channel: u16,
+            calibration: Option<String>,
+            safe_name: String,
+        }
+
+        use sotf_audio_player::recording_helpers::{
+            resolve_mic_calibration, sanitize_recording_name, signal_type_for,
+        };
+
+        use sotf_audio_player::signal_recorder::SignalType;
+
         if !self.require_capture_routing(Some(channel_idx), cx) {
             return;
         }
@@ -1478,46 +1552,8 @@ impl PlayerView {
                 .recording_state
                 .prepare_capture_inputs();
         });
-        use sotf_audio_player::recording_helpers::{
-            resolve_mic_calibration, sanitize_recording_name, signal_type_for,
-        };
-        use sotf_audio_player::signal_recorder::SignalType;
 
         // --- Gather parameters from state ---
-        #[derive(Clone)]
-        struct MicInfo {
-            vec_idx: Option<usize>,
-            #[allow(dead_code)]
-            mic_index: usize,
-            is_loopback: bool,
-            speaker_index: usize,
-            mic_position_index: usize,
-            input_channel: u16,
-            calibration: Option<String>,
-            safe_name: String,
-        }
-
-        struct RecParams {
-            signal_type: SignalType,
-            duration_secs: f32,
-            level_db: f32,
-            sweep_start_freq: f32,
-            sweep_end_freq: f32,
-            bass_octave_duration_s: f32,
-            pre_silence_s: f32,
-            post_silence_s: Option<f32>,
-            output_device: String,
-            input_device: String,
-            output_channel: u16,
-            sample_rate: u32,
-            speaker_name: String,
-            recording_directory: Option<String>,
-            mics: Vec<MicInfo>,
-            ctc_strategy: crate::app::types::CtcMatrixExportStrategy,
-            num_sweeps: u16,
-            #[cfg(feature = "dev-api")]
-            qa_capture: Option<QaCaptureRun>,
-        }
 
         #[cfg(feature = "dev-api")]
         let qa_capture = self.state.update(cx, |state, _| {
@@ -1529,16 +1565,41 @@ impl PlayerView {
             })
         });
 
+        let channels_valid = {
+            let state = self.state.read(cx);
+            let recording = &state.app.measurement_state.recording_state;
+            recording
+                .playback_config
+                .channel_mappings
+                .iter()
+                .all(|mapping| u16::try_from(mapping.interface_channel()).is_ok())
+                && recording
+                    .recording_config
+                    .channel_mappings
+                    .iter()
+                    .all(|&channel| u16::try_from(channel).is_ok())
+                && recording
+                    .recording_config
+                    .ctc_loopback_input_channel
+                    .is_none_or(|channel| u16::try_from(channel).is_ok())
+        };
+        if !channels_valid {
+            self.state.update(cx, |state, cx| {
+                state.app.measurement_state.recording_state.set_status(
+                    "Channel exceeds the capture channel range".to_string(),
+                    crate::app::types::recording::RecordingStatusSeverity::Error,
+                );
+                cx.notify();
+            });
+            return;
+        }
         let params = {
             let state = self.state.read(cx);
             let rec_state = &state.app.measurement_state.recording_state;
 
-            let channel = match rec_state.channel_recordings.get(channel_idx) {
-                Some(c) => c,
-                None => {
-                    log::error!("Invalid channel index: {}", channel_idx);
-                    return;
-                }
+            let Some(channel) = rec_state.channel_recordings.get(channel_idx) else {
+                log::error!("Invalid channel index: {channel_idx}");
+                return;
             };
 
             let speaker_idx = channel.channel_index;
@@ -1554,13 +1615,16 @@ impl PlayerView {
                 .map(|vi| {
                     let r = &rec_state.channel_recordings[vi];
                     let mic_index = imported_route.map_or(r.mic_index, |(_, mic)| mic);
-                    let input_ch = rec_state
-                        .recording_config
-                        .channel_mappings
-                        .get(mic_index)
-                        .or_else(|| rec_state.recording_config.channel_mappings.first())
-                        .copied()
-                        .unwrap_or(0) as u16;
+                    let input_ch = u16::try_from(
+                        rec_state
+                            .recording_config
+                            .channel_mappings
+                            .get(mic_index)
+                            .or_else(|| rec_state.recording_config.channel_mappings.first())
+                            .copied()
+                            .unwrap_or(0),
+                    )
+                    .unwrap_or(0);
                     // Per-mic calibration indexed by mic slot, falling back
                     // to the session-global path (B3) — shared helper.
                     let calibration = resolve_mic_calibration(
@@ -1598,7 +1662,7 @@ impl PlayerView {
                     is_loopback: true,
                     speaker_index: speaker_idx,
                     mic_position_index: position_idx,
-                    input_channel: loopback_input as u16,
+                    input_channel: u16::try_from(loopback_input).unwrap_or(0),
                     calibration: None,
                     safe_name: format!("{}_Pos_{}_Loopback", safe_speaker, position_idx + 1),
                 });
@@ -1608,18 +1672,22 @@ impl PlayerView {
             // to Sweep with a warning).
             let signal_type = signal_type_for(rec_state.signal_type);
 
-            let output_ch = rec_state
-                .playback_config
-                .channel_mappings
-                .get(speaker_idx)
-                .map(|m| m.interface_channel())
-                .unwrap_or(0) as u16;
+            let output_ch = u16::try_from(
+                rec_state
+                    .playback_config
+                    .channel_mappings
+                    .get(speaker_idx)
+                    .map_or(
+                        0,
+                        sotf_audio_player::recording_types::ChannelMapping::interface_channel,
+                    ),
+            )
+            .unwrap_or(0);
 
-            let speaker_name = channel
-                .channel_name
-                .find(" (Mic ")
-                .map(|pos| channel.channel_name[..pos].to_string())
-                .unwrap_or_else(|| channel.channel_name.clone());
+            let speaker_name = channel.channel_name.find(" (Mic ").map_or_else(
+                || channel.channel_name.clone(),
+                |pos| channel.channel_name[..pos].to_string(),
+            );
 
             RecParams {
                 signal_type,
@@ -1651,48 +1719,45 @@ impl PlayerView {
             }
         };
 
-        let recording_dir = match params.recording_directory {
-            Some(ref dir) => std::path::PathBuf::from(dir),
-            None => {
-                let (_, fallback_dir) = crate::app::config::default_recording_paths();
-                let Some(fallback_dir) = fallback_dir else {
-                    log::error!("No recording directory selected");
-                    self.state.update(cx, |state, _| {
-                        let rec_state = &mut state.app.measurement_state.recording_state;
-                        rec_state.status_message =
-                            "Please select a recording directory in the Configuration step"
-                                .to_string();
-                        rec_state.status_severity =
-                            crate::app::types::recording::RecordingStatusSeverity::Error;
-                        // Hard failure before spawn: end the batch, mirroring
-                        // the async error arms (task-9 review C8).
-                        rec_state.auto_record_remaining = false;
-                    });
-                    cx.notify();
-                    return;
-                };
-                let recording_dir = std::path::PathBuf::from(&fallback_dir);
+        let recording_dir = if let Some(ref dir) = params.recording_directory {
+            std::path::PathBuf::from(dir)
+        } else {
+            let (_, fallback_dir) = crate::app::config::default_recording_paths();
+            let Some(fallback_dir) = fallback_dir else {
+                log::error!("No recording directory selected");
                 self.state.update(cx, |state, _| {
-                    state
-                        .app
-                        .measurement_state
-                        .recording_state
-                        .recording_directory = Some(fallback_dir);
+                    let rec_state = &mut state.app.measurement_state.recording_state;
+                    rec_state.status_message =
+                        "Please select a recording directory in the Configuration step".to_string();
+                    rec_state.status_severity =
+                        crate::app::types::recording::RecordingStatusSeverity::Error;
+                    // Hard failure before spawn: end the batch, mirroring
+                    // the async error arms (task-9 review C8).
+                    rec_state.auto_record_remaining = false;
                 });
-                recording_dir
-            }
+                cx.notify();
+                return;
+            };
+            let recording_dir = std::path::PathBuf::from(&fallback_dir);
+            self.state.update(cx, |state, _| {
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .recording_directory = Some(fallback_dir);
+            });
+            recording_dir
         };
 
         // Ensure the recording directory exists before writing WAV/CSV files
         if let Err(e) = std::fs::create_dir_all(&recording_dir) {
             log::error!(
-                "Failed to create recording directory {:?}: {}",
-                recording_dir,
-                e
+                "Failed to create recording directory {}: {e}",
+                recording_dir.display()
             );
             self.state.update(cx, |state, _| {
                 let rec_state = &mut state.app.measurement_state.recording_state;
-                rec_state.status_message = format!("Cannot create recording directory: {}", e);
+                rec_state.status_message = format!("Cannot create recording directory: {e}");
                 rec_state.status_severity =
                     crate::app::types::recording::RecordingStatusSeverity::Error;
                 // Hard failure before spawn: end the batch (task-9 review C8).
@@ -1718,7 +1783,7 @@ impl PlayerView {
                     recording.result = None; // Clear old result so graphs reset
                 }
             }
-            rec_state.sweep_cancel_requested.clone()
+            std::sync::Arc::clone(&rec_state.sweep_cancel_requested)
         });
         let (capture_generation, level_meter) = self.state.update(cx, |state, _| {
             let rec_state = &mut state.app.measurement_state.recording_state;
@@ -1735,7 +1800,7 @@ impl PlayerView {
             // feeds it and the UI poll task below renders it.
             let level_meter =
                 std::sync::Arc::new(sotf_audio_player::signal_recorder::CaptureLevelMeter::new());
-            rec_state.live_level_meter = Some(level_meter.clone());
+            rec_state.live_level_meter = Some(std::sync::Arc::clone(&level_meter));
             rec_state.live_level = None;
             rec_state.last_take_level = None;
             (rec_state.capture_generation, level_meter)
@@ -1747,11 +1812,7 @@ impl PlayerView {
             "Recording params: speaker={}, speaker_idx={}, output_ch={}, sweep={:.0}-{:.0}Hz, sr={}, level={:.1}dB, mics={}, mic_vec_indices={:?}",
             params.speaker_name,
             // Re-read speaker_idx from the first mic entry
-            params
-                .mics
-                .first()
-                .map(|m| { m.speaker_index })
-                .unwrap_or(999),
+            params.mics.first().map_or(999, |m| { m.speaker_index }),
             params.output_channel,
             params.sweep_start_freq,
             params.sweep_end_freq,
@@ -1795,7 +1856,7 @@ impl PlayerView {
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
         let num_sweeps = params.num_sweeps;
-        let capture_level_meter = level_meter.clone();
+        let capture_level_meter = std::sync::Arc::clone(&level_meter);
         #[cfg(feature = "dev-api")]
         let qa_capture = params.qa_capture;
 
@@ -1811,10 +1872,10 @@ impl PlayerView {
             let capture_sweep_start_freq = sweep_start_freq;
             let capture_sweep_end_freq = sweep_end_freq;
             let capture_executor = cx.background_executor();
-            let executor_level_meter = capture_level_meter.clone();
+            let executor_level_meter = std::sync::Arc::clone(&capture_level_meter);
             let results = capture_executor
                 .spawn(async move {
-                    use sotf_audio_player::signal_recorder::SignalType;
+
 
                     // Preparation runs on this executor thread, not the
                     // UI thread: stimulus synthesis, the effective
@@ -1828,7 +1889,7 @@ impl PlayerView {
                     use sotf_audio_player::signal_recorder::{
                         prepare_measurement_signal, write_temp_wav,
                     };
-                    let amplitude = measurement_amplitude(level_db as f64);
+                    let amplitude = measurement_amplitude(f64::from(level_db));
                     let sig_params = capture_signal_params(
                         signal_type,
                         capture_sweep_start_freq,
@@ -1866,8 +1927,8 @@ impl PlayerView {
                     };
                     let temp_wav_path = temp_wav.path().to_path_buf();
                     // Kept alive until the capture calls below finish.
-                    let _temp_wav_guard = &temp_wav;
-                    let _ = _temp_wav_guard;
+                    let temp_wav_guard = &temp_wav;
+                    let _ = temp_wav_guard;
                     let ctc_reference = if ctc_strategy
                         == crate::app::types::CtcMatrixExportStrategy::RawSweep
                     {
@@ -1894,11 +1955,7 @@ impl PlayerView {
                         None
                     };
 
-                    let sweep_range = if signal_type == SignalType::Sweep {
-                        Some((capture_sweep_start_freq, capture_sweep_end_freq))
-                    } else {
-                        None
-                    };
+                    let sweep_range = (signal_type == SignalType::Sweep).then_some((capture_sweep_start_freq, capture_sweep_end_freq));
                     let out_dev = if output_device.is_empty() {
                         None
                     } else {
@@ -1911,11 +1968,7 @@ impl PlayerView {
                     };
                     let num_mics = capture_mics.len();
                     log::info!(
-                        "Starting recording: speaker={}, output_ch={}, {} mics, input_chs={:?}",
-                        capture_speaker_name,
-                        output_channel,
-                        num_mics,
-                        input_channels,
+                        "Starting recording: speaker={capture_speaker_name}, output_ch={output_channel}, {num_mics} mics, input_chs={input_channels:?}",
                     );
 
                     // Keep production and QA runs on the same analysis path.
@@ -2045,8 +2098,8 @@ impl PlayerView {
                         let mut recorder = wire.recorder("qa_recording");
                         {
                             use sotf_audio_player::signal_recorder::SweepRecorder as _;
-                            recorder.set_level_meter(executor_level_meter.clone());
-                        }
+                            recorder.set_level_meter(std::sync::Arc::clone(&executor_level_meter));
+                        };
                         if num_mics <= 1 {
                             record_and_analyze_with_recorder(
                                 &mut playback,
@@ -2188,9 +2241,7 @@ impl PlayerView {
                                 ) {
                                     any_low_signal = true;
                                     log::warn!(
-                                        "Low measured level: {} band average = {:.1} dB",
-                                        mic_name,
-                                        avg_spl,
+                                        "Low measured level: {mic_name} band average = {avg_spl:.1} dB",
                                     );
                                 }
 
@@ -2278,11 +2329,7 @@ impl PlayerView {
                                 .app
                                 .measurement_state
                                 .recording_state
-                                .noise_floor_warning = if any_low_signal {
-                                Some(low_measured_level_warning(&speaker_name))
-                            } else {
-                                None
-                            };
+                                .noise_floor_warning = any_low_signal.then(|| low_measured_level_warning(&speaker_name));
 
                             let mut msg = if any_review {
                                 format!(
@@ -2291,11 +2338,11 @@ impl PlayerView {
                                     first_verdict.unwrap_or_default()
                                 )
                             } else {
-                                format!("{} recording complete", speaker_name)
+                                format!("{speaker_name} recording complete")
                             };
                             if let Some(dropout) = dropout_warning(max_dropped) {
-                                log::warn!("Dropout warning: {}", dropout);
-                                msg = format!("{} — {}", msg, dropout);
+                                log::warn!("Dropout warning: {dropout}");
+                                msg = format!("{msg} — {dropout}");
                             }
                             state.app.measurement_state.recording_state.status_message = msg;
                             state.app.measurement_state.recording_state.status_severity =
@@ -2351,7 +2398,7 @@ impl PlayerView {
                             false
                         }
                         Err(e) => {
-                            log::error!("Recording failed: {}", e);
+                            log::error!("Recording failed: {e}");
                             for mic in &mics {
                                 let Some(vec_idx) = mic.vec_idx else {
                                     continue;
@@ -2375,7 +2422,7 @@ impl PlayerView {
                                 .recording_state
                                 .noise_floor_warning = None;
                             state.app.measurement_state.recording_state.status_message =
-                                format!("Recording error: {}", e);
+                                format!("Recording error: {e}");
                             state.app.measurement_state.recording_state.status_severity =
                                 crate::app::types::recording::RecordingStatusSeverity::Error;
                             state
@@ -2404,7 +2451,7 @@ impl PlayerView {
                     // to the next seat, which would skip the move-position
                     // prompt and record it without the mics being moved.
                     let finished_position =
-                        mics.first().map(|m| m.mic_position_index).unwrap_or(0);
+                        mics.first().map_or(0, |m| m.mic_position_index);
                     if should_continue {
                         state
                             .app
@@ -2418,7 +2465,7 @@ impl PlayerView {
 
             match next_action {
                 BatchNextAction::StartChannel(next_idx) => {
-                    log::info!("Auto-recording: starting next speaker at idx {}", next_idx);
+                    log::info!("Auto-recording: starting next speaker at idx {next_idx}");
                     let _ = weak_view.update(cx, |view, cx| {
                         view.start_recording_channel(next_idx, cx);
                     });
@@ -2479,7 +2526,7 @@ impl PlayerView {
         // meter is the installed one; the loop exits when the take ends
         // (meter cleared/replaced) or the view goes away.
         {
-            let poll_meter = level_meter.clone();
+            let poll_meter = std::sync::Arc::clone(&level_meter);
             let weak_poll_view = cx.weak_entity();
             cx.spawn(async move |_, cx| {
                 loop {
@@ -2509,7 +2556,7 @@ impl PlayerView {
                 }
             })
             .detach();
-        }
+        };
 
         log::info!("Recording started for speaker {}", params.speaker_name);
     }
@@ -2760,8 +2807,26 @@ impl PlayerView {
     }
 
     /// Save recordings to a JSON file in the recording directory
-    /// Outputs roomeq_model::RoomConfig format compatible with roomeq CLI
+    /// Outputs `roomeq_model::RoomConfig` format compatible with roomeq CLI
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn save_recordings(&mut self, cx: &mut Context<Self>) {
+        use crate::app::types::RoomEqMeasurementsFile;
+
+        use roomeq_model::OptimizerConfig;
+
+        use roomeq_model::RoomConfig;
+
+        use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
+
+        use sotf_audio_player::room_eq_types::{
+            DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
+            ctc_system_config_for_speaker_names, default_bass_management_crossovers,
+            room_eq_channel_is_bass_output,
+        };
+
         if !self
             .state
             .read(cx)
@@ -2807,23 +2872,14 @@ impl PlayerView {
             });
             return;
         }
-        use crate::app::types::RoomEqMeasurementsFile;
-        use roomeq_model::OptimizerConfig;
-        use roomeq_model::RoomConfig;
-        use sotf_audio_player::recording_helpers::RECORDINGS_FILENAME;
-        use sotf_audio_player::room_eq_types::{
-            DEFAULT_BASS_MANAGEMENT_CROSSOVER_KEY, build_speakers_from_recordings,
-            ctc_system_config_for_speaker_names, default_bass_management_crossovers,
-            room_eq_channel_is_bass_output,
-        };
 
         let recording_dir = match self.ensure_named_recording_directory(cx) {
             Ok(dir) => dir,
             Err(e) => {
-                log::error!("Failed to prepare recording directory: {}", e);
+                log::error!("Failed to prepare recording directory: {e}");
                 self.state.update(cx, |state, _| {
                     state.app.measurement_state.recording_state.status_message =
-                        format!("Failed to prepare output directory: {}", e);
+                        format!("Failed to prepare output directory: {e}");
                     state.app.measurement_state.recording_state.status_severity =
                         crate::app::types::recording::RecordingStatusSeverity::Error;
                 });
@@ -2846,7 +2902,9 @@ impl PlayerView {
                         .get_or_insert_with(Default::default);
                     rec.model
                         .apply_session_metadata(metadata, &rec.metadata_channel_names());
-                    metadata.recording_directory = rec.recording_directory.clone();
+                    metadata
+                        .recording_directory
+                        .clone_from(&rec.recording_directory);
                     Ok::<_, String>(configuration)
                 })
                 .transpose()
@@ -2922,8 +2980,10 @@ impl PlayerView {
                 ctc_reference_sweep = rec_state.ctc_reference_sweep_path.as_ref().map(|path| {
                     std::path::Path::new(path)
                         .strip_prefix(&recording_dir)
-                        .map(|p| p.to_path_buf())
-                        .unwrap_or_else(|_| std::path::PathBuf::from(path))
+                        .map_or_else(
+                            |_| std::path::PathBuf::from(path),
+                            std::path::Path::to_path_buf,
+                        )
                 });
                 match RoomEqMeasurementsFile::build_ctc_measurements_from_recordings_with_strategy(
                     recordings,
@@ -2935,22 +2995,20 @@ impl PlayerView {
                     rec_state.recording_config.ctc_loopback_input_channel,
                     &rec_state.transfer_matrix_loopbacks,
                 ) {
-                    Ok(Some(measurements)) => match sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
-                        recordings,
-                        &channel_names,
-                        &measurements,
-                    ) {
-                        Some(range) => {
-                            ctc_raw_sweep_range = Some(range);
-                            Some(measurements)
-                        }
-                        None => {
-                            ctc_raw_fallback = true;
-                            log::warn!(
-                                "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
-                            );
-                            None
-                        }
+                    Ok(Some(measurements)) => if let Some(range) =
+                        sotf_audio_player::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                            recordings,
+                            &channel_names,
+                            &measurements,
+                        ) {
+                        ctc_raw_sweep_range = Some(range);
+                        Some(measurements)
+                    } else {
+                        ctc_raw_fallback = true;
+                        log::warn!(
+                            "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
+                        );
+                        None
                     },
                     Ok(None) => {
                         ctc_raw_fallback = true;
@@ -2961,7 +3019,7 @@ impl PlayerView {
                     }
                     Err(e) => {
                         ctc_raw_fallback = true;
-                        log::warn!("Could not export CTC transfer matrix: {}", e);
+                        log::warn!("Could not export CTC transfer matrix: {e}");
                         None
                     }
                 }
@@ -2979,7 +3037,7 @@ impl PlayerView {
                     ) {
                         Ok(measurements) => measurements,
                         Err(e) => {
-                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            log::warn!("Could not export CTC transfer matrix: {e}");
                             None
                         }
                     };
@@ -3042,12 +3100,12 @@ impl PlayerView {
                         None
                     },
                     sweep_start_hz: if raw {
-                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                        ctc_raw_sweep_range.map(|(start, _)| f64::from(start))
                     } else {
                         None
                     },
                     sweep_end_hz: if raw {
-                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                        ctc_raw_sweep_range.map(|(_, end)| f64::from(end))
                     } else {
                         None
                     },
@@ -3078,9 +3136,9 @@ impl PlayerView {
                 crossovers,
                 target_curve: None,
                 optimizer: OptimizerConfig::default(),
-                provenance: Default::default(),
+                provenance: roomeq_model::ProvenanceConfig::default(),
                 recording_config: Some(recording_config),
-                measured_impulse_responses: Default::default(),
+                measured_impulse_responses: std::collections::BTreeMap::default(),
                 ctc,
                 reporting: None,
                 cea2034_cache: None,
@@ -3106,10 +3164,10 @@ impl PlayerView {
                     &json_path,
                     json.as_bytes(),
                 ) {
-                    log::error!("Failed to write recordings file: {}", e);
+                    log::error!("Failed to write recordings file: {e}");
                     self.state.update(cx, |state, _| {
                         state.app.measurement_state.recording_state.status_message =
-                            format!("Failed to save: {}", e);
+                            format!("Failed to save: {e}");
                         state.app.measurement_state.recording_state.status_severity =
                             crate::app::types::recording::RecordingStatusSeverity::Error;
                     });
@@ -3124,7 +3182,7 @@ impl PlayerView {
                     if let Some(error) = &quality_save_error {
                         log::warn!("Failed to save recording quality evidence: {error}");
                     }
-                    log::info!("Recordings saved to {:?}", json_path);
+                    log::info!("Recordings saved to {}", json_path.display());
                     self.state.update(cx, |state, _| {
                         state
                             .app
@@ -3137,10 +3195,9 @@ impl PlayerView {
                         } else {
                             ""
                         };
-                        let quality_suffix = quality_save_error
-                            .as_ref()
-                            .map(|error| format!(" (quality evidence not saved: {error})"))
-                            .unwrap_or_default();
+                        let quality_suffix = quality_save_error.as_ref().map_or_default(|error| {
+                            format!(" (quality evidence not saved: {error})")
+                        });
                         state.app.measurement_state.recording_state.status_message = format!(
                             "Saved to {}{}{}",
                             json_path.display(),
@@ -3157,10 +3214,10 @@ impl PlayerView {
                 }
             }
             Err(e) => {
-                log::error!("Failed to serialize recordings: {}", e);
+                log::error!("Failed to serialize recordings: {e}");
                 self.state.update(cx, |state, _| {
                     state.app.measurement_state.recording_state.status_message =
-                        format!("Failed to serialize: {}", e);
+                        format!("Failed to serialize: {e}");
                     state.app.measurement_state.recording_state.status_severity =
                         crate::app::types::recording::RecordingStatusSeverity::Error;
                 });
@@ -3171,7 +3228,7 @@ impl PlayerView {
         log::info!("Save recordings completed");
     }
 
-    /// Load recordings from a JSON file (autoeq RoomConfig format)
+    /// Load recordings from a JSON file (autoeq `RoomConfig` format)
     pub(crate) fn load_recordings_from_file(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -3186,10 +3243,10 @@ impl PlayerView {
 
                 if let Some(file) = file {
                     let file_path = file.path().to_path_buf();
-                    let file_dir = file_path.parent().map(|p| p.to_path_buf());
+                    let file_dir = file_path.parent().map(std::path::Path::to_path_buf);
 
                     // Get file size
-                    let file_size = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
+                    let file_size = std::fs::metadata(&file_path).map_or(0, |m| m.len());
 
                     let Some(state_entity) = weak_state.upgrade() else {
                         return;
@@ -3210,10 +3267,10 @@ impl PlayerView {
                             );
                         }
                         Err(e) => {
-                            log::error!("Failed to read recordings file: {}", e);
+                            log::error!("Failed to read recordings file: {e}");
                             state_entity.update(&mut cx.clone(), |state, cx| {
                                 state.app.measurement_state.recording_state.status_message =
-                                    format!("Failed to read: {}", e);
+                                    format!("Failed to read: {e}");
                                 state.app.measurement_state.recording_state.status_severity =
                                     crate::app::types::recording::RecordingStatusSeverity::Error;
                                 cx.notify();
@@ -3229,7 +3286,11 @@ impl PlayerView {
     }
 
     /// Internal function to load recordings from parsed JSON
-    /// Supports the current RoomConfig format.
+    /// Supports the current `RoomConfig` format.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(crate) fn load_recordings_internal(
         state_entity: Entity<crate::app::state::AppState>,
         cx: &mut gpui::AsyncApp,
@@ -3328,6 +3389,14 @@ impl PlayerView {
 
     /// Render the migration confirmation modal
     /// Using a simple manual modal instead of Dialog component to debug click issues
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn render_migration_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -3342,8 +3411,7 @@ impl PlayerView {
         // Extract just the filename for display
         let file_name = std::path::Path::new(&file_path)
             .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| file_path.clone());
+            .map_or_else(|| file_path.clone(), |n| n.to_string_lossy().to_string());
 
         let view = cx.entity().clone();
         let view2 = view.clone();
@@ -3445,7 +3513,7 @@ impl PlayerView {
                                                         .color(theme.text_secondary),
                                                 )
                                                 .child(
-                                                    Text::new(format!("{:.2} MB", file_size_mb))
+                                                    Text::new(format!("{file_size_mb:.2} MB"))
                                                         .size(TextSize::Xs)
                                                         .color(theme.warning),
                                                 ),
@@ -3461,7 +3529,7 @@ impl PlayerView {
                                                     .color(theme.text_secondary),
                                                 )
                                                 .child(
-                                                    Text::new(format!("{}", channel_count))
+                                                    Text::new(format!("{channel_count}"))
                                                         .size(TextSize::Xs)
                                                         .color(theme.text_primary),
                                                 ),
@@ -3608,8 +3676,7 @@ impl PlayerView {
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(theme.text_primary)
                                     .child(format!(
-                                        "Move microphones to position {} of {}",
-                                        next_pos_one_based, total_positions
+                                        "Move microphones to position {next_pos_one_based} of {total_positions}"
                                     )),
                             ),
                     )
@@ -3695,10 +3762,7 @@ impl PlayerView {
         });
         match action {
             BatchNextAction::StartChannel(idx) => {
-                log::info!(
-                    "Auto-record: resuming batch after review accept, channel {}",
-                    idx
-                );
+                log::info!("Auto-record: resuming batch after review accept, channel {idx}");
                 self.start_recording_channel(idx, cx);
             }
             BatchNextAction::Save => {

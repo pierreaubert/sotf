@@ -4,7 +4,7 @@ pub(super) fn peer_fingerprints_match(expected: &str, actual: &str) -> bool {
     fn compact(value: &str) -> String {
         value
             .chars()
-            .filter(|ch| ch.is_ascii_hexdigit())
+            .filter(char::is_ascii_hexdigit)
             .flat_map(char::to_lowercase)
             .collect()
     }
@@ -14,7 +14,10 @@ pub(super) fn peer_fingerprints_match(expected: &str, actual: &str) -> bool {
 }
 
 /// Shared DNS resolution step.
-#[allow(clippy::result_large_err)]
+#[allow(
+    clippy::result_large_err,
+    reason = "Scan failures carry structured provider and source diagnostics"
+)]
 pub(super) async fn resolve_dns(
     host: &str,
     port: u16,

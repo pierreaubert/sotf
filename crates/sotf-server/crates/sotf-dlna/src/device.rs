@@ -12,6 +12,7 @@ pub enum DlnaDeviceType {
 }
 
 impl DlnaDeviceType {
+    #[must_use]
     pub fn urn(&self) -> &str {
         match self {
             DlnaDeviceType::MediaRenderer => "urn:schemas-upnp-org:device:MediaRenderer:1",
@@ -20,7 +21,7 @@ impl DlnaDeviceType {
     }
 }
 
-/// UPnP device description for SSDP announcements.
+/// `UPnP` device description for SSDP announcements.
 #[derive(Debug, Clone)]
 pub struct DlnaDevice {
     pub device_type: DlnaDeviceType,
@@ -34,6 +35,7 @@ pub struct DlnaDevice {
 }
 
 impl DlnaDevice {
+    #[must_use]
     pub fn new_renderer(name: &str, port: u16) -> Self {
         Self {
             device_type: DlnaDeviceType::MediaRenderer,
@@ -46,6 +48,7 @@ impl DlnaDevice {
         }
     }
 
+    #[must_use]
     pub fn new_server(name: &str, port: u16) -> Self {
         Self {
             device_type: DlnaDeviceType::MediaServer,
@@ -58,12 +61,14 @@ impl DlnaDevice {
         }
     }
 
-    /// UPnP USN (Unique Service Name).
+    /// `UPnP` USN (Unique Service Name).
+    #[must_use]
     pub fn usn(&self) -> String {
         format!("uuid:{}::{}", self.uuid, self.device_type.urn())
     }
 
-    /// Generate the UPnP device description XML.
+    /// Generate the `UPnP` device description XML.
+    #[must_use]
     pub fn description_xml(&self, base_url: &str) -> String {
         let services_xml = match self.device_type {
             DlnaDeviceType::MediaRenderer => renderer_services_xml(),
@@ -98,7 +103,7 @@ impl DlnaDevice {
 }
 
 fn renderer_services_xml() -> String {
-    r#"    <serviceList>
+    r"    <serviceList>
       <service>
         <serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType>
         <serviceId>urn:upnp-org:serviceId:AVTransport</serviceId>
@@ -120,12 +125,12 @@ fn renderer_services_xml() -> String {
         <eventSubURL>/ConnectionManager/event</eventSubURL>
         <SCPDURL>/ConnectionManager/scpd.xml</SCPDURL>
       </service>
-    </serviceList>"#
+    </serviceList>"
         .to_string()
 }
 
 fn server_services_xml() -> String {
-    r#"    <serviceList>
+    r"    <serviceList>
       <service>
         <serviceType>urn:schemas-upnp-org:service:ContentDirectory:1</serviceType>
         <serviceId>urn:upnp-org:serviceId:ContentDirectory</serviceId>
@@ -140,7 +145,7 @@ fn server_services_xml() -> String {
         <eventSubURL>/ConnectionManager/event</eventSubURL>
         <SCPDURL>/ConnectionManager/scpd.xml</SCPDURL>
       </service>
-    </serviceList>"#
+    </serviceList>"
         .to_string()
 }
 

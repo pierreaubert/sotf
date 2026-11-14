@@ -4,12 +4,14 @@ use gpui_ui_kit::i18n::Language;
 use std::collections::HashMap;
 
 /// Translation storage
+#[derive(Debug)]
 pub struct AutoEqTranslations {
     pub(super) translations: TranslationMap,
 }
 
 impl AutoEqTranslations {
     /// Create new empty translations
+    #[must_use]
     pub fn new() -> Self {
         let mut t = HashMap::new();
         Self::add_english(&mut t);
@@ -20,6 +22,7 @@ impl AutoEqTranslations {
     }
 
     /// Get translation for a language and key
+    #[must_use]
     pub fn get(&self, lang: Language, key: DocKey) -> &'static str {
         self.translations
             .get(&(lang, key))
@@ -28,8 +31,47 @@ impl AutoEqTranslations {
             .unwrap_or("???")
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub(super) fn add_english(t: &mut TranslationMap) {
-        use DocKey::*;
+        use DocKey::{
+            DefaultAdaptiveWeights, DefaultAlgorithm, DefaultAutoDetectF3, DefaultDbRange,
+            DefaultEnableRefine, DefaultFilterOrder, DefaultFirPhase, DefaultFirTaps,
+            DefaultFrequencyRange, DefaultFrequencyRange2, DefaultLocalAlgorithm,
+            DefaultLossFunction, DefaultLowFreqMaxQ, DefaultMaxDelay, DefaultMaxDeviation,
+            DefaultMaxEvaluations, DefaultMode, DefaultMutationF, DefaultNumFilters,
+            DefaultPeqModel, DefaultPopulation, DefaultQRange, DefaultRecombinationCr,
+            DefaultSchroederFrequency, DefaultSlopeDbOct, DefaultStrategy, DefaultStrategy2,
+            DefaultSystemType, DefaultTargetCurve, DefaultTiltType, DefaultTolerance,
+            DescAdaptiveWeights, DescAlgorithm, DescAutoDetectF3, DescDbRange, DescEnableRefine,
+            DescFilterOrder, DescFirPhase, DescFirTaps, DescFrequencyRange, DescFrequencyRange2,
+            DescLocalAlgorithm, DescLossFunction, DescLowFreqMaxQ, DescMaxDelay, DescMaxDeviation,
+            DescMaxEvaluations, DescMode, DescMutationF, DescNumFilters, DescPeqModel,
+            DescPopulation, DescQRange, DescRecombinationCr, DescSchroederFrequency,
+            DescSlopeDbOct, DescStrategy, DescStrategy2, DescSystemType, DescTargetCurve,
+            DescTiltType, DescTolerance, DocDeParamsOverview, DocDeParamsTitle,
+            DocEqDesignOverview, DocEqDesignTitle, DocExcursionOverview, DocExcursionTitle,
+            DocGoalsOverview, DocGoalsTitle, DocMultiSeatOverview, DocMultiSeatTitle,
+            DocOptimizerOverview, DocOptimizerTitle, DocOverviewOverview, DocOverviewTitle,
+            DocPeqModelOverview, DocPeqModelTitle, DocPhaseAlignmentOverview,
+            DocPhaseAlignmentTitle, DocRangesOverview, DocRangesTitle, DocRefinementOverview,
+            DocRefinementTitle, DocSchroederOverview, DocSchroederTitle, DocTargetTiltOverview,
+            DocTargetTiltTitle, FieldAdaptiveWeights, FieldAlgorithm, FieldAutoDetectF3,
+            FieldDbRange, FieldEnableRefine, FieldFilterOrder, FieldFirPhase, FieldFirTaps,
+            FieldFrequencyRange, FieldFrequencyRange2, FieldLocalAlgorithm, FieldLossFunction,
+            FieldLowFreqMaxQ, FieldMaxDelay, FieldMaxDeviation, FieldMaxEvaluations, FieldMode,
+            FieldMutationF, FieldNumFilters, FieldPeqModel, FieldPopulation, FieldQRange,
+            FieldRecombinationCr, FieldSchroederFrequency, FieldSlopeDbOct, FieldStrategy,
+            FieldStrategy2, FieldSystemType, FieldTargetCurve, FieldTiltType, FieldTolerance,
+            LabelDefault, LabelTip, TipAdaptiveWeights, TipAlgorithm, TipAutoDetectF3, TipDbRange,
+            TipEnableRefine, TipFilterOrder, TipFirPhase, TipFirTaps, TipFrequencyRange,
+            TipFrequencyRange2, TipLocalAlgorithm, TipLossFunction, TipLowFreqMaxQ, TipMaxDelay,
+            TipMaxDeviation, TipMaxEvaluations, TipMode, TipMutationF, TipNumFilters, TipPeqModel,
+            TipPopulation, TipQRange, TipRecombinationCr, TipSchroederFrequency, TipSlopeDbOct,
+            TipStrategy, TipStrategy2, TipSystemType, TipTargetCurve, TipTiltType, TipTolerance,
+        };
 
         // Block titles
         t.insert((Language::English, DocOverviewTitle), "AutoEQ Parameters");
@@ -309,8 +351,47 @@ impl AutoEqTranslations {
         t.insert((Language::English, LabelTip), "Tip:");
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub(super) fn add_french(t: &mut TranslationMap) {
-        use DocKey::*;
+        use DocKey::{
+            DefaultAdaptiveWeights, DefaultAlgorithm, DefaultAutoDetectF3, DefaultDbRange,
+            DefaultEnableRefine, DefaultFilterOrder, DefaultFirPhase, DefaultFirTaps,
+            DefaultFrequencyRange, DefaultFrequencyRange2, DefaultLocalAlgorithm,
+            DefaultLossFunction, DefaultLowFreqMaxQ, DefaultMaxDelay, DefaultMaxDeviation,
+            DefaultMaxEvaluations, DefaultMode, DefaultMutationF, DefaultNumFilters,
+            DefaultPeqModel, DefaultPopulation, DefaultQRange, DefaultRecombinationCr,
+            DefaultSchroederFrequency, DefaultSlopeDbOct, DefaultStrategy, DefaultStrategy2,
+            DefaultSystemType, DefaultTargetCurve, DefaultTiltType, DefaultTolerance,
+            DescAdaptiveWeights, DescAlgorithm, DescAutoDetectF3, DescDbRange, DescEnableRefine,
+            DescFilterOrder, DescFirPhase, DescFirTaps, DescFrequencyRange, DescFrequencyRange2,
+            DescLocalAlgorithm, DescLossFunction, DescLowFreqMaxQ, DescMaxDelay, DescMaxDeviation,
+            DescMaxEvaluations, DescMode, DescMutationF, DescNumFilters, DescPeqModel,
+            DescPopulation, DescQRange, DescRecombinationCr, DescSchroederFrequency,
+            DescSlopeDbOct, DescStrategy, DescStrategy2, DescSystemType, DescTargetCurve,
+            DescTiltType, DescTolerance, DocDeParamsOverview, DocDeParamsTitle,
+            DocEqDesignOverview, DocEqDesignTitle, DocExcursionOverview, DocExcursionTitle,
+            DocGoalsOverview, DocGoalsTitle, DocMultiSeatOverview, DocMultiSeatTitle,
+            DocOptimizerOverview, DocOptimizerTitle, DocOverviewOverview, DocOverviewTitle,
+            DocPeqModelOverview, DocPeqModelTitle, DocPhaseAlignmentOverview,
+            DocPhaseAlignmentTitle, DocRangesOverview, DocRangesTitle, DocRefinementOverview,
+            DocRefinementTitle, DocSchroederOverview, DocSchroederTitle, DocTargetTiltOverview,
+            DocTargetTiltTitle, FieldAdaptiveWeights, FieldAlgorithm, FieldAutoDetectF3,
+            FieldDbRange, FieldEnableRefine, FieldFilterOrder, FieldFirPhase, FieldFirTaps,
+            FieldFrequencyRange, FieldFrequencyRange2, FieldLocalAlgorithm, FieldLossFunction,
+            FieldLowFreqMaxQ, FieldMaxDelay, FieldMaxDeviation, FieldMaxEvaluations, FieldMode,
+            FieldMutationF, FieldNumFilters, FieldPeqModel, FieldPopulation, FieldQRange,
+            FieldRecombinationCr, FieldSchroederFrequency, FieldSlopeDbOct, FieldStrategy,
+            FieldStrategy2, FieldSystemType, FieldTargetCurve, FieldTiltType, FieldTolerance,
+            LabelDefault, LabelTip, TipAdaptiveWeights, TipAlgorithm, TipAutoDetectF3, TipDbRange,
+            TipEnableRefine, TipFilterOrder, TipFirPhase, TipFirTaps, TipFrequencyRange,
+            TipFrequencyRange2, TipLocalAlgorithm, TipLossFunction, TipLowFreqMaxQ, TipMaxDelay,
+            TipMaxDeviation, TipMaxEvaluations, TipMode, TipMutationF, TipNumFilters, TipPeqModel,
+            TipPopulation, TipQRange, TipRecombinationCr, TipSchroederFrequency, TipSlopeDbOct,
+            TipStrategy, TipStrategy2, TipSystemType, TipTargetCurve, TipTiltType, TipTolerance,
+        };
 
         // Block titles
         t.insert((Language::French, DocOverviewTitle), "Paramètres AutoEQ");
@@ -569,8 +650,47 @@ impl AutoEqTranslations {
         t.insert((Language::French, LabelTip), "Astuce :");
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub(super) fn add_german(t: &mut TranslationMap) {
-        use DocKey::*;
+        use DocKey::{
+            DefaultAdaptiveWeights, DefaultAlgorithm, DefaultAutoDetectF3, DefaultDbRange,
+            DefaultEnableRefine, DefaultFilterOrder, DefaultFirPhase, DefaultFirTaps,
+            DefaultFrequencyRange, DefaultFrequencyRange2, DefaultLocalAlgorithm,
+            DefaultLossFunction, DefaultLowFreqMaxQ, DefaultMaxDelay, DefaultMaxDeviation,
+            DefaultMaxEvaluations, DefaultMode, DefaultMutationF, DefaultNumFilters,
+            DefaultPeqModel, DefaultPopulation, DefaultQRange, DefaultRecombinationCr,
+            DefaultSchroederFrequency, DefaultSlopeDbOct, DefaultStrategy, DefaultStrategy2,
+            DefaultSystemType, DefaultTargetCurve, DefaultTiltType, DefaultTolerance,
+            DescAdaptiveWeights, DescAlgorithm, DescAutoDetectF3, DescDbRange, DescEnableRefine,
+            DescFilterOrder, DescFirPhase, DescFirTaps, DescFrequencyRange, DescFrequencyRange2,
+            DescLocalAlgorithm, DescLossFunction, DescLowFreqMaxQ, DescMaxDelay, DescMaxDeviation,
+            DescMaxEvaluations, DescMode, DescMutationF, DescNumFilters, DescPeqModel,
+            DescPopulation, DescQRange, DescRecombinationCr, DescSchroederFrequency,
+            DescSlopeDbOct, DescStrategy, DescStrategy2, DescSystemType, DescTargetCurve,
+            DescTiltType, DescTolerance, DocDeParamsOverview, DocDeParamsTitle,
+            DocEqDesignOverview, DocEqDesignTitle, DocExcursionOverview, DocExcursionTitle,
+            DocGoalsOverview, DocGoalsTitle, DocMultiSeatOverview, DocMultiSeatTitle,
+            DocOptimizerOverview, DocOptimizerTitle, DocOverviewOverview, DocOverviewTitle,
+            DocPeqModelOverview, DocPeqModelTitle, DocPhaseAlignmentOverview,
+            DocPhaseAlignmentTitle, DocRangesOverview, DocRangesTitle, DocRefinementOverview,
+            DocRefinementTitle, DocSchroederOverview, DocSchroederTitle, DocTargetTiltOverview,
+            DocTargetTiltTitle, FieldAdaptiveWeights, FieldAlgorithm, FieldAutoDetectF3,
+            FieldDbRange, FieldEnableRefine, FieldFilterOrder, FieldFirPhase, FieldFirTaps,
+            FieldFrequencyRange, FieldFrequencyRange2, FieldLocalAlgorithm, FieldLossFunction,
+            FieldLowFreqMaxQ, FieldMaxDelay, FieldMaxDeviation, FieldMaxEvaluations, FieldMode,
+            FieldMutationF, FieldNumFilters, FieldPeqModel, FieldPopulation, FieldQRange,
+            FieldRecombinationCr, FieldSchroederFrequency, FieldSlopeDbOct, FieldStrategy,
+            FieldStrategy2, FieldSystemType, FieldTargetCurve, FieldTiltType, FieldTolerance,
+            LabelDefault, LabelTip, TipAdaptiveWeights, TipAlgorithm, TipAutoDetectF3, TipDbRange,
+            TipEnableRefine, TipFilterOrder, TipFirPhase, TipFirTaps, TipFrequencyRange,
+            TipFrequencyRange2, TipLocalAlgorithm, TipLossFunction, TipLowFreqMaxQ, TipMaxDelay,
+            TipMaxDeviation, TipMaxEvaluations, TipMode, TipMutationF, TipNumFilters, TipPeqModel,
+            TipPopulation, TipQRange, TipRecombinationCr, TipSchroederFrequency, TipSlopeDbOct,
+            TipStrategy, TipStrategy2, TipSystemType, TipTargetCurve, TipTiltType, TipTolerance,
+        };
 
         // Block titles
         t.insert((Language::German, DocOverviewTitle), "AutoEQ Parameter");
@@ -832,8 +952,47 @@ impl AutoEqTranslations {
         t.insert((Language::German, LabelTip), "Tipp:");
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete translation table together for each language"
+    )]
     pub(super) fn add_spanish(t: &mut TranslationMap) {
-        use DocKey::*;
+        use DocKey::{
+            DefaultAdaptiveWeights, DefaultAlgorithm, DefaultAutoDetectF3, DefaultDbRange,
+            DefaultEnableRefine, DefaultFilterOrder, DefaultFirPhase, DefaultFirTaps,
+            DefaultFrequencyRange, DefaultFrequencyRange2, DefaultLocalAlgorithm,
+            DefaultLossFunction, DefaultLowFreqMaxQ, DefaultMaxDelay, DefaultMaxDeviation,
+            DefaultMaxEvaluations, DefaultMode, DefaultMutationF, DefaultNumFilters,
+            DefaultPeqModel, DefaultPopulation, DefaultQRange, DefaultRecombinationCr,
+            DefaultSchroederFrequency, DefaultSlopeDbOct, DefaultStrategy, DefaultStrategy2,
+            DefaultSystemType, DefaultTargetCurve, DefaultTiltType, DefaultTolerance,
+            DescAdaptiveWeights, DescAlgorithm, DescAutoDetectF3, DescDbRange, DescEnableRefine,
+            DescFilterOrder, DescFirPhase, DescFirTaps, DescFrequencyRange, DescFrequencyRange2,
+            DescLocalAlgorithm, DescLossFunction, DescLowFreqMaxQ, DescMaxDelay, DescMaxDeviation,
+            DescMaxEvaluations, DescMode, DescMutationF, DescNumFilters, DescPeqModel,
+            DescPopulation, DescQRange, DescRecombinationCr, DescSchroederFrequency,
+            DescSlopeDbOct, DescStrategy, DescStrategy2, DescSystemType, DescTargetCurve,
+            DescTiltType, DescTolerance, DocDeParamsOverview, DocDeParamsTitle,
+            DocEqDesignOverview, DocEqDesignTitle, DocExcursionOverview, DocExcursionTitle,
+            DocGoalsOverview, DocGoalsTitle, DocMultiSeatOverview, DocMultiSeatTitle,
+            DocOptimizerOverview, DocOptimizerTitle, DocOverviewOverview, DocOverviewTitle,
+            DocPeqModelOverview, DocPeqModelTitle, DocPhaseAlignmentOverview,
+            DocPhaseAlignmentTitle, DocRangesOverview, DocRangesTitle, DocRefinementOverview,
+            DocRefinementTitle, DocSchroederOverview, DocSchroederTitle, DocTargetTiltOverview,
+            DocTargetTiltTitle, FieldAdaptiveWeights, FieldAlgorithm, FieldAutoDetectF3,
+            FieldDbRange, FieldEnableRefine, FieldFilterOrder, FieldFirPhase, FieldFirTaps,
+            FieldFrequencyRange, FieldFrequencyRange2, FieldLocalAlgorithm, FieldLossFunction,
+            FieldLowFreqMaxQ, FieldMaxDelay, FieldMaxDeviation, FieldMaxEvaluations, FieldMode,
+            FieldMutationF, FieldNumFilters, FieldPeqModel, FieldPopulation, FieldQRange,
+            FieldRecombinationCr, FieldSchroederFrequency, FieldSlopeDbOct, FieldStrategy,
+            FieldStrategy2, FieldSystemType, FieldTargetCurve, FieldTiltType, FieldTolerance,
+            LabelDefault, LabelTip, TipAdaptiveWeights, TipAlgorithm, TipAutoDetectF3, TipDbRange,
+            TipEnableRefine, TipFilterOrder, TipFirPhase, TipFirTaps, TipFrequencyRange,
+            TipFrequencyRange2, TipLocalAlgorithm, TipLossFunction, TipLowFreqMaxQ, TipMaxDelay,
+            TipMaxDeviation, TipMaxEvaluations, TipMode, TipMutationF, TipNumFilters, TipPeqModel,
+            TipPopulation, TipQRange, TipRecombinationCr, TipSchroederFrequency, TipSlopeDbOct,
+            TipStrategy, TipStrategy2, TipSystemType, TipTargetCurve, TipTiltType, TipTolerance,
+        };
 
         // Block titles
         t.insert((Language::Spanish, DocOverviewTitle), "Parámetros AutoEQ");

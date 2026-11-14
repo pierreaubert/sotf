@@ -1,5 +1,9 @@
 use super::super::keybinding_catalog::{TuiKeyContext, workflow_focus_hints};
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, BorderType, Borders, Cell, Clear, Constraint, Direction, Frame, Layout,
+    Line, Modifier, Paragraph, Rect, Row, Span, Style, Table, Wrap, autocomplete_dropdown_height,
+    draw_loss_chart, render_autocomplete_dropdown,
+};
 
 pub(crate) fn capture_level_review_notes(levels: &[(String, usize, f32)]) -> Vec<String> {
     let mut sorted_levels = levels
@@ -27,10 +31,21 @@ pub(crate) fn capture_level_review_notes(levels: &[(String, usize, f32)]) -> Vec
     ]
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use ratatui::widgets::{Gauge, Tabs};
+
     use sotf_audio_player::room_eq_types::{OptimizationStatus, RoomEqStep};
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.room_eq;
 
@@ -215,19 +230,16 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     let driver = entry
                         .source
                         .driver_index
-                        .map(|index| format!(" / driver {}", index + 1))
-                        .unwrap_or_default();
+                        .map_or_default(|index| format!(" / driver {}", index + 1));
                     let label = entry
                         .source_label
                         .as_deref()
-                        .map(|name| format!(" ({name})"))
-                        .unwrap_or_default();
+                        .map_or_default(|name| format!(" ({name})"));
                     let level = entry
                         .stimulus_config
                         .as_ref()
                         .and_then(|config| config.level_dbfs)
-                        .map(|level| format!(" · capture {level:.1} dBFS"))
-                        .unwrap_or_default();
+                        .map_or_default(|level| format!(" · capture {level:.1} dBFS"));
                     let verdict = entry.quality.as_ref().map_or_else(
                         || "quality evidence unavailable (unknown)".to_string(),
                         sotf_audio_player::recording_helpers::take_verdict_text,
@@ -247,14 +259,12 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     let label = entry
                         .source_label
                         .as_deref()
-                        .map(|name| format!(" ({name})"))
-                        .unwrap_or_default();
+                        .map_or_default(|name| format!(" ({name})"));
                     let level = entry
                         .stimulus_config
                         .as_ref()
                         .and_then(|config| config.level_dbfs)
-                        .map(|level| format!(" · capture {level:.1} dBFS"))
-                        .unwrap_or_default();
+                        .map_or_default(|level| format!(" · capture {level:.1} dBFS"));
                     let verdict = entry.quality.as_ref().map_or_else(
                         || "quality evidence unavailable (unknown)".to_string(),
                         sotf_audio_player::recording_helpers::take_verdict_text,
@@ -594,8 +604,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             if let Some((slope, rec_min, rec_max)) = s.model.compute_lr_slope() {
                 lines.push(Line::from(Span::styled(
                     i18n.dynamic(format!(
-                        "  Slope: {:.2} dB/oct  |  Rec: [{:.2}, {:.2}] dB/oct",
-                        slope, rec_min, rec_max
+                        "  Slope: {slope:.2} dB/oct  |  Rec: [{rec_min:.2}, {rec_max:.2}] dB/oct"
                     )),
                     Style::default().fg(app.theme.fg_secondary),
                 )));
@@ -770,7 +779,7 @@ pub(crate) fn draw_room_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Logs box
             let log_count = s.opt_log_lines.len();
-            let log_title = i18n.dynamic(format!("Logs ({} lines)", log_count));
+            let log_title = i18n.dynamic(format!("Logs ({log_count} lines)"));
             if log_count > 0 {
                 // inner[3] height minus 2 for borders
                 let visible_height = inner[3].height.saturating_sub(2) as usize;
@@ -1109,9 +1118,14 @@ fn quality_review_counts(
 /// Render the "Delay" wizard step — simplified to just a read-only table
 /// of per-channel alignment delays. The probe-running form has moved to
 /// the Recording wizard's Probe step.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::room_eq_types::DelayDetectionStatus;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.room_eq;
     let dd = &s.model.delay_detection;
@@ -1173,13 +1187,13 @@ fn draw_delay_detection_step(f: &mut Frame, content: Rect, app: &App) {
                 }
                 // Mark low-delay rows with ⚠
                 let align_text = if alignment > 0.0 && alignment < 0.3 {
-                    format!("{:.2} ⚠", alignment)
+                    format!("{alignment:.2} ⚠")
                 } else {
-                    format!("{:.2}", alignment)
+                    format!("{alignment:.2}")
                 };
                 Row::new(vec![
                     Cell::from(ch.channel_name.clone()),
-                    Cell::from(format!("{:.2}", arrival)),
+                    Cell::from(format!("{arrival:.2}")),
                     Cell::from(format!("{:+.1}", ch.gain_db)),
                     Cell::from(format!("{:+.1}", ch.snr_db)).style(Style::default().fg(snr_color)),
                     Cell::from(align_text),

@@ -14,6 +14,7 @@ pub struct Playlist {
 
 impl Playlist {
     /// Create a new empty playlist
+    #[must_use]
     pub fn new(name: String) -> Self {
         Self {
             id: None,
@@ -26,6 +27,7 @@ impl Playlist {
     }
 
     /// Create a new playlist with a description
+    #[must_use]
     pub fn with_description(name: String, description: String) -> Self {
         Self {
             id: None,
@@ -38,16 +40,19 @@ impl Playlist {
     }
 
     /// Get the number of tracks in the playlist
+    #[must_use]
     pub fn len(&self) -> usize {
         self.entries.len()
     }
 
     /// Check if the playlist is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
     /// Get track paths in order
+    #[must_use]
     pub fn track_paths(&self) -> Vec<&PathBuf> {
         let mut entries: Vec<_> = self.entries.iter().collect();
         entries.sort_by_key(|e| e.position);

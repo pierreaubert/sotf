@@ -1,6 +1,6 @@
-//! AutoEQ Parameter Form
+//! `AutoEQ` Parameter Form
 //!
-//! A reusable form component for AutoEQ optimization parameters.
+//! A reusable form component for `AutoEQ` optimization parameters.
 //! Used by Room EQ, Speaker EQ, Headphone EQ, and Group optimization screens.
 
 pub mod config;

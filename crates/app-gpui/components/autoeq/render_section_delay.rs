@@ -21,7 +21,7 @@
         .theme(toggle_theme.clone());
 
     if let Some(ref h) = on_allow_delay_change_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         delay_toggle = delay_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 

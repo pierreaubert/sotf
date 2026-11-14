@@ -4,8 +4,11 @@ use crate::app::App;
 use crate::app::state::audio_device::CastDeviceInfo;
 
 impl App {
-    /// Start scanning for Cast devices (Chromecast + AirPlay) on the local network.
+    /// Start scanning for Cast devices (Chromecast + `AirPlay`) on the local network.
     /// Spawns a background thread; poll with `update_cast_discovery()`.
+    ///
+    /// # Panics
+    /// Panics if the worker thread cannot be spawned or its asynchronous runtime cannot be created.
     pub fn start_cast_discovery(&mut self) {
         if self.audio_device_state.cast_discovery_running {
             return;
@@ -50,9 +53,8 @@ impl App {
 
     /// Poll for Cast discovery results. Call from the UI update loop.
     pub fn update_cast_discovery(&mut self) {
-        let rx = match &self.federation.cast_discovery_receiver {
-            Some(rx) => rx,
-            None => return,
+        let Some(rx) = &self.federation.cast_discovery_receiver else {
+            return;
         };
 
         match rx.try_recv() {

@@ -1,7 +1,7 @@
 //! Plugin Graph Screen
 //!
 //! Full-screen workflow canvas for node-based plugin editing.
-//! Uses the WorkflowCanvas from gpui-ui-kit for pan/zoom, connections, and hit testing.
+//! Uses the `WorkflowCanvas` from gpui-ui-kit for pan/zoom, connections, and hit testing.
 
 mod build;
 mod connections;

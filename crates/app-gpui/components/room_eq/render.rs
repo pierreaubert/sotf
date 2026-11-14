@@ -5,7 +5,7 @@ use crate::components::graphs::common::render_empty_state;
 use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, Hsla, SharedString, canvas, div, px, rems};
 use gpui_px::LegendPosition;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, NumberInput, NumberInputSize, StackSpacing, Text,
@@ -42,16 +42,14 @@ use fmt::fmt_ms;
 use fmt::fmt_optional_db;
 use fmt::fmt_optional_hz;
 use fmt::fmt_optional_number;
-use misc::rgba_from_u32;
-use misc::route_display_name;
-use room::room_eq_average_spl_in_range;
-use room::room_eq_chart_y_range;
-use room::room_eq_d3rs_path_to_gpui;
-use room::room_eq_route_color;
+
 use room_eq_chart_series::add_room_eq_corrected_lfe_sums;
 use room_eq_chart_series::prepare_room_eq_chart_series;
-use types::RoomEqChartSeries;
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_report_summary(
     d: Ds,
     report: &RoomEqReportData,
@@ -98,8 +96,7 @@ pub(crate) fn render_room_eq_report_summary(
                             text.iterations,
                             &report
                                 .iterations
-                                .map(|value| value.to_string())
-                                .unwrap_or_else(|| "N/A".to_string()),
+                                .map_or_else(|| "N/A".to_string(), |value| value.to_string()),
                             theme,
                         ))
                         .child(render_room_eq_stat_item(
@@ -115,7 +112,7 @@ pub(crate) fn render_room_eq_report_summary(
                         .child(render_room_eq_colored_stat_item(
                             labels[5],
                             &fmt_optional_number(improvement, "{:.2}"),
-                            improvement.map(|v| v >= 0.0).unwrap_or(true),
+                            improvement.is_none_or(|v| v >= 0.0),
                             theme,
                         )),
                 )
@@ -160,6 +157,14 @@ pub(crate) fn render_room_eq_report_summary(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_bass_management_report(
     d: Ds,
     bass: &RoomEqReportBassManagement,
@@ -330,6 +335,19 @@ fn render_room_eq_colored_stat_item(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_room_eq_bass_routing_chart(
     bass: &RoomEqReportBassManagement,
     text: RoomEqReportTranslations,
@@ -382,7 +400,7 @@ fn render_room_eq_bass_routing_chart(
         let target = &result.nodes[link.target];
         let sx = source.x1;
         let tx = target.x0;
-        let cx = (sx + tx) / 2.0;
+        let cx = f64::midpoint(sx, tx);
         let half_width = link.width / 2.0;
         paths.push(
             D3PathBuilder::new()
@@ -440,7 +458,7 @@ fn render_room_eq_bass_routing_chart(
             } else {
                 node.x1 + 6.0
             };
-            let y = (node.y0 + node.y1) / 2.0;
+            let y = f64::midpoint(node.y0, node.y1);
             (node.id.clone(), x, y, is_right)
         })
         .collect();
@@ -510,12 +528,16 @@ fn render_room_eq_bass_routing_chart(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_room_eq_bass_headroom_chart(
     headroom: &RoomEqReportBassHeadroom,
     text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> gpui::AnyElement {
-    use gpui_px::{BarTheme, LegendPosition, bar};
+    use gpui_px::{BarTheme, bar};
 
     let labels: Vec<String> = headroom
         .per_output
@@ -547,22 +569,24 @@ fn render_room_eq_bass_headroom_chart(
 
     let chart = bar(&labels, &rms)
         .label(text.rms_programme_gain)
-        .color(0x4a90d9)
-        .add_series(&peak, Some("Coherent peak gain"), 0xe74c3c, 0.78)
-        .add_series(&lfe, Some("LFE contribution"), 0xe67e22, 0.72)
+        .color(0x004a_90d9)
+        .add_series(&peak, Some("Coherent peak gain"), 0x00e7_4c3c, 0.78)
+        .add_series(&lfe, Some("LFE contribution"), 0x00e6_7e22, 0.72)
         .legend_position(LegendPosition::Bottom)
         .theme(bar_theme)
         .size(350.0, 260.0)
         .build()
-        .map(|chart| chart.into_any_element())
-        .unwrap_or_else(|e| {
-            log::warn!("RoomEQ bass headroom chart build failed: {e:?}");
-            render_empty_state(
-                IconName::AudioWaveform,
-                "Unable to render headroom chart",
-                theme,
-            )
-        });
+        .map_or_else(
+            |e| {
+                log::warn!("RoomEQ bass headroom chart build failed: {e:?}");
+                render_empty_state(
+                    IconName::AudioWaveform,
+                    "Unable to render headroom chart",
+                    theme,
+                )
+            },
+            gpui::IntoElement::into_any_element,
+        );
 
     div()
         .w(px(350.0))
@@ -695,6 +719,10 @@ fn render_room_eq_bass_sub_outputs_table(
     )
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 fn render_room_eq_table(
     d: Ds,
     title: &str,
@@ -749,6 +777,14 @@ fn render_room_eq_table(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_report_overview(
     d: Ds,
     report: &RoomEqReportData,
@@ -825,7 +861,7 @@ pub(crate) fn render_room_eq_report_overview(
     };
     // intentional-file: chart canvas dimensions are layout-driven px.
     let overview_chart_width = room_eq_chart_width(
-        (window_width - 104.0) / overview_columns as f32,
+        (window_width - 104.0) / f32::from(overview_columns),
         280.0,
         900.0,
     );
@@ -895,6 +931,14 @@ pub(crate) fn render_room_eq_report_overview(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_report_channel(
     d: Ds,
     channel: &RoomEqReportChannel,
@@ -913,9 +957,9 @@ pub(crate) fn render_room_eq_report_channel(
         .final_curve
         .as_ref()
         .or(channel.initial_curve.as_ref());
-    let zoom_center = reference
-        .map(|curve| room_eq_average_spl_in_range(curve, 20.0, 1200.0))
-        .unwrap_or(0.0);
+    let zoom_center = reference.map_or(0.0, |curve| {
+        room_eq_average_spl_in_range(curve, 20.0, 1200.0)
+    });
 
     let mut full_series = Vec::new();
     if let Some(curve) = channel.initial_curve.clone() {
@@ -923,7 +967,7 @@ pub(crate) fn render_room_eq_report_channel(
             channel_name: Some(channel.name.clone()),
             label: "Before EQ".to_string(),
             curve,
-            color: 0xff6464,
+            color: 0x00ff_6464,
             stroke_width: 2.0,
             opacity: 0.8,
         });
@@ -933,7 +977,7 @@ pub(crate) fn render_room_eq_report_channel(
             channel_name: Some(channel.name.clone()),
             label: "After EQ".to_string(),
             curve,
-            color: 0x64c864,
+            color: 0x0064_c864,
             stroke_width: 2.0,
             opacity: 0.9,
         });
@@ -945,7 +989,7 @@ pub(crate) fn render_room_eq_report_channel(
             channel_name: Some(channel.name.clone()),
             label: format!("EQ: {}", channel.name),
             curve,
-            color: 0x1f77b4,
+            color: 0x001f_77b4,
             stroke_width: 2.0,
             opacity: 1.0,
         });
@@ -1059,6 +1103,10 @@ pub(crate) fn render_room_eq_report_channel(
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_room_eq_epa_table(
     d: Ds,
     epa: &RoomEqReportEpaComparison,
@@ -1141,6 +1189,14 @@ fn render_room_eq_epa_table(
 /// table), so a single ✓/✗ glyph in the After EQ and Delta columns
 /// short-circuits the cognitive overhead of remembering the rule for
 /// every row.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 fn render_room_eq_epa_metric_table(
     d: Ds,
     rows: &[(bool, String, String, String, String, bool)],
@@ -1293,6 +1349,10 @@ fn render_room_eq_filter_details(
 /// channel name, and only channels that have EPA data populated are
 /// included; if no channel has EPA, the function returns an empty stub
 /// so callers can chain it unconditionally.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_epa_card(
     d: Ds,
     report: &RoomEqReportData,
@@ -1343,6 +1403,10 @@ pub(crate) fn render_room_eq_epa_card(
 /// where filter details only showed for the currently-selected channel
 /// tab — copying or auditing filters across channels required tab
 /// switching, which made it impossible to compare passes side-by-side.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_room_eq_filters_card(
     d: Ds,
     report: &RoomEqReportData,
@@ -1386,6 +1450,10 @@ pub(crate) fn render_room_eq_filters_card(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 fn render_room_eq_curve_chart(
     title: &str,
     mut series: Vec<RoomEqChartSeries>,
@@ -1429,18 +1497,18 @@ fn render_room_eq_curve_chart(
         room_eq_chart_y_range(prepared.iter().map(|(_, y, _)| y.as_slice()), y_label)
             .unwrap_or(y_range);
     let chart_theme = theme_to_chart_theme(theme);
-    let (x_min, x_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.x_domain())
-        .unwrap_or(x_range);
-    let (y_min, y_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.y_domain())
-        .unwrap_or(if settings.y_axis_auto {
+    let (x_min, x_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        x_range,
+        gpui_px::interaction::InteractiveChartState::x_domain,
+    );
+    let (y_min, y_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        if settings.y_axis_auto {
             auto_y_range
         } else {
             y_range
-        });
+        },
+        gpui_px::interaction::InteractiveChartState::y_domain,
+    );
 
     let mut chart = line(&first.curve.freq, first_y)
         .x_scale(ScaleType::Log)
@@ -1495,7 +1563,7 @@ fn render_room_eq_curve_chart(
             &[x0, x1],
             &[0.0, 0.0],
             Some("Target (0 dB)"),
-            0x999999,
+            0x0099_9999,
             1.0,
             0.5,
         );
@@ -1504,7 +1572,7 @@ fn render_room_eq_curve_chart(
             &[20.0, 20000.0],
             &[0.0, 0.0],
             Some("0 dB"),
-            0x999999,
+            0x0099_9999,
             1.0,
             0.5,
         );
@@ -1544,11 +1612,15 @@ fn render_room_eq_curve_chart(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(controls, |el, controls| el.child(controls))
+        .when_some(controls, gpui_ui_kit::VStack::child)
         .child(chart_element)
         .into_any_element()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_room_eq_ir_chart(
     channel: &RoomEqReportChannel,
     text: RoomEqReportTranslations,
@@ -1556,7 +1628,7 @@ fn render_room_eq_ir_chart(
     chart_size: (f32, f32),
 ) -> gpui::AnyElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     let primary = channel.pre_ir.as_ref().or(channel.post_ir.as_ref());
     let Some(primary) = primary else {
@@ -1577,9 +1649,9 @@ fn render_room_eq_ir_chart(
     }
 
     let (primary_label, primary_color) = if channel.pre_ir.is_some() {
-        ("Before", 0xff6464)
+        ("Before", 0x00ff_6464)
     } else {
-        ("After", 0x64c864)
+        ("After", 0x0064_c864)
     };
     let mut chart = line(&primary.time_ms, &primary.amplitude)
         .x_scale(ScaleType::Linear)
@@ -1604,7 +1676,7 @@ fn render_room_eq_ir_chart(
             &post_ir.time_ms,
             &post_ir.amplitude,
             Some("After"),
-            0x64c864,
+            0x0064_c864,
             1.5,
             0.9,
         );
@@ -1612,18 +1684,17 @@ fn render_room_eq_ir_chart(
 
     let chart_theme = theme.clone();
     let chart_element = chart_canvas("room-eq-channel-ir", chart_size.1, move |width| {
-        chart
-            .size(width, chart_size.1)
-            .build()
-            .map(|chart| chart.into_any_element())
-            .unwrap_or_else(|e| {
+        chart.size(width, chart_size.1).build().map_or_else(
+            |e| {
                 log::warn!("RoomEQ IR chart build failed: {e:?}");
                 render_empty_state(
                     IconName::AudioWaveform,
                     "Unable to render impulse response",
                     &chart_theme,
                 )
-            })
+            },
+            gpui::IntoElement::into_any_element,
+        )
     });
 
     VStack::new()
@@ -1644,6 +1715,14 @@ fn render_room_eq_ir_chart(
 /// `sample_rate_hz` drives the FIR-crossover latency readout. Pass the
 /// optimizer's active sample rate so latency reflects the actual project
 /// (`(taps - 1) / 2 / sample_rate_hz * 1000` ms).
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_channel_config_row(
     idx: usize,
     config: &crate::app::types::RoomEqSpeakerConfig,
@@ -1700,13 +1779,13 @@ pub(crate) fn render_channel_config_row(
                 )
                 .child(
                     Button::new(
-                        SharedString::from(format!("single-{}", idx)),
+                        SharedString::from(format!("single-{idx}")),
                         workflow_text.single,
                     )
-                    .variant(if !is_multi {
-                        ButtonVariant::Primary
-                    } else {
+                    .variant(if is_multi {
                         ButtonVariant::Secondary
+                    } else {
+                        ButtonVariant::Primary
                     })
                     .size(ButtonSize::Xs)
                     .theme(theme.to_button_theme())
@@ -1732,7 +1811,7 @@ pub(crate) fn render_channel_config_row(
                 )
                 .child(
                     Button::new(
-                        SharedString::from(format!("multi-{}", idx)),
+                        SharedString::from(format!("multi-{idx}")),
                         workflow_text.multi_driver,
                     )
                     .variant(if is_multi {
@@ -1849,6 +1928,16 @@ pub(crate) fn render_channel_config_row(
 /// with clamping at both ends, so dialing latency down from the default
 /// doesn't wrap around through 32768. Latency is `(taps - 1) / 2` samples
 /// at the project's active sample rate.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 fn render_linear_phase_taps_controls(
     channel_idx: usize,
     fir_taps: usize,
@@ -1937,7 +2026,7 @@ fn render_crossover_dropdown(
     let current_label = current.as_str();
 
     Button::new(
-        SharedString::from(format!("xover-{}", channel_idx)),
+        SharedString::from(format!("xover-{channel_idx}")),
         current_label,
     )
     .variant(ButtonVariant::Secondary)
@@ -1972,7 +2061,19 @@ fn render_crossover_dropdown(
 }
 
 /// Render a single channel result card with plots and filter details
-/// If interactive_state is provided, the chart will support pan/zoom interactions
+/// If `interactive_state` is provided, the chart will support pan/zoom interactions
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_channel_result_card(
     d: Ds,
     result: crate::app::types::ChannelOptResult,
@@ -2031,7 +2132,7 @@ pub(crate) fn render_channel_result_card(
                                 .color(theme.text_secondary),
                         )
                         .child(
-                            Text::new(format!("{:+.2}", score_improvement))
+                            Text::new(format!("{score_improvement:+.2}"))
                                 .weight(TextWeight::Bold)
                                 .color(if score_improvement > 0.0 {
                                     theme.success
@@ -2212,7 +2313,15 @@ pub(crate) fn render_channel_result_card(
 }
 
 /// Render the frequency response comparison graph: Original vs Corrected with trendlines
-/// If interactive_state is provided, the chart will support pan/zoom interactions
+/// If `interactive_state` is provided, the chart will support pan/zoom interactions
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_response_comparison_graph(
     channel_name: &str,
     original: &[(f64, f64)],
@@ -2224,14 +2333,14 @@ fn render_response_comparison_graph(
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 400.0;
 
-    const BLUE: u32 = 0x1f77b4;
-    const ORANGE: u32 = 0xff7f0e;
-    const TARGET_GREY: u32 = 0x999999;
+    const BLUE: u32 = 0x001f_77b4;
+    const ORANGE: u32 = 0x00ff_7f0e;
+    const TARGET_GREY: u32 = 0x0099_9999;
 
     let original_frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let corrected_frequencies: Vec<f64> = corrected.iter().map(|(f, _)| *f).collect();
@@ -2280,14 +2389,14 @@ fn render_response_comparison_graph(
     };
 
     let chart_theme = theme_to_chart_theme(theme);
-    let (x_min, x_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.x_domain())
-        .unwrap_or((20.0, 20000.0));
-    let (y_min_domain, y_max_domain) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.y_domain())
-        .unwrap_or((y_min_auto, y_max_auto));
+    let (x_min, x_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        (20.0, 20000.0),
+        gpui_px::interaction::InteractiveChartState::x_domain,
+    );
+    let (y_min_domain, y_max_domain) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        (y_min_auto, y_max_auto),
+        gpui_px::interaction::InteractiveChartState::y_domain,
+    );
 
     let y_min_domain = if y_min_domain.is_finite() {
         y_min_domain
@@ -2305,18 +2414,18 @@ fn render_response_comparison_graph(
         y_max_domain
     };
 
-    let original_label = format!("{} Original", channel_name);
-    let corrected_label = format!("{} Corrected", channel_name);
+    let original_label = format!("{channel_name} Original");
+    let corrected_label = format!("{channel_name} Corrected");
 
-    let base_x = if !original_frequencies.is_empty() {
-        &original_frequencies
-    } else {
+    let base_x = if original_frequencies.is_empty() {
         &corrected_frequencies
-    };
-    let base_y = if !original_smooth.is_empty() {
-        &original_smooth
     } else {
+        &original_frequencies
+    };
+    let base_y = if original_smooth.is_empty() {
         &corrected_smooth
+    } else {
+        &original_smooth
     };
 
     let mut chart_builder = line(base_x, base_y)
@@ -2324,10 +2433,10 @@ fn render_response_comparison_graph(
         .x_range(x_min, x_max)
         .y_range(y_min_domain, y_max_domain)
         .y_label("SPL (dB)")
-        .label(if !original_smooth.is_empty() {
-            original_label
-        } else {
+        .label(if original_smooth.is_empty() {
             corrected_label.clone()
+        } else {
+            original_label
         })
         .legend_position(LegendPosition::Right)
         .color(BLUE)
@@ -2378,7 +2487,7 @@ fn render_response_comparison_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(chart_element, |el, c| el.child(c))
+        .when_some(chart_element, gpui_ui_kit::VStack::child)
         .into_any_element()
 }
 
@@ -2388,6 +2497,14 @@ fn render_response_comparison_graph(
 /// convolution/FIR block. We can't decompose FIR magnitude into parametric
 /// bands, but at minimum the user deserves to know the chain includes an
 /// FIR correction they won't see as individual lines.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_filter_plot(
     original: &[(f64, f64)],
     corrected: &[(f64, f64)],
@@ -2401,19 +2518,21 @@ fn render_filter_plot(
     y_axis_auto: bool,
     interactive_state: Option<&gpui_px::interaction::InteractiveChartState>,
 ) -> impl IntoElement {
+    const BB_COLOR: u32 = 0x008B_4513; // saddle brown — distinct from PK palette
+
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, StrokeDashArray, line};
+    use gpui_px::{ScaleType, StrokeDashArray, line};
     use math_audio_iir_fir::{Biquad, BiquadFilterType};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 400.0;
     const SAMPLE_RATE: f64 = sotf_plugins::DEFAULT_PREVIEW_SAMPLE_RATE;
 
-    const BLUE: u32 = 0x1f77b4;
-    const GREEN: u32 = 0x2ca02c;
-    const PURPLE: u32 = 0x9467bd;
-    const CYAN: u32 = 0x17becf;
-    const MAGENTA: u32 = 0xd62728;
+    const BLUE: u32 = 0x001f_77b4;
+    const GREEN: u32 = 0x002c_a02c;
+    const PURPLE: u32 = 0x0094_67bd;
+    const CYAN: u32 = 0x0017_becf;
+    const MAGENTA: u32 = 0x00d6_2728;
 
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
@@ -2444,16 +2563,15 @@ fn render_filter_plot(
         PURPLE,
         CYAN,
         MAGENTA,
-        0x8c564bu32,
-        0xe377c2u32,
-        0x7f7f7fu32,
-        0xbcbd22u32,
-        0x1f77b4u32,
+        0x008c_564b_u32,
+        0x00e3_77c2_u32,
+        0x007f_7f7f_u32,
+        0x00bc_bd22_u32,
+        0x001f_77b4_u32,
     ];
 
     let parse_type = |s: &str| -> BiquadFilterType {
         match s {
-            "peak" | "pk" | "Peak" => BiquadFilterType::Peak,
             "lowshelf" | "ls" | "Lowshelf" => BiquadFilterType::Lowshelf,
             "highshelf" | "hs" | "Highshelf" => BiquadFilterType::Highshelf,
             "lowpass" | "lp" | "Lowpass" => BiquadFilterType::Lowpass,
@@ -2535,7 +2653,6 @@ fn render_filter_plot(
     // Broadband pre-correction filters — same palette but drawn dashed so
     // the user can visually separate "room IIR correction" from "driver
     // tonal pre-tilt" without having to hunt the color legend.
-    const BB_COLOR: u32 = 0x8B4513; // saddle brown — distinct from PK palette
     for (i, filter) in broadband_filters.iter().enumerate() {
         let resp = sanitize(
             &frequencies
@@ -2554,18 +2671,18 @@ fn render_filter_plot(
             .series_dash_array(StrokeDashArray::Dashed);
     }
 
-    let (x_min, x_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.x_domain())
-        .unwrap_or((20.0, 20000.0));
+    let (x_min, x_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        (20.0, 20000.0),
+        gpui_px::interaction::InteractiveChartState::x_domain,
+    );
     let (y_min, y_max) = if y_axis_auto {
         let mut min_val = f64::INFINITY;
         let mut max_val = f64::NEG_INFINITY;
-        for &v in eq_response.iter() {
+        for &v in &eq_response {
             min_val = min_val.min(v);
             max_val = max_val.max(v);
         }
-        for filter in eq_filters.iter() {
+        for filter in eq_filters {
             let _ = filter;
         }
         let max = if max_val.is_finite() {
@@ -2605,13 +2722,13 @@ fn render_filter_plot(
     // through the color-coded entries on the side.
     let mut subtitle_parts: Vec<String> = Vec::new();
     if iir_count > 0 {
-        subtitle_parts.push(format!("{} IIR peak filters", iir_count));
+        subtitle_parts.push(format!("{iir_count} IIR peak filters"));
     }
     if bb_count > 0 {
-        subtitle_parts.push(format!("{} broadband pre-corrections (dashed)", bb_count));
+        subtitle_parts.push(format!("{bb_count} broadband pre-corrections (dashed)"));
     }
     if preamp_gain_db.abs() >= 0.05 {
-        subtitle_parts.push(format!("preamp {:+.1} dB", preamp_gain_db));
+        subtitle_parts.push(format!("preamp {preamp_gain_db:+.1} dB"));
     }
     if has_fir {
         subtitle_parts
@@ -2634,11 +2751,24 @@ fn render_filter_plot(
         .when_some(subtitle, |el, s| {
             el.child(Text::new(s).size(TextSize::Xs).color(theme.text_secondary))
         })
-        .when_some(chart_element, |el, c| el.child(c))
+        .when_some(chart_element, gpui_ui_kit::VStack::child)
         .into_any_element()
 }
 
 /// Render the tonal balance histogram
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+)]
 fn render_tonal_histogram(
     channel_name: &str,
     original: &[(f64, f64)],
@@ -2648,13 +2778,13 @@ fn render_tonal_histogram(
     theme: &crate::theme::Theme,
     smoothing_octaves: f64,
 ) -> impl IntoElement {
-    use gpui_px::{BarTheme, LegendPosition, bar};
+    use gpui_px::{BarTheme, bar};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
-    const BLUE: u32 = 0x1f77b4;
-    const ORANGE: u32 = 0xff7f0e;
+    const BLUE: u32 = 0x001f_77b4;
+    const ORANGE: u32 = 0x00ff_7f0e;
 
     let frequencies: Vec<f64> = original.iter().map(|(f, _)| *f).collect();
     let original_values_raw: Vec<f64> = original.iter().map(|(_, db)| *db).collect();
@@ -2782,11 +2912,15 @@ fn render_tonal_histogram(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(hist_chart, |el, c| el.child(c))
+        .when_some(hist_chart, gpui_ui_kit::VStack::child)
         .into_any_element()
 }
 
 /// Render the phase response graph
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_phase_graph(
     phase_before: Option<&[(f64, f64)]>,
     phase_after: Option<&[(f64, f64)]>,
@@ -2794,13 +2928,13 @@ fn render_phase_graph(
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
-    const BLUE: u32 = 0x1f77b4;
-    const ORANGE: u32 = 0xff7f0e;
+    const BLUE: u32 = 0x001f_77b4;
+    const ORANGE: u32 = 0x00ff_7f0e;
 
     let chart_theme = theme_to_chart_theme(theme);
 
@@ -2827,7 +2961,7 @@ fn render_phase_graph(
                     };
                     p0 + t * (p1 - p0)
                 } else {
-                    after.last().map(|(_, p)| *p).unwrap_or(0.0)
+                    after.last().map_or(0.0, |(_, p)| *p)
                 }
             })
             .collect()
@@ -2882,8 +3016,10 @@ fn render_phase_graph(
         chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
-    let chart_element: Option<gpui::AnyElement> =
-        chart_builder.build().ok().map(|c| c.into_any_element());
+    let chart_element: Option<gpui::AnyElement> = chart_builder
+        .build()
+        .ok()
+        .map(gpui::IntoElement::into_any_element);
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -2893,23 +3029,27 @@ fn render_phase_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(chart_element, |div, el| div.child(el))
+        .when_some(chart_element, gpui_ui_kit::VStack::child)
         .into_any_element()
 }
 
 /// Render the impulse response graph
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_impulse_response_graph(
     impulse_response: &[(f64, f64)],
     text: RoomEqReportTranslations,
     theme: &crate::theme::Theme,
 ) -> impl IntoElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
 
-    const BLUE: u32 = 0x1f77b4;
+    const BLUE: u32 = 0x001f_77b4;
 
     let chart_theme = theme_to_chart_theme(theme);
 
@@ -2923,7 +3063,7 @@ fn render_impulse_response_graph(
 
     let mut y_min = f64::INFINITY;
     let mut y_max = f64::NEG_INFINITY;
-    for &v in sanitize.iter() {
+    for &v in &sanitize {
         y_min = y_min.min(v);
         y_max = y_max.max(v);
     }
@@ -2952,7 +3092,7 @@ fn render_impulse_response_graph(
         .size(GRAPH_WIDTH, GRAPH_HEIGHT)
         .build()
         .ok()
-        .map(|c| c.into_any_element());
+        .map(gpui::IntoElement::into_any_element);
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -2962,7 +3102,7 @@ fn render_impulse_response_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(chart_element, |div, el| div.child(el))
+        .when_some(chart_element, gpui_ui_kit::VStack::child)
         .into_any_element()
 }
 
@@ -3052,6 +3192,10 @@ fn render_filter_table(
 }
 
 /// Render group delay comparison graph (before vs after optimization)
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_group_delay_graph(
     gd_before: Option<&[(f64, f64)]>,
     gd_after: Option<&[(f64, f64)]>,
@@ -3059,12 +3203,12 @@ fn render_group_delay_graph(
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     use crate::components::graphs::common::theme_to_chart_theme;
-    use gpui_px::{LegendPosition, ScaleType, line};
+    use gpui_px::{ScaleType, line};
 
     const GRAPH_WIDTH: f32 = 800.0;
     const GRAPH_HEIGHT: f32 = 200.0;
-    const BLUE: u32 = 0x1f77b4;
-    const ORANGE: u32 = 0xff7f0e;
+    const BLUE: u32 = 0x001f_77b4;
+    const ORANGE: u32 = 0x00ff_7f0e;
 
     let chart_theme = theme_to_chart_theme(theme);
 
@@ -3094,7 +3238,7 @@ fn render_group_delay_graph(
                     };
                     d0 + t * (d1 - d0)
                 } else {
-                    after.last().map(|(_, d)| *d).unwrap_or(0.0)
+                    after.last().map_or(0.0, |(_, d)| *d)
                 }
             })
             .collect()
@@ -3157,8 +3301,10 @@ fn render_group_delay_graph(
         chart_builder = chart_builder.add_series(av, Some("After"), ORANGE, 1.5, 0.9);
     }
 
-    let chart_element: Option<gpui::AnyElement> =
-        chart_builder.build().ok().map(|c| c.into_any_element());
+    let chart_element: Option<gpui::AnyElement> = chart_builder
+        .build()
+        .ok()
+        .map(gpui::IntoElement::into_any_element);
 
     VStack::new()
         .spacing(StackSpacing::Xs)
@@ -3168,6 +3314,6 @@ fn render_group_delay_graph(
                 .size(TextSize::Xs)
                 .color(theme.text_primary),
         )
-        .when_some(chart_element, |div, el| div.child(el))
+        .when_some(chart_element, gpui_ui_kit::VStack::child)
         .into_any_element()
 }

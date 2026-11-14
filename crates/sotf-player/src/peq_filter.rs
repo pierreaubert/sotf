@@ -40,8 +40,11 @@ pub struct PeqFilter {
 impl PeqFilter {
     /// Decode optimizer names and conventional PEQ abbreviations consistently
     /// for playback and export. Unknown legacy names retain the Peak default.
+    #[must_use]
     pub fn biquad_filter_type(&self) -> math_audio_iir_fir::BiquadFilterType {
-        use math_audio_iir_fir::BiquadFilterType::*;
+        use math_audio_iir_fir::BiquadFilterType::{
+            AllPass, Bandpass, Highpass, Highshelf, Lowpass, Lowshelf, Notch, Peak,
+        };
         match self.filter_type.to_ascii_lowercase().as_str() {
             "ls" | "lowshelf" => Lowshelf,
             "hs" | "highshelf" => Highshelf,

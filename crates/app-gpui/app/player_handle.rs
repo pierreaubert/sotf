@@ -35,10 +35,12 @@ impl PlayerCommandReceipt {
     }
 
     /// Identity of one accepted actor command, independent of its result.
+    #[must_use]
     pub fn is_same_command(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.result, &other.result)
     }
 
+    #[must_use]
     pub fn poll(&self) -> Option<Result<(), PlayerCommandFailure>> {
         self.result.lock().clone()
     }
@@ -100,6 +102,7 @@ pub struct PlayerSnapshot {
 }
 
 /// A snapshot plus events consumed exactly once by the UI.
+#[derive(Debug)]
 pub struct PlayerSnapshotRead {
     pub snapshot: Arc<PlayerSnapshot>,
     pub playback_state: PlaybackState,
@@ -107,6 +110,7 @@ pub struct PlayerSnapshotRead {
 
 /// Reconcile engine-owned profile changes only from the current rack request.
 /// A queued command or graph replacement invalidates older actor snapshots.
+#[must_use]
 pub fn profile_request_matches(
     snapshot_identity: Option<(usize, u64, u64)>,
     current_identity: Option<(usize, u64, u64)>,
@@ -186,6 +190,7 @@ impl TransportSnapshotEpoch {
 
 impl PlayerHandle {
     #[cfg(feature = "dev-api")]
+    #[must_use]
     pub fn qa_transport_epoch(&self) -> u64 {
         self.transport_epoch.requested.load(Ordering::Acquire)
     }
@@ -227,6 +232,9 @@ impl PlayerHandle {
     /// At most one snapshot request can be queued at a time. This prevents a
     /// slow engine call from allowing the 60 Hz UI timer to grow an unbounded
     /// backlog behind it.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn request_snapshot(
         &self,
         request: PlayerSnapshotRequest,
@@ -258,7 +266,7 @@ impl PlayerHandle {
                     };
                 }
                 events.merge(playback_state);
-            }
+            };
 
             let snapshot = PlayerSnapshot {
                 transport_epoch: epoch,
@@ -300,12 +308,13 @@ impl PlayerHandle {
         if result.is_err() {
             self.snapshot_requested.store(false, Ordering::Release);
         }
-        result.map_err(|_| PlayerCommandError {
+        result.map_err(|_error| PlayerCommandError {
             label: "request_snapshot",
         })
     }
 
     /// Read the latest actor-published state without touching the player.
+    #[must_use]
     pub fn read_snapshot(&self) -> Option<PlayerSnapshotRead> {
         let snapshot = self.latest_snapshot.read().clone()?;
         if !self.transport_epoch.accepts(snapshot.transport_epoch) {
@@ -322,6 +331,7 @@ impl PlayerHandle {
         })
     }
 
+    #[must_use]
     pub fn drain_failures(&self) -> Vec<PlayerCommandFailure> {
         self.failures.lock().drain(..).collect()
     }
@@ -443,7 +453,7 @@ impl PlayerHandle {
                     failures.lock().push(PlayerCommandFailure { label, error });
                 }
             }))
-            .map_err(|_| PlayerCommandError { label })
+            .map_err(|_error| PlayerCommandError { label })
     }
 
     /// Observe one command without treating it as a transport change or replacing
@@ -466,7 +476,7 @@ impl PlayerHandle {
                 Some(
                     result
                         .as_ref()
-                        .map(|_| ())
+                        .copied()
                         .map_err(|error| PlayerCommandFailure {
                             label,
                             error: error.to_string(),
@@ -502,7 +512,7 @@ impl PlayerHandle {
                 Some(
                     result
                         .as_ref()
-                        .map(|_| ())
+                        .copied()
                         .map_err(|error| PlayerCommandFailure {
                             label,
                             error: error.to_string(),
@@ -545,7 +555,7 @@ impl PlayerHandle {
                 Some(
                     result
                         .as_ref()
-                        .map(|_| ())
+                        .copied()
                         .map_err(|error| PlayerCommandFailure {
                             label,
                             error: error.to_string(),
@@ -561,25 +571,38 @@ impl PlayerHandle {
         } else {
             *last_transport = Some(receipt.clone());
         }
-        result.map(|_| receipt)
+        result.map(|()| receipt)
     }
 
     /// Inspect the most recently accepted transport command across all clones.
     /// Another submitter may replace it between submission and lookup. For a
     /// transaction, use a submission method that returns its receipt directly.
     /// Completion does not by itself make an older playback snapshot fresh.
+    #[must_use]
     pub fn last_transport_receipt(&self) -> Option<TransportReceipt> {
         self.last_transport.lock().clone()
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn pause(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_transport("pause", |player| player.pause())
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn resume(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_transport("resume", |player| player.resume())
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn toggle_playback(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_transport("toggle_playback", |player| {
             if player.is_playing() {
@@ -590,23 +613,42 @@ impl PlayerHandle {
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn stop(&self) -> Result<(), PlayerCommandError> {
         self.stop_with_receipt().map(|_| ())
     }
 
     /// Submit Stop and return its completion independently of other submitters.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn stop_with_receipt(&self) -> Result<TransportReceipt, PlayerCommandError> {
-        self.enqueue_transport_with_receipt("stop", |player| player.stop())
+        self.enqueue_transport_with_receipt("stop", sotf_audio_player::Player::stop)
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn seek(&self, position_secs: f64) -> Result<(), PlayerCommandError> {
         self.enqueue_transport("seek", move |player| player.seek(position_secs))
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_volume(&self, volume: f32) -> Result<(), PlayerCommandError> {
         self.enqueue_result("set_volume", move |player| player.set_volume(volume))
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_mute(&self, muted: bool) -> Result<(), PlayerCommandError> {
         self.enqueue_result("set_mute", move |player| player.set_mute(muted))
     }
@@ -619,26 +661,46 @@ impl PlayerHandle {
         self.enqueue_result("set_bypass", move |player| player.set_bypass(bypassed))
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn cancel_next(&self) -> Result<(), PlayerCommandError> {
         self.enqueue_result("cancel_next", |player| player.cancel_next())
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn queue_next(&self, path: PathBuf) -> Result<(), PlayerCommandError> {
         self.enqueue_result("queue_next", move |player| player.queue_next(path))
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_output_device(&self, device_name: String) -> Result<(), PlayerCommandError> {
         self.enqueue_transport("set_output_device", move |player| {
             player.set_output_device(device_name)
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugins(&self, plugins: Vec<PluginConfig>) -> Result<(), PlayerCommandError> {
         self.enqueue_result("update_plugins", move |player| {
             player.update_plugins(plugins)
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugin_graph(
         &self,
         graph_config: PluginGraphConfig,
@@ -649,6 +711,9 @@ impl PlayerHandle {
     }
 
     /// Completes after Player/Manager returns, not when the actor accepts the work.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugins_with_receipt(
         &self,
         plugins: Vec<PluginConfig>,
@@ -669,6 +734,10 @@ impl PlayerHandle {
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugin_graph_with_receipt(
         &self,
         graph_config: PluginGraphConfig,
@@ -678,6 +747,10 @@ impl PlayerHandle {
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_plugin_parameter(
         &self,
         engine_index: usize,
@@ -691,6 +764,9 @@ impl PlayerHandle {
 
     /// Momentary actions have no saved setting to defer to the next engine.
     /// Report an absent engine as a real command failure in release builds.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_plugin_action(
         &self,
         engine_index: usize,
@@ -704,6 +780,9 @@ impl PlayerHandle {
 
     /// QA observes the same strict action and user-visible failure path.
     #[cfg(feature = "dev-api")]
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_plugin_action_with_receipt(
         &self,
         engine_index: usize,
@@ -718,6 +797,9 @@ impl PlayerHandle {
     /// Dev-only acknowledgement of the worker/processing result for one
     /// parameter command. The realtime callback is unchanged.
     #[cfg(feature = "dev-api")]
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn set_plugin_parameter_with_receipt(
         &self,
         engine_index: usize,
@@ -730,6 +812,10 @@ impl PlayerHandle {
     }
 
     #[cfg(feature = "dev-api")]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugins_qa_receipt(
         &self,
         plugins: Vec<PluginConfig>,
@@ -740,6 +826,10 @@ impl PlayerHandle {
     }
 
     #[cfg(feature = "dev-api")]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn update_plugin_graph_qa_receipt(
         &self,
         graph_config: PluginGraphConfig,
@@ -749,6 +839,10 @@ impl PlayerHandle {
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn load_and_play_source(
         &self,
         source: AudioSource,
@@ -761,6 +855,10 @@ impl PlayerHandle {
         })
     }
 
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn load_or_switch_source_at(
         &self,
         source: AudioSource,
@@ -786,6 +884,10 @@ impl PlayerHandle {
         clippy::too_many_arguments,
         reason = "The transport command accepts the source, output, position, and graph atomically"
     )]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn load_or_switch_source_at_with_receipt(
         &self,
         source: AudioSource,
@@ -809,8 +911,7 @@ impl PlayerHandle {
                     Ok(()) => Ok(()),
                     Err(error) => {
                         log::warn!(
-                            "[GPUI] Smooth track switch unavailable, falling back to restart: {}",
-                            error
+                            "[GPUI] Smooth track switch unavailable, falling back to restart: {error}"
                         );
                         player.load_and_play_source_at(
                             source,
@@ -834,6 +935,10 @@ impl PlayerHandle {
     }
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn start_hal_playback_with_config(
         &self,
         plugins: Vec<PluginConfig>,
@@ -851,6 +956,10 @@ impl PlayerHandle {
     }
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn restart_hal_playback_with_config_receipt(
         &self,
         plugins: Vec<PluginConfig>,
@@ -870,6 +979,10 @@ impl PlayerHandle {
     }
 
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    /// Queues a playback worker command.
+    ///
+    /// # Errors
+    /// Returns an error if the playback worker command channel is disconnected.
     pub fn start_hal_playback_with_config_receipt(
         &self,
         plugins: Vec<PluginConfig>,
@@ -885,6 +998,30 @@ impl PlayerHandle {
                 sample_rate,
             )
         })
+    }
+}
+
+impl std::fmt::Debug for PlayerSnapshot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlayerSnapshot")
+            .field("sequence", &self.sequence)
+            .field("is_playing", &self.is_playing)
+            .field("position_secs", &self.position_secs)
+            .field("sample_rate", &self.sample_rate)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for PlayerHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlayerHandle")
+            .field(
+                "snapshot_requested",
+                &self
+                    .snapshot_requested
+                    .load(std::sync::atomic::Ordering::Relaxed),
+            )
+            .finish_non_exhaustive()
     }
 }
 

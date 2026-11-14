@@ -20,6 +20,10 @@ pub struct RunSummary {
     pub opt_ins: Vec<String>,
 }
 
+/// Writes JSON, `JUnit`, and HTML reports.
+///
+/// # Errors
+/// Returns an error if serialization or report file writes fail.
 pub fn write_reports(run_dir: &Path, summary: &RunSummary) -> Result<(), ReportError> {
     fs::write(
         run_dir.join("summary.json"),

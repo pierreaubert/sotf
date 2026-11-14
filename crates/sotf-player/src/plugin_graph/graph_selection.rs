@@ -15,6 +15,7 @@ impl GraphSelection {
         self.selected_connections.clear();
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.selected_nodes.is_empty() && self.selected_connections.is_empty()
     }

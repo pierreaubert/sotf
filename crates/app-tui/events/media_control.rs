@@ -4,6 +4,14 @@ use super::PlayerCommand;
 use crate::app::App;
 
 /// Handle media control events from the system (play/pause/next/etc.)
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The channel event dispatcher accepts ownership of each received event"
+)]
 pub fn handle_media_control_event(
     app: &mut App,
     event: sotf_media_controls::MediaControlEvent,
@@ -71,11 +79,11 @@ pub fn handle_media_control_event(
             };
             Some(PlayerCommand::SeekRelative(offset))
         }
-        sotf_media_controls::MediaControlEvent::Raise => None,
+        sotf_media_controls::MediaControlEvent::Raise
+        | sotf_media_controls::MediaControlEvent::OpenUri(_) => None,
         sotf_media_controls::MediaControlEvent::Quit => {
             app.should_quit = true;
             None
         }
-        sotf_media_controls::MediaControlEvent::OpenUri(_) => None,
     }
 }

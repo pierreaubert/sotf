@@ -1,7 +1,7 @@
 //! CSV utility helpers (filename sanitization + extended-metrics loader)
 //! used by the recording / room-EQ load paths. The historical
 //! `perform_migration` / `write_room_config` functions that converted
-//! the legacy `RoomEqMeasurementsFile` JSON into the autoeq RoomConfig
+//! the legacy `RoomEqMeasurementsFile` JSON into the autoeq `RoomConfig`
 //! format have been removed — the only on-disk format is now
 //! `roomeq_model::RoomConfig`.
 
@@ -11,11 +11,13 @@ use std::path::Path;
 /// legacy `RoomEqMeasurementsFile` schema is gone, so the answer is
 /// always `false` and the caller should load the file with the
 /// `roomeq_model::RoomConfig` parser directly.
+#[must_use]
 pub fn check_needs_migration(_json: &str, _file_size: u64) -> bool {
     false
 }
 
 /// Sanitize a string for use as a filename
+#[must_use]
 pub fn sanitize_filename(name: &str) -> String {
     name.chars()
         .map(|c| {
@@ -41,11 +43,14 @@ pub struct ExtendedMetrics {
 /// Read extended metrics from CSV file
 ///
 /// CSV format expected:
-/// frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms
+/// `frequency_hz,spl_db,phase_deg,thd_percent,rt60_ms,c50_db,c80_db,group_delay_ms`
+///
+/// # Errors
+/// Returns an error if the CSV cannot be read, has no data rows, or lacks extended metrics.
 pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics, String> {
     use std::io::BufRead;
 
-    let file = std::fs::File::open(csv_path).map_err(|e| format!("Failed to open CSV: {}", e))?;
+    let file = std::fs::File::open(csv_path).map_err(|e| format!("Failed to open CSV: {e}"))?;
     let reader = std::io::BufReader::new(file);
 
     let mut thd_percent = Vec::new();
@@ -59,7 +64,7 @@ pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics
     let header = lines
         .next()
         .ok_or("CSV file is empty")?
-        .map_err(|e| format!("Failed to read header: {}", e))?;
+        .map_err(|e| format!("Failed to read header: {e}"))?;
 
     let has_extended_data = header.contains("thd_percent") || header.contains("c50_db");
     if !has_extended_data {
@@ -67,7 +72,7 @@ pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics
     }
 
     for line_result in lines {
-        let line = line_result.map_err(|e| format!("Failed to read line: {}", e))?;
+        let line = line_result.map_err(|e| format!("Failed to read line: {e}"))?;
         let parts: Vec<&str> = line.split(',').collect();
 
         if parts.len() >= 8 {
@@ -96,6 +101,7 @@ pub fn read_extended_metrics_from_csv(csv_path: &Path) -> Result<ExtendedMetrics
 ///
 /// Attempts to read from CSV file first, as that contains pre-computed metrics
 /// from the original recording session.
+#[must_use]
 pub fn load_extended_metrics(
     csv_path: Option<&str>,
     base_dir: Option<&Path>,
@@ -106,7 +112,7 @@ pub fn load_extended_metrics(
     if abs_path.exists()
         && let Ok(metrics) = read_extended_metrics_from_csv(abs_path)
     {
-        log::info!("Loaded extended metrics from {:?}", abs_path);
+        log::info!("Loaded extended metrics from {}", abs_path.display());
         return Some(metrics);
     }
 
@@ -115,11 +121,11 @@ pub fn load_extended_metrics(
         if rel_path.exists()
             && let Ok(metrics) = read_extended_metrics_from_csv(&rel_path)
         {
-            log::info!("Loaded extended metrics from {:?}", rel_path);
+            log::info!("Loaded extended metrics from {}", rel_path.display());
             return Some(metrics);
         }
     }
 
-    log::debug!("No extended metrics found for CSV: {}", csv_path);
+    log::debug!("No extended metrics found for CSV: {csv_path}");
     None
 }

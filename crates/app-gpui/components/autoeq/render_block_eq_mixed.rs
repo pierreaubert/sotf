@@ -16,7 +16,7 @@
             .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_mixed_crossover_freq_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         mixed_freq_input = mixed_freq_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -36,13 +36,13 @@
             .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_mixed_crossover_type_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         mixed_type_select =
             mixed_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_mixed_crossover_type_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         mixed_type_select =
             mixed_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
     }
@@ -62,13 +62,13 @@
         .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_mixed_fir_band_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         mixed_band_select =
             mixed_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_mixed_fir_band_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         mixed_band_select =
             mixed_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
     }

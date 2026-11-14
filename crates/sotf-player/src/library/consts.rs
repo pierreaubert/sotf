@@ -47,7 +47,7 @@ fn move_to_bak(path: &Path) -> Option<PathBuf> {
     let mut counter = 1;
     while dest.exists() {
         let mut candidate = path.as_os_str().to_os_string();
-        candidate.push(format!(".bak.{}", counter));
+        candidate.push(format!(".bak.{counter}"));
         dest = PathBuf::from(candidate);
         counter += 1;
     }
@@ -79,7 +79,8 @@ pub(super) fn generate_thumbnail(image_path: &Path) -> Option<Vec<u8>> {
     // Load the image, guessing the real format from the file contents rather
     // than relying on the extension. This handles cover files that are named
     // e.g. `cover.png` but actually contain JPEG data.
-    let img = match ImageReader::open(image_path).and_then(|r| r.with_guessed_format()) {
+    let img = match ImageReader::open(image_path).and_then(image::ImageReader::with_guessed_format)
+    {
         Ok(reader) => match reader.decode() {
             Ok(img) => img,
             Err(e) => {

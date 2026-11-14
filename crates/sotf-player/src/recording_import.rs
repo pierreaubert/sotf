@@ -1,7 +1,7 @@
-//! Recording -> RoomEQ import bridge (stays in sotf-player).
+//! Recording -> `RoomEQ` import bridge (stays in sotf-player).
 //!
 //! [`RecordingImport`] joins capture results (owned by `sotf-capture`)
-//! with RoomEQ channel topology (this crate's `room_eq_types`), so it
+//! with `RoomEQ` channel topology (this crate's `room_eq_types`), so it
 //! cannot move in either direction without a dependency cycle.
 
 use crate::recording_types::{ChannelRecording, ChannelRecordingState, RecordingSourceIdentity};
@@ -18,8 +18,11 @@ pub struct RecordingImport {
 }
 
 impl RecordingImport {
-    /// Preserve driver/position topology while handing current takes to RoomEQ.
+    /// Preserve driver/position topology while handing current takes to `RoomEQ`.
     /// Validate the complete source set before publishing any measurements.
+    ///
+    /// # Errors
+    /// Returns an error if recording sources, response data, or speaker topology are invalid.
     pub fn channels_with_recordings(
         &self,
         recordings: &[ChannelRecording],
@@ -68,6 +71,7 @@ impl RecordingImport {
     }
 
     /// Original capture identity, including unknown microphone/position indices.
+    #[must_use]
     pub fn source_provenance(
         &self,
         source: &RecordingSourceIdentity,
@@ -86,6 +90,9 @@ impl RecordingImport {
 
     /// Replace source responses without flattening driver or speaker topology.
     /// All original source addresses must be present exactly once.
+    ///
+    /// # Errors
+    /// Returns an error if recording sources, response data, or speaker topology are invalid.
     pub fn configuration_with_recordings(
         &self,
         recordings: &[ChannelRecording],
@@ -183,6 +190,7 @@ impl RecordingImport {
 
     /// Present every source as a reviewable take without inventing capture
     /// microphone/position metadata. The source address distinguishes unknowns.
+    #[must_use]
     pub fn recordings(&self) -> Vec<ChannelRecording> {
         let mut recordings = Vec::with_capacity(self.take_count());
         for (channel_index, channel) in self.channels.iter().enumerate() {
@@ -208,8 +216,7 @@ impl RecordingImport {
                                     "{} / {} / {name}",
                                     channel.channel_name,
                                     driver_name
-                                        .map(str::to_owned)
-                                        .unwrap_or_else(|| (driver + 1).to_string())
+                                        .map_or_else(|| (driver + 1).to_string(), str::to_owned)
                                 )
                             },
                         );
@@ -258,6 +265,10 @@ impl RecordingImport {
         recordings
     }
 
+    /// From json.
+    ///
+    /// # Errors
+    /// Returns an error if recording sources, response data, or speaker topology are invalid.
     pub fn from_json(json: &str, base_directory: Option<&Path>) -> Result<Self, String> {
         let mut configuration: roomeq_model::RoomConfig =
             serde_json::from_str(json).map_err(|error| format!("Parse error: {error}"))?;
@@ -281,6 +292,7 @@ impl RecordingImport {
         })
     }
 
+    #[must_use]
     pub fn take_count(&self) -> usize {
         self.channels
             .iter()

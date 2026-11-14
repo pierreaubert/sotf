@@ -16,7 +16,7 @@ use crate::level_meter_render::{
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{FontWeight, SharedString, TextAlign, div, px, relative, rems};
 use gpui_audio_kit::{
     TickConfig, db_to_position, render_horizontal_meter_bar, render_horizontal_meter_bar_with,
     render_tick_row,
@@ -25,6 +25,10 @@ use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 
 const FALLBACK_TRUE_PEAKS: [f64; 2] = [-60.0, -60.0];
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_no_meter_data(d: &Ds, text: LevelMeterTranslations, theme: &Theme) -> impl IntoElement {
     div()
         .flex()
@@ -65,15 +69,18 @@ fn finite_meter_value(value: f64, fallback: f64) -> f64 {
     if value.is_finite() { value } else { fallback }
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn maximum_true_peak_value(
     loudness: &sotf_audio_player::LoudnessData,
     text: LevelMeterTranslations,
 ) -> String {
     match loudness.maximum_true_peak_dbtp {
         Some(value) if value.is_finite() => format!("{value:.1} dBTP"),
-        Some(_) => text.true_peak_unavailable.to_string(),
         None if loudness.true_peak_is_compliant => "— dBTP".to_string(),
-        None => text.true_peak_unavailable.to_string(),
+        Some(_) | None => text.true_peak_unavailable.to_string(),
     }
 }
 
@@ -84,6 +91,10 @@ fn maximum_lufs_value(maximum: Option<f64>) -> String {
     }
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn lra_display_value(
     loudness: Option<&sotf_audio_player::LoudnessData>,
     text: LevelMeterTranslations,
@@ -199,7 +210,8 @@ fn render_lra_summary(
 }
 
 /// Render a horizontal gain reduction meter
-/// Uses render_gradient_meter for consistent styling
+/// Uses `render_gradient_meter` for consistent styling
+#[must_use]
 pub fn render_gr_meter(
     d: &Ds,
     gain_reduction_db: f64, // Should be negative or 0
@@ -250,7 +262,7 @@ pub fn render_gr_meter(
                         .font_weight(FontWeight::BOLD)
                         .text_color(color)
                         .text_align(TextAlign::Right)
-                        .child(format!("-{:.1} dB", gr_abs)),
+                        .child(format!("-{gr_abs:.1} dB")),
                 ),
         )
         // Meter bar (full width)
@@ -284,7 +296,7 @@ pub fn render_gr_meter(
                     let label = if *v == 0.0 {
                         "0".to_string()
                     } else {
-                        format!("-{:.0}", v)
+                        format!("-{v:.0}")
                     };
                     div().child(label)
                 })),
@@ -292,7 +304,8 @@ pub fn render_gr_meter(
 }
 
 /// Render a meter with gradient coloring (green, yellow at top, red at clip)
-/// Optional peak_ratio shows a peak hold indicator line
+/// Optional `peak_ratio` shows a peak hold indicator line
+#[must_use]
 pub fn render_gradient_meter(
     d: &Ds,
     fill_ratio: f32,
@@ -404,6 +417,15 @@ pub fn render_gradient_meter(
 }
 
 /// Render programme loudness before channel peaks with compact summary readouts.
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub fn render_lufs_with_true_peak(
     d: &Ds,
     loudness: Option<&sotf_audio_player::LoudnessData>,
@@ -417,15 +439,16 @@ pub fn render_lufs_with_true_peak(
         let empty = empty.dev_track("plugin.loudness.no-data");
         return div().child(empty);
     }
-    let maximum_true_peak_value = loudness
-        .map(|data| maximum_true_peak_value(data, text))
-        .unwrap_or_default();
-    let maximum_momentary_value = loudness
-        .map(|data| maximum_lufs_value(data.maximum_momentary_lufs))
-        .unwrap_or_else(|| "—".to_string());
-    let maximum_shortterm_value = loudness
-        .map(|data| maximum_lufs_value(data.maximum_shortterm_lufs))
-        .unwrap_or_else(|| "—".to_string());
+    let maximum_true_peak_value =
+        loudness.map_or_default(|data| maximum_true_peak_value(data, text));
+    let maximum_momentary_value = loudness.map_or_else(
+        || "—".to_string(),
+        |data| maximum_lufs_value(data.maximum_momentary_lufs),
+    );
+    let maximum_shortterm_value = loudness.map_or_else(
+        || "—".to_string(),
+        |data| maximum_lufs_value(data.maximum_shortterm_lufs),
+    );
     let (lra_value, lra_not_stable) = lra_display_value(loudness, text);
     // Older snapshots and analyzers that do not expose oversampled peaks can
     // still provide per-channel sample peaks. Keep that fallback channel
@@ -843,7 +866,7 @@ impl PlayerView {
                             .w(rems(2.25))
                             .overflow_hidden()
                             .children(ticks.into_iter().map(move |db| {
-                                let pos = db_to_position(db as f64);
+                                let pos = db_to_position(f64::from(db));
                                 // Use top positioning: top = (1 - pos), then offset by half line height
                                 let top_fraction = 1.0 - pos;
 
@@ -860,8 +883,7 @@ impl PlayerView {
                                 };
 
                                 let label_text = db_tick_label(db)
-                                    .map(|s| s.into())
-                                    .unwrap_or_else(|| format!("{}", db));
+                                    .map_or_else(|| format!("{db}"), std::convert::Into::into);
                                 let label = div()
                                     .text_size(d.text_xs)
                                     .text_color(text_muted)
@@ -963,6 +985,18 @@ impl PlayerView {
     /// Render a meter group from pre-computed channel data. This avoids
     /// cloning the full `ChannelGroup` / `peak_hold` vectors in callers
     /// such as `render_meters_panel`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
+    #[expect(
+        clippy::fn_params_excessive_bools,
+        reason = "Independent presentation flags preserve the existing renderer interface"
+    )]
     fn render_meter_group_data(
         &self,
         group_idx: usize,
@@ -1155,6 +1189,10 @@ impl PlayerView {
     }
 
     /// Render separate Meters panel (for queue screen)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub fn render_meters_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = LevelMeterTranslations::for_language(self.state.read(cx).app.ui_state.language);
@@ -1261,8 +1299,8 @@ impl PlayerView {
                         .id("meter-groups-scroll")
                         .flex()
                         .flex_1()
-                        .when(center_meter_groups, |groups| groups.justify_center())
-                        .when(!center_meter_groups, |groups| groups.justify_start())
+                        .when(center_meter_groups, gpui::Styled::justify_center)
+                        .when(!center_meter_groups, gpui::Styled::justify_start)
                         .gap_0()
                         .overflow_x_scroll()
                         .min_h(rems(18.75))
@@ -1282,7 +1320,7 @@ impl PlayerView {
     }
 
     /// Render unified meter bar with consistent styling
-    /// Uses the TickConfig's scale for bar fill to match tick mark positions
+    /// Uses the `TickConfig`'s scale for bar fill to match tick mark positions
     pub fn render_meter_bar(
         d: &Ds,
         label: String,
@@ -1296,7 +1334,7 @@ impl PlayerView {
     }
 
     /// Render stereo width bar (0 = mono, 1 = wide)
-    /// Uses the TickConfig's scale for bar fill to match tick mark positions
+    /// Uses the `TickConfig`'s scale for bar fill to match tick mark positions
     pub fn render_width_bar(
         d: &Ds,
         width: f64,

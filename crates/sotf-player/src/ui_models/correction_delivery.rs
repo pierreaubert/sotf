@@ -50,6 +50,7 @@ impl CorrectionDelivery {
     }
 
     /// Retry only the exact failed result and graph, without adding another correction.
+    #[must_use]
     pub fn can_retry_application(&self, graph: &serde_json::Value) -> bool {
         self.pending_application.is_none()
             && self
@@ -67,6 +68,7 @@ impl CorrectionDelivery {
     }
 
     /// An acknowledgement is attributed to its submitted graph and result revision.
+    #[must_use]
     pub fn pending_application_revision(&self, graph: &serde_json::Value) -> Option<u64> {
         self.pending_application
             .as_ref()
@@ -97,13 +99,16 @@ impl CorrectionDelivery {
         true
     }
 
+    #[must_use]
     pub fn application_status(
         &self,
         result_is_current: bool,
         graph: &serde_json::Value,
         runtime_matches: bool,
     ) -> CorrectionApplicationStatus {
-        use CorrectionApplicationStatus::*;
+        use CorrectionApplicationStatus::{
+            Applied, ChangedGraph, Failed, NotApplied, Pending, PreviousResult,
+        };
         if let Some(pending) = &self.pending_application {
             return if &pending.graph == graph {
                 Pending
@@ -130,6 +135,7 @@ impl CorrectionDelivery {
         }
     }
 
+    #[must_use]
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -143,10 +149,12 @@ impl CorrectionDelivery {
         });
     }
 
+    #[must_use]
     pub fn last_export(&self) -> Option<&CorrectionExport> {
         self.last_export.as_ref()
     }
 
+    #[must_use]
     pub fn current_result_exported(&self, result_is_current: bool) -> bool {
         result_is_current
             && self

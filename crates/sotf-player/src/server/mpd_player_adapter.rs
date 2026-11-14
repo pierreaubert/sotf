@@ -72,14 +72,13 @@ impl PlayerAdapter for MpdPlayerAdapter {
         let mut queue = self.state.queue.lock();
         let mut player = self.state.player.lock();
 
-        let result = match queue.next_track() {
-            Some(source) => player
+        let result = if let Some(source) = queue.next_track() {
+            player
                 .load_and_play_source(source, vec![], 2, None)
-                .map_err(|e| e.to_string()),
-            None => {
-                player.stop().map_err(|e| e.to_string())?;
-                Ok(())
-            }
+                .map_err(|e| e.to_string())
+        } else {
+            player.stop().map_err(|e| e.to_string())?;
+            Ok(())
         };
         drop(player);
         drop(queue);
@@ -140,12 +139,17 @@ impl PlayerAdapter for MpdPlayerAdapter {
         result
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "MPD volume is clamped to the integer percentage protocol range"
+    )]
     fn volume_change(&self, delta: i8) -> Result<(), String> {
         let player = self.state.player.lock();
         let current = (player.get_volume() * 100.0) as i16;
         let new = (current + i16::from(delta)).clamp(0, 100);
         let result = player
-            .set_volume(new as f32 / 100.0)
+            .set_volume(f32::from(new) / 100.0)
             .map_err(|e| e.to_string());
         drop(player);
         if result.is_ok() {
@@ -155,6 +159,15 @@ impl PlayerAdapter for MpdPlayerAdapter {
         result
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "MPD duration metadata is exposed as approximate floating-point seconds"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "MPD volume is quantized to the integer percentage protocol range"
+    )]
     fn status(&self) -> MpdStatus {
         let mut player = self.state.player.lock();
         let queue = self.state.queue.lock();
@@ -203,7 +216,7 @@ impl PlayerAdapter for MpdPlayerAdapter {
     fn current_song(&self) -> Option<MpdSongInfo> {
         let queue = self.state.queue.lock();
         let track = queue.current_track()?;
-        let pos = queue.current_index.unwrap_or(0) as u32;
+        let pos = u32::try_from(queue.current_index.unwrap_or(0)).unwrap_or(u32::MAX);
         Some(track_to_song_info(track, pos))
     }
 
@@ -247,14 +260,14 @@ impl PlayerAdapter for MpdPlayerAdapter {
             });
             Ok(())
         } else {
-            Err(format!("Not found: {}", uri))
+            Err(format!("Not found: {uri}"))
         }
     }
 
     fn add_id(&self, uri: &str, _pos: Option<u32>) -> Result<u32, String> {
         self.add(uri)?;
         let queue = self.state.queue.lock();
-        Ok(queue.items.len().saturating_sub(1) as u32)
+        Ok(u32::try_from(queue.items.len().saturating_sub(1)).unwrap_or(u32::MAX))
     }
 
     fn delete(&self, pos: u32) -> Result<(), String> {
@@ -271,7 +284,7 @@ impl PlayerAdapter for MpdPlayerAdapter {
             });
             Ok(())
         } else {
-            Err(format!("Invalid position: {}", pos))
+            Err(format!("Invalid position: {pos}"))
         }
     }
 
@@ -384,7 +397,7 @@ impl PlayerAdapter for MpdPlayerAdapter {
     fn lsinfo(&self, path: Option<&str>) -> Vec<MpdDirEntry> {
         let library = self.state.library.lock();
         match path {
-            None | Some("") | Some("/") => library
+            None | Some("" | "/") => library
                 .albums
                 .iter()
                 .map(|a| MpdDirEntry {

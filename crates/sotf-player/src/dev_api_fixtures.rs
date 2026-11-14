@@ -3,6 +3,9 @@
 use crate::{Album, Track};
 
 /// Source metadata for exercising the production file-import path in UI QA.
+///
+/// # Errors
+/// Returns an error if measurement provenance cannot be serialized or written.
 pub fn write_headphone_provenance_fixture(path: &std::path::Path) -> Result<(), String> {
     let curve = autoeq_measurements::read::read_curve_from_csv(&path.to_path_buf())
         .map_err(|error| error.to_string())?;
@@ -29,6 +32,7 @@ pub fn write_headphone_provenance_fixture(path: &std::path::Path) -> Result<(), 
 }
 
 /// Returns a deterministic album fixture used by dev API endpoints.
+#[must_use]
 pub fn metadata_fixture_album() -> Album {
     let track_path = std::env::temp_dir()
         .join("sotf-dev-driver")
@@ -54,6 +58,12 @@ pub fn metadata_fixture_album() -> Album {
 
 /// A deterministic, varied library large enough to exercise collapsed and
 /// expanded Home shelves without depending on the host's music collection.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The fixed fixture generates only sixteen nonnegative album indices "
+)]
 pub fn home_fixture_albums() -> Vec<Album> {
     (0..16)
         .map(|index| {

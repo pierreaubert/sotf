@@ -22,7 +22,7 @@ where
         .update(cx, |any_view, _window, cx| {
             let entity = any_view
                 .downcast::<PlayerView>()
-                .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                .map_err(|_error| anyhow!("root view is not PlayerView"))?;
             entity.update(cx, |view, cx| f(view, cx))
         })
         .map_err(|e| anyhow!("window.update failed: {e:#}"))?
@@ -36,7 +36,7 @@ where
         .update(cx, |any_view, _window, cx| {
             let entity = any_view
                 .downcast::<PlayerView>()
-                .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                .map_err(|_error| anyhow!("root view is not PlayerView"))?;
             let state_entity = {
                 let view = entity.read(cx);
                 view.state.clone()

@@ -7,7 +7,7 @@
 
     // Compute FIR impulse duration for capability and filter design sections
     let fir_duration_ms =
-        config.eq_design.fir_taps as f64 / config.eq_design.sample_rate.max(1) as f64 * 1000.0;
+        config.eq_design.fir_taps as f64 / f64::from(config.eq_design.sample_rate.max(1)) * 1000.0;
 
     let toggle_theme = theme.toggle_theme();
 

@@ -13,7 +13,7 @@
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_psychoacoustic_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         psycho_toggle = psycho_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -46,7 +46,7 @@
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_smooth_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         smooth_toggle = smooth_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -86,7 +86,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_smooth_n_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             smooth_n_input =
                 smooth_n_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }

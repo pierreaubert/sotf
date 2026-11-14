@@ -30,21 +30,25 @@ pub struct DevElementState {
 }
 
 impl DevElementState {
+    #[must_use]
     pub fn enabled(mut self, value: bool) -> Self {
         self.enabled = Some(value);
         self
     }
 
+    #[must_use]
     pub fn selected(mut self, value: bool) -> Self {
         self.selected = Some(value);
         self
     }
 
+    #[must_use]
     pub fn expanded(mut self, value: bool) -> Self {
         self.expanded = Some(value);
         self
     }
 
+    #[must_use]
     pub fn text(mut self, value: impl Into<String>) -> Self {
         self.text = Some(value.into());
         self
@@ -133,6 +137,7 @@ pub fn clear(window_id: u64) {
     }
 }
 
+#[must_use]
 pub fn lookup(window_id: u64, selector: &str) -> Option<Bounds<Pixels>> {
     store().lock().ok().and_then(|m| {
         m.get(&window_id)
@@ -149,18 +154,16 @@ pub fn snapshot() -> Vec<(String, TrackedElement)> {
         .map_or_else(Vec::new, |window_id| snapshot_for(*window_id))
 }
 
+#[must_use]
 pub fn snapshot_for(window_id: u64) -> Vec<(String, TrackedElement)> {
-    store()
-        .lock()
-        .map(|m| {
-            let mut entries: Vec<_> = m
-                .get(&window_id)
-                .into_iter()
-                .flatten()
-                .map(|(k, v)| (k.clone(), v.clone()))
-                .collect();
-            entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
-            entries
-        })
-        .unwrap_or_default()
+    store().lock().map_or_default(|m| {
+        let mut entries: Vec<_> = m
+            .get(&window_id)
+            .into_iter()
+            .flatten()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        entries.sort_unstable_by(|(left, _), (right, _)| left.cmp(right));
+        entries
+    })
 }

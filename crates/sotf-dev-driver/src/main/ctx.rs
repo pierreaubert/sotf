@@ -90,7 +90,8 @@ pub(crate) fn run_script_with_run_id(
     run_id: Option<&str>,
     qa_directory: Option<&str>,
 ) -> Result<ScriptTimingReport> {
-    let source = fs::read_to_string(script).with_context(|| format!("reading {:?}", script))?;
+    let source =
+        fs::read_to_string(script).with_context(|| format!("reading {}", script.display()))?;
     let mut headers = reqwest::header::HeaderMap::new();
     if let Some(run_id) = run_id {
         headers.insert(

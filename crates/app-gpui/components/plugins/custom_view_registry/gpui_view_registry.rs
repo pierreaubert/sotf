@@ -53,6 +53,7 @@ impl GpuiViewRegistry {
     }
 
     /// Look up a custom render function for a plugin type.
+    #[must_use]
     pub fn get(&self, plugin_type_key: &str) -> Option<CustomViewRenderFn> {
         self.views.get(plugin_type_key).copied()
     }
@@ -61,5 +62,13 @@ impl GpuiViewRegistry {
 impl Default for GpuiViewRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for GpuiViewRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuiViewRegistry")
+            .field("registered_plugins", &self.views.keys().collect::<Vec<_>>())
+            .finish_non_exhaustive()
     }
 }

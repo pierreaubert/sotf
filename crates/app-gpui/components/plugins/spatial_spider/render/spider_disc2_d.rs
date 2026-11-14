@@ -1,8 +1,8 @@
 use super::super::data::{ChannelMetric, compute_polygon_2d};
 use super::spider_colors::SpiderColors;
 use super::spider_disc2_dinner::SpiderDisc2DInner;
+use gpui::AnyElement;
 use gpui::prelude::*;
-use gpui::*;
 use sotf_plugins::speaker_config::SpeakerConfig;
 
 /// GPUI element drawing the 2D spider directly via `gpui::PathBuilder`.
@@ -22,6 +22,7 @@ pub struct SpiderDisc2D<'a> {
 }
 
 impl<'a> SpiderDisc2D<'a> {
+    #[must_use]
     pub fn new(config: &'a SpeakerConfig, metric: ChannelMetric<'a>) -> Self {
         Self {
             config,
@@ -32,11 +33,13 @@ impl<'a> SpiderDisc2D<'a> {
         }
     }
 
+    #[must_use]
     pub fn colors(mut self, colors: SpiderColors) -> Self {
         self.colors = colors;
         self
     }
 
+    #[must_use]
     pub fn show_labels(mut self, show: bool) -> Self {
         self.show_labels = show;
         self
@@ -44,12 +47,13 @@ impl<'a> SpiderDisc2D<'a> {
 
     /// Draw an extra ring around the dot for `channel` to mark it (e.g. the
     /// active correlation reference).
+    #[must_use]
     pub fn highlight_channel(mut self, channel: Option<usize>) -> Self {
         self.highlight_channel = channel;
         self
     }
 
-    /// Convert (azimuth_deg, radius_unit) to screen pixels.
+    /// Convert (`azimuth_deg`, `radius_unit`) to screen pixels.
     ///
     /// Convention from `speaker_config.rs`: `0° = front (+Y world)`,
     /// `+90° = left`. On screen we want front = top, left = left, so:
@@ -98,5 +102,14 @@ impl IntoElement for SpiderDisc2D<'_> {
             colors: self.colors,
         }
         .into_any_element()
+    }
+}
+
+impl std::fmt::Debug for SpiderDisc2D<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpiderDisc2D")
+            .field("show_labels", &self.show_labels)
+            .field("highlight_channel", &self.highlight_channel)
+            .finish_non_exhaustive()
     }
 }

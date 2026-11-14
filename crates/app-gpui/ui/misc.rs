@@ -12,6 +12,7 @@ unsafe extern "C" {
 /// Window geometry determines reflow, never typography. Keep this public
 /// compatibility helper neutral; display scaling is owned by GPUI and UI
 /// zoom by `compute_combined_scale`.
+#[must_use]
 pub fn compute_responsive_scale(_window_width: f32, _window_height: f32) -> f32 {
     1.0
 }
@@ -31,6 +32,7 @@ pub struct ResolvedSizing {
 }
 
 impl ResolvedSizing {
+    #[must_use]
     pub fn desktop_content_width_rems(self, manually_collapsed: bool) -> f32 {
         let rail = if manually_collapsed {
             3.75
@@ -43,6 +45,7 @@ impl ResolvedSizing {
     }
 }
 
+#[must_use]
 pub fn resolve_sizing_context(
     window_width: f32,
     window_height: f32,
@@ -74,6 +77,7 @@ pub fn resolve_sizing_context(
 
 /// Effective scale used by rem-based UI geometry after responsive scaling,
 /// user zoom, and configured font-size bounds are applied.
+#[must_use]
 pub fn compute_combined_scale(
     window_width: f32,
     window_height: f32,
@@ -92,6 +96,7 @@ pub fn compute_combined_scale(
     (font_scale * responsive_scale).clamp(scale_min, scale_max)
 }
 
+#[must_use]
 pub fn responsive_scale_reference_size(window_width: f32, window_height: f32) -> (f32, f32) {
     if is_phone_sized_window(window_width, window_height) {
         if window_width >= window_height {
@@ -104,6 +109,7 @@ pub fn responsive_scale_reference_size(window_width: f32, window_height: f32) ->
     }
 }
 
+#[must_use]
 pub fn is_phone_sized_window(window_width: f32, window_height: f32) -> bool {
     let short_axis = window_width.min(window_height);
     let long_axis = window_width.max(window_height);
@@ -112,6 +118,7 @@ pub fn is_phone_sized_window(window_width: f32, window_height: f32) -> bool {
 
 /// Use a navigation rail when full labels would crowd the active workspace.
 /// This is a layout decision and does not change the saved sidebar preference.
+#[must_use]
 pub fn navigation_is_compact(
     window_width: f32,
     combined_scale: f32,

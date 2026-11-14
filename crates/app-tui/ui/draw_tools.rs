@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Constraint, Direction, Frame, Layout, Line, List, ListItem,
+    ListState, Modifier, Paragraph, Rect, Span, Style, Tabs, Wrap, draw_help_box_with_text,
+};
 use crate::app::{AbTestingStep, Tool};
 use sotf_audio_player::{AbTestPhase, TrialMode};
 
@@ -39,7 +42,7 @@ pub(crate) fn draw_tools_screen(f: &mut Frame, area: Rect, app: &App) {
             };
             ListItem::new(Line::from(vec![
                 Span::styled(
-                    format!(" [{}] ", key),
+                    format!(" [{key}] "),
                     if is_selected {
                         style.add_modifier(Modifier::BOLD)
                     } else {
@@ -74,6 +77,10 @@ pub(crate) fn draw_tools_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_stateful_widget(list, chunks[1], &mut state);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_ab_testing_screen(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let chunks = Layout::default()

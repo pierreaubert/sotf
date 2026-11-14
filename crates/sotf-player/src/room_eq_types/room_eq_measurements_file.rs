@@ -29,6 +29,9 @@ impl RoomEqMeasurementsFile {
     /// multi-mic recordings. The current roomeq CTC solver consumes two-ear
     /// IR WAVs, so this exports mic 0 and mic 1 as a stereo impulse-response
     /// file for every completed `(head_position, speaker)` take.
+    ///
+    /// # Errors
+    /// Returns an error if recordings cannot be read or their measurement topology is unsupported.
     pub fn build_ctc_measurements_from_recordings(
         recordings: &[ChannelRecording],
         speaker_names: &[String],
@@ -58,6 +61,13 @@ impl RoomEqMeasurementsFile {
     #[allow(
         clippy::too_many_arguments,
         reason = "export builder: one argument per input data source"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error if recordings cannot be read or their measurement topology is unsupported.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Measurement import dispatch preserves channel and source topology together"
     )]
     pub fn build_ctc_measurements_from_recordings_with_strategy(
         recordings: &[ChannelRecording],
@@ -194,7 +204,7 @@ impl RoomEqMeasurementsFile {
         }
 
         std::fs::create_dir_all(&matrix_dir)
-            .map_err(|e| format!("failed to create CTC matrix directory: {}", e))?;
+            .map_err(|e| format!("failed to create CTC matrix directory: {e}"))?;
 
         let mut used_positions = BTreeSet::new();
         let mut files = Vec::new();
@@ -249,7 +259,7 @@ impl RoomEqMeasurementsFile {
                             .ok_or_else(|| {
                                 "right-ear recording has no impulse response".to_string()
                             })?;
-                        let file_name = format!("{}_{}_ears_ir.wav", safe_head, safe_speaker);
+                        let file_name = format!("{safe_head}_{safe_speaker}_ears_ir.wav");
                         let abs_path = matrix_dir.join(&file_name);
                         write_stereo_ir_wav(&abs_path, left_ir, right_ir, left_rate)?;
 
@@ -287,8 +297,7 @@ impl RoomEqMeasurementsFile {
                         let left_wav = resolve_recording_wav_path(left_wav, output_dir);
                         let right_wav = resolve_recording_wav_path(right_wav, output_dir);
                         let loopback_wav = resolve_recording_wav_path(loopback_wav, output_dir);
-                        let file_name =
-                            format!("{}_{}_ears_raw_sweep.wav", safe_head, safe_speaker);
+                        let file_name = format!("{safe_head}_{safe_speaker}_ears_raw_sweep.wav");
                         let abs_path = matrix_dir.join(&file_name);
                         write_stereo_wav_from_mono_wavs(
                             &abs_path, &left_wav, &right_wav, left_rate,
@@ -339,6 +348,7 @@ impl RoomEqMeasurementsFile {
     /// Returns `None` when the file does not carry the config — that
     /// means the file was recorded without session metadata and the
     /// caller should fall back to defaults (0..N indices, 48 000 Hz).
+    #[must_use]
     pub fn extract_delay_detection_hints(json: &str) -> Option<DelayDetectionHints> {
         let room_config = serde_json::from_str::<roomeq_model::RoomConfig>(json).ok()?;
         let rc = room_config.recording_config?;
@@ -365,12 +375,15 @@ impl RoomEqMeasurementsFile {
     ///
     /// `base_dir` is used to resolve relative wav/csv paths.  Pass the
     /// parent directory of the JSON file.
+    ///
+    /// # Errors
+    /// Returns an error if recordings cannot be read or their measurement topology is unsupported.
     pub fn load_from_json(
         json: &str,
         base_dir: Option<&std::path::Path>,
     ) -> Result<Vec<ChannelMeasurement>, String> {
         let room_config: roomeq_model::RoomConfig =
-            serde_json::from_str(json).map_err(|e| format!("Parse error: {}", e))?;
+            serde_json::from_str(json).map_err(|e| format!("Parse error: {e}"))?;
         log::info!(
             "Loaded {} speakers (RoomConfig format)",
             room_config.speakers.len()
@@ -448,6 +461,10 @@ impl RoomEqMeasurementsFile {
     }
 
     /// Convert an `roomeq_model::RoomConfig` into `Vec<ChannelMeasurement>`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Measurement import dispatch preserves channel and source topology together"
+    )]
     pub(super) fn channels_from_room_config(
         room_config: roomeq_model::RoomConfig,
         base_dir: Option<&std::path::Path>,
@@ -535,7 +552,7 @@ impl RoomEqMeasurementsFile {
                     roomeq_model::SpeakerConfig::Single(
                         autoeq_core::MeasurementSource::Multiple(source),
                     ) => source.provenance.clone(),
-                    _ => Default::default(),
+                    _ => autoeq_core::MeasurementProvenance::default(),
                 };
                 let measurement_refs: Vec<autoeq_measurements::read::MeasurementRef> =
                     match speaker_config {
@@ -635,8 +652,12 @@ impl RoomEqMeasurementsFile {
             .collect()
     }
 
-    /// Load measurement data from any MeasurementRef variant (inline, named path, or bare path).
-    /// Returns (frequencies, magnitude_db, phase_deg, wav_path, csv_path).
+    /// Load measurement data from any `MeasurementRef` variant (inline, named path, or bare path).
+    /// Returns (frequencies, `magnitude_db`, `phase_deg`, `wav_path`, `csv_path`).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Imported response curves use single-precision measurement storage"
+    )]
     pub(super) fn load_measurement_ref(
         measurement_ref: &autoeq_measurements::read::MeasurementRef,
         resolve_path: &dyn Fn(&str) -> String,
@@ -661,8 +682,7 @@ impl RoomEqMeasurementsFile {
                     loaded_response
                         .phase
                         .as_ref()
-                        .map(|phase| phase.iter().map(|&value| value as f32).collect())
-                        .unwrap_or_default(),
+                        .map_or_default(|phase| phase.iter().map(|&value| value as f32).collect()),
                     inline
                         .and_then(|data| data.wav_path.as_deref())
                         .map(resolve_path),
@@ -694,20 +714,14 @@ impl RoomEqMeasurementsFile {
                         data.magnitude_db.iter().map(|&m| m as f32).collect(),
                         data.phase_deg
                             .as_ref()
-                            .map(|p| p.iter().map(|&v| v as f32).collect())
-                            .unwrap_or_default(),
+                            .map_or_default(|p| p.iter().map(|&v| v as f32).collect()),
                         wav_path,
                         csv_path,
                     )
                 }
             }
-            autoeq_measurements::read::MeasurementRef::Named { path, .. } => {
-                let csv_str = resolve_path(&path.to_string_lossy());
-                let loaded = Self::load_curve_from_csv(&csv_str);
-                let (freq, mag, phase) = loaded.unwrap_or_default();
-                (freq, mag, phase, None, Some(csv_str))
-            }
-            autoeq_measurements::read::MeasurementRef::Path(path) => {
+            autoeq_measurements::read::MeasurementRef::Named { path, .. }
+            | autoeq_measurements::read::MeasurementRef::Path(path) => {
                 let csv_str = resolve_path(&path.to_string_lossy());
                 let loaded = Self::load_curve_from_csv(&csv_str);
                 let (freq, mag, phase) = loaded.unwrap_or_default();
@@ -716,7 +730,11 @@ impl RoomEqMeasurementsFile {
         }
     }
 
-    /// Load a curve from a CSV file, returning (frequencies, magnitude_db, phase_deg).
+    /// Load a curve from a CSV file, returning (frequencies, `magnitude_db`, `phase_deg`).
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Imported response curves use single-precision measurement storage"
+    )]
     pub(super) fn load_curve_from_csv(csv_path: &str) -> Option<(Vec<f32>, Vec<f32>, Vec<f32>)> {
         let path = std::path::PathBuf::from(csv_path);
         match autoeq_measurements::read::read_curve_from_csv(&path) {
@@ -731,12 +749,11 @@ impl RoomEqMeasurementsFile {
                     curve.spl.iter().map(|&s| s as f32).collect(),
                     curve
                         .phase
-                        .map(|p| p.iter().map(|&v| v as f32).collect())
-                        .unwrap_or_default(),
+                        .map_or_default(|p| p.iter().map(|&v| v as f32).collect()),
                 ))
             }
             Err(e) => {
-                log::warn!("Failed to load CSV '{}': {}", csv_path, e);
+                log::warn!("Failed to load CSV '{csv_path}': {e}");
                 None
             }
         }

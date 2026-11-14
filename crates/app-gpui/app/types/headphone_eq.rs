@@ -22,6 +22,10 @@ pub use sotf_audio_player::headphone_eq_types::{
 
 /// UI state for Headphone EQ dropdowns
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct HeadphoneEqDropdowns {
     pub target_open: bool,
     pub target_highlight: Option<usize>,
@@ -33,9 +37,9 @@ pub struct HeadphoneEqDropdowns {
     pub strategy_open: bool,
     pub local_algo_open: bool,
     pub bo_acquisition_open: bool,
-    /// AutoEQ form editing state
+    /// `AutoEQ` form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
-    /// AutoEQ form edit text
+    /// `AutoEQ` form edit text
     pub autoeq_edit_text: String,
 }
 
@@ -108,11 +112,12 @@ impl Default for HeadphoneEqState {
         Self {
             model: HeadphoneEqScreenModel::default(),
             result_inputs: None,
-            delivery: Default::default(),
+            delivery:
+                sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery::default(),
             file_preview: None,
             audition: None,
             dropdowns: HeadphoneEqDropdowns::default(),
-            autoeq_stage: Default::default(),
+            autoeq_stage: crate::components::autoeq::AutoEqStage::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["measurement".into(), "target".into(), "eq-design".into()],
@@ -143,6 +148,7 @@ impl DerefMut for HeadphoneEqState {
 }
 
 impl HeadphoneEqState {
+    #[must_use]
     pub fn active_file_preview(
         &self,
     ) -> Option<&std::sync::Arc<sotf_audio_player::autoeq::headphone::HeadphoneMeasurementPreview>>
@@ -153,12 +159,14 @@ impl HeadphoneEqState {
         })
     }
 
+    #[must_use]
     pub fn measurement_frequency_bounds(&self) -> Option<(f64, f64)> {
         self.active_file_preview()
             .map(|preview| preview.bounds_hz())
             .or_else(|| self.model.measurement_frequency_bounds())
     }
 
+    #[must_use]
     pub fn result_is_current(&self) -> bool {
         self.model.result.is_some()
             && self.result_inputs.as_ref() == Some(&self.model.optimization_input_snapshot())
@@ -175,11 +183,13 @@ impl HeadphoneEqState {
     }
 
     /// Check if we can proceed from the current step.
+    #[must_use]
     pub fn can_advance(&self) -> bool {
         !self.model.loading_download && self.model.can_advance()
     }
 
     /// Check if optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.model.is_optimizing()
     }
@@ -195,6 +205,7 @@ impl HeadphoneEqState {
     }
 
     /// Check if headphones cache needs refresh (older than 1 hour or not loaded).
+    #[must_use]
     pub fn needs_headphone_refresh(&self) -> bool {
         self.model.needs_headphone_refresh()
     }

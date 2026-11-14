@@ -12,7 +12,10 @@
 //! - Plugin configuration sequences
 
 #[path = "../common/mod.rs"]
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "UI hooks and feature-gated state are retained across application configurations"
+)]
 mod common;
 
 mod input_sequences;

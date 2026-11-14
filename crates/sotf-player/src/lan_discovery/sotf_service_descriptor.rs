@@ -9,7 +9,13 @@ use crate::federation_config::SotfApiSettings;
 use std::net::Ipv4Addr;
 
 #[derive(Clone, Debug)]
-#[cfg_attr(target_os = "macos", allow(dead_code))]
+#[cfg_attr(
+    target_os = "macos",
+    allow(
+        dead_code,
+        reason = "Diagnostic and compatibility helpers are retained across platform and feature configurations"
+    )
+)]
 pub(super) struct SotfServiceDescriptor {
     pub(super) instance_name: String,
     pub(super) service_type: String,
@@ -56,7 +62,7 @@ impl SotfServiceDescriptor {
 
 #[cfg(target_os = "macos")]
 pub(super) mod platform {
-    use super::*;
+    use super::SotfServiceDescriptor;
 
     use std::process::{Command, Stdio};
 

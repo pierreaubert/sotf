@@ -1,6 +1,7 @@
 use crate::driver::AppDriver;
 use sotf_audio_player_gpui::app::{ActiveMenu, Screen};
 
+#[derive(Debug)]
 pub struct HeaderPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

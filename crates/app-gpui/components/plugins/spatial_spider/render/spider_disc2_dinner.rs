@@ -17,7 +17,10 @@ use super::spider_colors::SpiderColors;
 use super::spider_disc2_d::SpiderDisc2D;
 use d3rs::text::{measure_glyph_text_width, paint_glyph_text_at};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    App, Bounds, ElementId, GlobalElementId, InspectorElementId, LayoutId, Pixels, Size, Style,
+    Window, relative,
+};
 
 pub(super) struct SpiderDisc2DInner {
     pub(super) polygon: Vec<SpeakerVertex>,
@@ -74,6 +77,10 @@ impl Element for SpiderDisc2DInner {
     ) -> Self::PrepaintState {
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn paint(
         &mut self,
         _id: Option<&GlobalElementId>,

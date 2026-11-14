@@ -9,6 +9,7 @@ use crate::Album;
 
 /// Format a channel count without pretending to know a layout that was not
 /// stored in the library metadata.
+#[must_use]
 pub fn format_channel_count(n: u32) -> String {
     match n {
         1 => "1.0 Mono".to_string(),
@@ -21,7 +22,7 @@ pub fn format_channel_count(n: u32) -> String {
         12 => "12ch (7.1.4)".to_string(),
         14 => "14ch (9.1.4)".to_string(),
         16 => "16ch (9.1.6)".to_string(),
-        _ => format!("{}ch", n),
+        _ => format!("{n}ch"),
     }
 }
 
@@ -42,7 +43,7 @@ pub struct LibraryStats {
     pub genre_counts: HashMap<String, usize>,
     /// Count of albums per year (for selection UI)
     pub year_counts: HashMap<i32, usize>,
-    /// Count of albums per decade (for selection UI) - (start_year, end_year, count)
+    /// Count of albums per decade (for selection UI) - (`start_year`, `end_year`, count)
     pub decade_counts: Vec<(i32, i32, usize)>,
     /// Count of albums per artist (for selection UI)
     pub artist_counts: HashMap<String, usize>,
@@ -78,6 +79,11 @@ pub struct LibraryStats {
 
 impl LibraryStats {
     /// Compute library statistics from a slice of albums.
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Statistics are accumulated together in one traversal of the library"
+    )]
     pub fn compute(albums: &[Album]) -> Self {
         let mut artists: HashSet<String> = HashSet::new();
         let mut composers: HashSet<String> = HashSet::new();
@@ -115,8 +121,7 @@ impl LibraryStats {
             }
 
             // Track year range and count per year
-            if let Some(y) = album.year {
-                let y = y as i32;
+            if let Some(y) = album.year.and_then(|year| i32::try_from(year).ok()) {
                 if y > 0 {
                     if y < min_year {
                         min_year = y;
@@ -146,7 +151,7 @@ impl LibraryStats {
             // Get album artist for artist counts
             let album_artist = album.artist();
             if !album_artist.is_empty() {
-                *artist_counts.entry(album_artist.to_string()).or_insert(0) += 1;
+                *artist_counts.entry(album_artist.clone()).or_insert(0) += 1;
                 if let Some(first_char) = album_artist.chars().next() {
                     let letter = first_char.to_ascii_uppercase();
                     let key = if letter.is_ascii_alphabetic() {
@@ -273,11 +278,7 @@ impl LibraryStats {
                     .filter(|(tracks, _)| **tracks >= *min && **tracks <= *max)
                     .map(|(_, count)| count)
                     .sum();
-                if count > 0 {
-                    Some((*min, *max, count))
-                } else {
-                    None
-                }
+                (count > 0).then_some((*min, *max, count))
             })
             .collect()
     }

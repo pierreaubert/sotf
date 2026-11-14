@@ -167,8 +167,8 @@ pub(super) async fn handle_media(
         Ok(m) if m.is_file() => m,
         Err(e) => {
             log::warn!(
-                "[DLNA Server] media_path {:?} metadata error: {}",
-                src.path,
+                "[DLNA Server] media_path {} metadata error: {}",
+                src.path.display(),
                 e
             );
             let response = http_response(404, "text/plain", "Not Found");
@@ -187,23 +187,19 @@ pub(super) async fn handle_media(
     };
     let file_len = metadata.len();
 
-    let range = match parse_range_header(range_header, file_len) {
-        Ok(range) => range,
-        Err(()) => {
-            let header = format!(
-                "HTTP/1.1 416 Range Not Satisfiable\r\n\
-                 Content-Range: bytes */{}\r\n\
-                 Content-Length: 0\r\n\
-                 Accept-Ranges: bytes\r\n\
-                 Connection: close\r\n\
-                 \r\n",
-                file_len
-            );
-            return writer
-                .write_all(header.as_bytes())
-                .await
-                .map_err(|e| e.to_string());
-        }
+    let Ok(range) = parse_range_header(range_header, file_len) else {
+        let header = format!(
+            "HTTP/1.1 416 Range Not Satisfiable\r\n\
+             Content-Range: bytes */{file_len}\r\n\
+             Content-Length: 0\r\n\
+             Accept-Ranges: bytes\r\n\
+             Connection: close\r\n\
+             \r\n"
+        );
+        return writer
+            .write_all(header.as_bytes())
+            .await
+            .map_err(|e| e.to_string());
     };
 
     let (status, status_text, start, end) = match range {
@@ -219,7 +215,7 @@ pub(super) async fn handle_media(
     let body_len = compute_body_len(file_len, start, end);
 
     let content_range = if status == 206 {
-        format!("Content-Range: bytes {}-{}/{}\r\n", start, end, file_len)
+        format!("Content-Range: bytes {start}-{end}/{file_len}\r\n")
     } else {
         String::new()
     };
@@ -244,6 +240,10 @@ pub(super) async fn handle_media(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "This dispatch table maps ContentDirectory SOAP actions to their responses"
+)]
 pub(super) fn handle_content_directory(
     body: &str,
     adapter: &Arc<dyn MediaServerAdapter>,
@@ -302,7 +302,7 @@ pub(super) fn handle_content_directory(
                         child_count: a.track_count,
                     })
                     .collect();
-                let returned = containers.len() as u32;
+                let returned = u32::try_from(containers.len()).unwrap_or(u32::MAX);
                 (didl::didl_lite(&containers, &[]), total, returned)
             } else {
                 // Browse album → list tracks
@@ -326,8 +326,8 @@ pub(super) fn handle_content_directory(
                         file_size: t.file_size,
                     })
                     .collect();
-                let total = items.len() as u32;
-                let returned = items.len() as u32;
+                let total = u32::try_from(items.len()).unwrap_or(u32::MAX);
+                let returned = u32::try_from(items.len()).unwrap_or(u32::MAX);
                 (didl::didl_lite(&[], &items), total, returned)
             };
 
@@ -423,7 +423,7 @@ pub(super) fn handle_content_directory(
             );
             http_soap_response(&resp)
         }
-        _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
+        _ => http_soap_fault(401, &format!("Invalid Action: {action}")),
     }
 }
 
@@ -439,6 +439,6 @@ pub(super) fn handle_cm_action(body: &str) -> String {
                 xml::soap_response(&action, CM_SERVICE, &[("Source", protocols), ("Sink", "")]);
             http_soap_response(&resp)
         }
-        _ => http_soap_fault(401, &format!("Invalid Action: {}", action)),
+        _ => http_soap_fault(401, &format!("Invalid Action: {action}")),
     }
 }

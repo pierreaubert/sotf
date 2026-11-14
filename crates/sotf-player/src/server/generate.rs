@@ -1,13 +1,21 @@
 use crate::federation_config::ServerConfig;
+use std::fmt::Write as _;
 
 pub(super) fn generate_pairing_nonce() -> String {
     let bytes: [u8; 16] = rand::random();
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        let _ = write!(output, "{byte:02x}");
+        output
+    })
 }
 
+#[must_use]
 pub fn generate_api_auth_token() -> String {
     let bytes: [u8; 32] = rand::random();
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
+    bytes.iter().fold(String::new(), |mut output, byte| {
+        let _ = write!(output, "{byte:02x}");
+        output
+    })
 }
 
 pub fn ensure_sotf_api_connection_config(config: &mut ServerConfig) -> bool {

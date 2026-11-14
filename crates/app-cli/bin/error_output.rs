@@ -106,7 +106,7 @@ fn detect_secret_at(slice: &[char]) -> Option<usize> {
         return None;
     }
 
-    let key: String = key_chars.iter().collect::<String>().to_lowercase();
+    let key = key_chars.iter().collect::<String>().to_lowercase();
     if !SECRET_KEYS.contains(&key.as_str()) {
         return None;
     }

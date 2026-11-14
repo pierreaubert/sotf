@@ -20,10 +20,15 @@ pub struct AlbumMetadataSidecar {
 }
 
 impl AlbumMetadataSidecar {
+    #[must_use]
     pub fn path_for_album_dir(album_dir: &Path) -> PathBuf {
         album_dir.join(ALBUM_SIDECAR_FILE)
     }
 
+    /// Read.
+    ///
+    /// # Errors
+    /// Returns an error if the sidecar cannot be read, decoded, encoded, or written.
     pub fn read(path: &Path) -> Result<Self, MetadataError> {
         if !path.exists() {
             return Ok(Self::default());
@@ -61,6 +66,10 @@ impl AlbumMetadataSidecar {
         }
     }
 
+    /// Write.
+    ///
+    /// # Errors
+    /// Returns an error if the sidecar cannot be read, decoded, encoded, or written.
     pub fn write(&self, path: &Path) -> Result<(), MetadataError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -73,10 +82,10 @@ impl AlbumMetadataSidecar {
 
 pub fn backup_path_for(path: &Path) -> PathBuf {
     let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    let file_name = path
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "metadata".to_string());
+    let file_name = path.file_name().map_or_else(
+        || "metadata".to_string(),
+        |name| name.to_string_lossy().to_string(),
+    );
     let timestamp = chrono::Utc::now().format("%Y%m%dT%H%M%SZ");
     parent
         .join(BACKUP_DIR)

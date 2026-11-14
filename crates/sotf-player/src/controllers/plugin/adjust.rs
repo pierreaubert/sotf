@@ -39,6 +39,15 @@ pub(super) fn adjust_eq_band_field_for_plugin(
 ///
 /// Most plugins delegate to `PluginSettings::adjust_param_value()` (generic path).
 /// Only plugins with side effects beyond simple field updates have manual arms.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Clamped parameter arithmetic deliberately quantizes values to the plugin storage types"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exhaustive plugin parameter dispatch stays together for schema review"
+)]
 pub(super) fn adjust_plugin_param(
     settings: &mut PluginSettings,
     param_idx: usize,
@@ -183,28 +192,28 @@ pub(super) fn adjust_plugin_param(
                 match local_idx {
                     0 => {
                         let s = p(BT, "frequency");
-                        band.frequency = s.adjust_f64(band.frequency as f64, delta) as f32;
+                        band.frequency = s.adjust_f64(f64::from(band.frequency), delta) as f32;
                         true
                     }
                     1 => {
                         let s = p(BT, "q");
-                        band.q = s.adjust_f64(band.q as f64, delta) as f32;
+                        band.q = s.adjust_f64(f64::from(band.q), delta) as f32;
                         true
                     }
                     2 => {
                         let s = p(BT, "gain");
-                        band.gain = s.adjust_f64(band.gain as f64, delta) as f32;
+                        band.gain = s.adjust_f64(f64::from(band.gain), delta) as f32;
                         true
                     }
                     3 => {
                         let s = p(BT, "band_threshold");
                         band.band_threshold =
-                            s.adjust_f64(band.band_threshold as f64, delta) as f32;
+                            s.adjust_f64(f64::from(band.band_threshold), delta) as f32;
                         true
                     }
                     4 => {
                         let s = p(BT, "band_ratio");
-                        band.band_ratio = s.adjust_f64(band.band_ratio as f64, delta) as f32;
+                        band.band_ratio = s.adjust_f64(f64::from(band.band_ratio), delta) as f32;
                         true
                     }
                     5 => {
@@ -228,7 +237,7 @@ pub(super) fn adjust_plugin_param(
                                     sotf_plugins::plugin_dynamic_eq::DynEqShape::from_choice_index(
                                         next as i32,
                                     )
-                                    .unwrap_or_default()
+                                    .unwrap_or_default();
                             }
                             8 => band.shelf_slope = next as f32,
                             _ => band.placement =
@@ -433,14 +442,14 @@ pub(super) fn adjust_plugin_param(
             *preset = presets[next];
             let pp = sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
             *mode = pp.mode;
-            *bauer_fcut_hz = pp.bauer_fcut_hz as f64;
-            *bauer_feed_db = pp.bauer_feed_db as f64;
-            *meier_level = pp.meier_level as f64;
-            *mb_low_freq_hz = pp.mb_low_freq_hz as f64;
-            *mb_mid_high_freq_hz = pp.mb_mid_high_freq_hz as f64;
-            *mb_low_feed_db = pp.mb_low_feed_db as f64;
-            *mb_mid_feed_db = pp.mb_mid_feed_db as f64;
-            *mb_high_feed_db = pp.mb_high_feed_db as f64;
+            *bauer_fcut_hz = f64::from(pp.bauer_fcut_hz);
+            *bauer_feed_db = f64::from(pp.bauer_feed_db);
+            *meier_level = f64::from(pp.meier_level);
+            *mb_low_freq_hz = f64::from(pp.mb_low_freq_hz);
+            *mb_mid_high_freq_hz = f64::from(pp.mb_mid_high_freq_hz);
+            *mb_low_feed_db = f64::from(pp.mb_low_feed_db);
+            *mb_mid_feed_db = f64::from(pp.mb_mid_feed_db);
+            *mb_high_feed_db = f64::from(pp.mb_high_feed_db);
             true
         }
         // Keep inherited Dynamic EQ band values aligned with the adjusted

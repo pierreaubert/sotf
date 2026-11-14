@@ -1,6 +1,10 @@
 use super::types::TuiParamDescriptor;
 use super::types::TuiParamType;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Descriptor limits and steps are bounded by the plugin parameter schema"
+)]
 pub(super) fn spec_to_descriptor(
     spec: &sotf_plugins::param_specs::ParamSpec,
 ) -> TuiParamDescriptor {

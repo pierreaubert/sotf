@@ -94,13 +94,19 @@ pub(super) mod macos_keychain {
         unsafe {
             let query = keychain_query(&service, &account);
             let mut attrs = CFMutableDictionary::with_capacity(1);
-            attrs.set(kSecValueData as *const _, token.as_CFTypeRef());
+            attrs.set(
+                kSecValueData.cast::<std::ffi::c_void>(),
+                token.as_CFTypeRef(),
+            );
 
             let mut status =
                 SecItemUpdate(query.as_concrete_TypeRef(), attrs.as_concrete_TypeRef());
             if status == ERR_SEC_ITEM_NOT_FOUND {
                 let mut add_attrs = keychain_query(&service, &account);
-                add_attrs.set(kSecValueData as *const _, token.as_CFTypeRef());
+                add_attrs.set(
+                    kSecValueData.cast::<std::ffi::c_void>(),
+                    token.as_CFTypeRef(),
+                );
                 status = SecItemAdd(add_attrs.as_concrete_TypeRef(), std::ptr::null_mut());
             }
 
@@ -121,12 +127,12 @@ pub(super) mod macos_keychain {
         unsafe {
             let mut query = keychain_query(&service, &account);
             query.set(
-                kSecReturnData as *const _,
+                kSecReturnData.cast::<std::ffi::c_void>(),
                 CFBoolean::true_value().as_CFTypeRef(),
             );
 
             let mut result = CFTypeRef::from(std::ptr::null());
-            let status = SecItemCopyMatching(query.as_concrete_TypeRef(), &mut result);
+            let status = SecItemCopyMatching(query.as_concrete_TypeRef(), &raw mut result);
             match status {
                 ERR_SEC_SUCCESS => {}
                 ERR_SEC_ITEM_NOT_FOUND | ERR_SEC_USER_CANCELED => return Ok(None),
@@ -171,10 +177,19 @@ pub(super) mod macos_keychain {
         // SAFETY: Security.framework exports these immutable CoreFoundation
         // string constants for process-wide use.
         unsafe {
-            query.set(kSecClass as *const _, kSecClassGenericPassword as *const _);
-            query.set(kSecAttrService as *const _, service.as_CFTypeRef());
-            query.set(kSecAttrAccount as *const _, account.as_CFTypeRef());
-        }
+            query.set(
+                kSecClass.cast::<std::ffi::c_void>(),
+                kSecClassGenericPassword.cast::<std::ffi::c_void>(),
+            );
+            query.set(
+                kSecAttrService.cast::<std::ffi::c_void>(),
+                service.as_CFTypeRef(),
+            );
+            query.set(
+                kSecAttrAccount.cast::<std::ffi::c_void>(),
+                account.as_CFTypeRef(),
+            );
+        };
         query
     }
 

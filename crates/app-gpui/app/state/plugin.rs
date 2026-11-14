@@ -126,6 +126,7 @@ impl ExternalPluginUiState {
         self.visible_scan_results = EXTERNAL_PLUGIN_SCAN_PAGE_SIZE;
     }
 
+    #[must_use]
     pub fn visible_scan_result_count(&self, total: usize) -> usize {
         self.visible_scan_results
             .max(EXTERNAL_PLUGIN_SCAN_PAGE_SIZE)
@@ -148,6 +149,7 @@ pub enum ExternalPluginWorkerHealth {
     Failed,
 }
 
+#[must_use]
 pub fn external_plugin_worker_health(
     status: &sotf_audio::engine::IsolatedExternalPluginWorkerStatus,
 ) -> ExternalPluginWorkerHealth {
@@ -182,6 +184,7 @@ pub fn external_plugin_worker_health(
     }
 }
 
+#[must_use]
 pub fn external_plugin_error_key(plugin: &sotf_plugins::PluginDescriptor) -> String {
     format!("{}:{}", plugin.id, plugin.path.display())
 }
@@ -203,6 +206,7 @@ pub struct ExternalPluginScanCounts {
 }
 
 impl ExternalPluginScanCounts {
+    #[must_use]
     pub fn from_plugins(plugins: &[sotf_plugins::PluginDescriptor]) -> Self {
         let mut counts = Self {
             total: plugins.len(),
@@ -328,6 +332,10 @@ pub struct RoutingConnectionForm {
 
 /// GPUI-specific state for the graph / workflow view.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct PluginGraphState {
     /// Routing edits never replace the playback controller until Apply.
     pub draft: Option<PluginController>,
@@ -371,6 +379,7 @@ pub struct PluginGraphState {
 }
 
 impl PluginGraphState {
+    #[must_use]
     pub fn settings_are_dirty(
         &self,
         current_settings: Option<&PluginSettings>,
@@ -386,6 +395,7 @@ impl PluginGraphState {
         settings_changed || enabled_changed
     }
 
+    #[must_use]
     pub fn original_settings(&self) -> Option<PluginSettings> {
         self.editing_original_settings_json
             .as_deref()
@@ -512,6 +522,7 @@ impl ListeningTestState {
     /// UI setup identity for accepting a background comparison measurement.
     /// Serialization covers nested rack/graph parameters without requiring
     /// presentation code to duplicate the plugin configuration schema.
+    #[must_use]
     pub fn preparation_snapshot(
         &self,
         media_path: Option<std::path::PathBuf>,
@@ -560,6 +571,10 @@ pub struct LoudnessControlUiRequest {
 }
 
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct PluginUiState {
     /// Monotonic transient command IDs for this UI process; never serialized as a preset.
     pub next_loudness_control_request_id: u64,
@@ -624,6 +639,10 @@ impl PluginUiState {
 }
 
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct PracticeWorkspaceState {
     pub frequency_details_open: bool,
     pub paused: bool,
@@ -632,12 +651,17 @@ pub struct PracticeWorkspaceState {
 }
 
 impl PracticeWorkspaceState {
+    #[must_use]
     pub fn interaction_locked(&self) -> bool {
         self.paused || self.confirm_end
     }
 }
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct ListeningWorkspaceState {
     pub source_request: Option<std::sync::Arc<()>>,
     pub preparation_request: Option<std::sync::Arc<()>>,
@@ -678,7 +702,7 @@ impl ListeningWorkspaceState {
 
     pub fn begin_preparation(&mut self) -> std::sync::Arc<()> {
         let request = std::sync::Arc::new(());
-        self.preparation_request = Some(request.clone());
+        self.preparation_request = Some(std::sync::Arc::clone(&request));
         request
     }
 
@@ -695,11 +719,13 @@ impl ListeningWorkspaceState {
         true
     }
 
+    #[must_use]
     pub fn interaction_locked(&self) -> bool {
         self.paused || self.confirm_end
     }
 
     /// A pending blind trial always takes precedence over a stale results view.
+    #[must_use]
     pub fn phase(&self, pending: Option<TrialMode>, completed: usize) -> ListeningWorkspacePhase {
         if pending.is_some() {
             ListeningWorkspacePhase::Listen
@@ -712,6 +738,7 @@ impl ListeningWorkspaceState {
         }
     }
 
+    #[must_use]
     pub fn can_submit(&self, mode: TrialMode) -> bool {
         self.auditioned
             && !self.interaction_locked()
@@ -829,7 +856,7 @@ impl PluginState {
                 let plugin = &mut node.plugin;
                 match &mut plugin.settings {
                     PluginSettings::BinauralDecoder { sofa_file, .. } if param == 0 => {
-                        *sofa_file = path
+                        *sofa_file = path;
                     }
                     PluginSettings::BinauralDecoder {
                         hrtf_database_dir, ..
@@ -849,6 +876,7 @@ impl PluginState {
     }
 
     /// Capture the original target of an asynchronous resource picker.
+    #[must_use]
     pub fn resource_target(&self, plugin_idx: usize) -> Option<PluginResourceTarget> {
         let editor_node_id = self.graph_state.editing_graph_node_uuid;
         let graph = if editor_node_id.is_some() {
@@ -923,8 +951,8 @@ impl PluginState {
                 Some("edit produced no settings change")
             } else {
                 None
-            };
-        }
+            }
+        };
         if draft_edit {
             return;
         }
@@ -990,6 +1018,7 @@ impl PluginState {
         }
     }
 
+    #[must_use]
     pub fn routing_controller(&self) -> &PluginController {
         self.graph_state.draft.as_ref().unwrap_or(&self.ctrl)
     }
@@ -1030,6 +1059,7 @@ impl PluginState {
         self.graph_state.keyboard_connect_source = None;
     }
 
+    #[must_use]
     pub fn routing_draft_is_dirty(&self) -> bool {
         self.graph_state.draft.as_ref().is_some_and(|draft| {
             let mut current = serde_json::to_value(&draft.graph).ok();
@@ -1046,6 +1076,10 @@ impl PluginState {
         })
     }
 
+    /// Applies routing draft.
+    ///
+    /// # Errors
+    /// Returns an error if routing is invalid, another update is pending, or the player rejects the new graph.
     pub fn apply_routing_draft(&mut self) -> Result<(), String> {
         if !self.routing_draft_is_dirty() {
             return Ok(());
@@ -1113,6 +1147,10 @@ impl PluginState {
         self.graph_state.draft_solo = Some((node_id, saved));
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned commands in the application state and plugin update interfaces"
+    )]
     fn record_ab_test_effect(&mut self, effect: PluginUpdateEffect) {
         if let PluginUpdateEffect::Action {
             plugin_index,
@@ -1169,6 +1207,10 @@ impl PluginState {
         };
     }
 
+    /// Starts ab test trial.
+    ///
+    /// # Errors
+    /// Returns an error if the plugin graph or listening-session state rejects the requested transition.
     pub fn start_ab_test_trial(&mut self, mode: TrialMode) -> Result<u32, AbTestError> {
         if !self.listening_test_state.ab_test.view().runtime_active {
             let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
@@ -1179,6 +1221,10 @@ impl PluginState {
         self.listening_test_state.ab_test.start_trial(mode)
     }
 
+    /// Activates ab test cue.
+    ///
+    /// # Errors
+    /// Returns an error if the plugin graph or listening-session state rejects the requested transition.
     pub fn activate_ab_test_cue(&mut self, cue: TrialCue) -> Result<(), AbTestError> {
         let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
         let effect = controller.activate_cue(&mut self.ctrl.graph, cue);
@@ -1187,6 +1233,10 @@ impl PluginState {
         Ok(())
     }
 
+    /// Commits ab test answer.
+    ///
+    /// # Errors
+    /// Returns an error if the plugin graph or listening-session state rejects the requested transition.
     pub fn commit_ab_test_answer(
         &mut self,
         answer: TrialAnswer,
@@ -1198,6 +1248,10 @@ impl PluginState {
             .commit_trial(answer, confidence, notes)
     }
 
+    /// Leaves ab test runtime.
+    ///
+    /// # Errors
+    /// Returns an error if the plugin graph or listening-session state rejects the requested transition.
     pub fn leave_ab_test_runtime(&mut self) -> Result<(), AbTestError> {
         let mut controller = std::mem::take(&mut self.listening_test_state.ab_test);
         let effect = controller.leave_runtime(&mut self.ctrl.graph);
@@ -1209,10 +1263,12 @@ impl PluginState {
     /// Whether the rack view can represent the current plugin graph.
     /// Returns false when the topology is non-linear (parallel branches,
     /// merges) — in that case the user must use the graph view.
+    #[must_use]
     pub fn is_rack_available(&self) -> bool {
         self.ctrl.is_linear()
     }
 
+    #[must_use]
     pub fn has_external_plugins(&self) -> bool {
         self.ctrl
             .graph
@@ -1265,6 +1321,7 @@ impl PluginState {
     /// Return the build diagnostic owned by one external-plugin instance.
     /// Stable instance identity wins; engine chain/node indices are a fallback
     /// for older configurations that do not carry the instance parameter.
+    #[must_use]
     pub fn external_plugin_build_diagnostic(
         &self,
         plugin_instance_id: Option<usize>,
@@ -1307,6 +1364,7 @@ pub struct PluginResourceTarget {
 
 impl PluginResourceTarget {
     /// Whether the original instance still owns the editor's target slot.
+    #[must_use]
     pub fn matches(&self, state: &PluginState) -> bool {
         state.resource_target(self.plugin_idx).as_ref() == Some(self)
     }
@@ -1346,20 +1404,24 @@ pub enum PluginUiView {
 }
 
 impl PluginUiView {
+    #[must_use]
     pub fn is_simple(&self) -> bool {
         matches!(self, Self::Simple)
     }
 
+    #[must_use]
     pub fn is_controller(&self) -> bool {
         matches!(self, Self::Controller(_))
     }
 
+    #[must_use]
     pub fn is_ui(&self) -> bool {
         matches!(self, Self::UI)
     }
 }
 
 /// Returns the list of available controller layout names
+#[must_use]
 pub fn available_controllers() -> Vec<(&'static str, &'static str)> {
     vec![("xone_k2", "Xone:K2"), ("lcxl", "Launch Control XL")]
 }
@@ -1393,6 +1455,7 @@ impl Default for PluginState {
 }
 
 impl PluginState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -1428,6 +1491,7 @@ impl PluginState {
 
     /// Read an A/B path from the current edit target, falling back to the
     /// linear rack index outside the graph modal.
+    #[must_use]
     pub fn ab_compare_path_plugins(
         &self,
         plugin_idx: usize,

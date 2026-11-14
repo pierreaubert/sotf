@@ -17,6 +17,7 @@ pub enum FlatQueueRow {
 }
 
 /// Insert headings at album boundaries without changing playback order.
+#[must_use]
 pub fn flat_queue_rows(
     items: &[QueueItem],
     positions: &[sotf_audio_player::controllers::QueueTrackPosition],
@@ -57,6 +58,7 @@ pub struct QueueAccordionSummary {
 /// Build accordion summaries from queue items without cloning the items
 /// themselves. Only the formatted title and track-position strings are
 /// newly allocated.
+#[must_use]
 pub fn queue_accordion_summaries(items: &[QueueItem]) -> Vec<QueueAccordionSummary> {
     items
         .iter()
@@ -74,6 +76,7 @@ pub fn queue_accordion_summaries(items: &[QueueItem]) -> Vec<QueueAccordionSumma
 }
 
 /// Calculate the right-side meters panel width for the queue screen.
+#[must_use]
 pub fn queue_meters_panel_width(meters_ratio: f32, available_queue_width: f32) -> f32 {
     let available_queue_width = if available_queue_width.is_finite() {
         available_queue_width.max(0.0)
@@ -94,7 +97,7 @@ pub fn queue_meters_panel_width(meters_ratio: f32, available_queue_width: f32) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sotf_audio_player::{Album, QueueItem, Track};
+    use sotf_audio_player::{Album, Track};
 
     fn make_track(title: &str, artist: &str) -> Track {
         Track {

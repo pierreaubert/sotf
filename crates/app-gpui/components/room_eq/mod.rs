@@ -11,7 +11,7 @@ use crate::app::types::RoomEqStep;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{ClickEvent, div};
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{

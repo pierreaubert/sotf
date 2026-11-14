@@ -67,6 +67,22 @@ fn next_app_event(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep application startup, event dispatch, and shutdown ordering together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The application runner and command dispatcher own their received inputs"
+)]
+#[expect(
+    clippy::float_cmp,
+    reason = "Compare exact rounded tenths of a second to throttle media position updates"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Media duration metadata is presented as approximate floating-point seconds"
+)]
 pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
     terminal: &mut Terminal<B>,
     app: &mut App,
@@ -99,7 +115,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                 AppEvent::Key(key) => {
                     if let Some(cmd) = handle_key_event(app, key) {
                         if let Err(e) = handle_player_command(player, app, cmd) {
-                            log::error!("[TUI] Player command error: {}", e);
+                            log::error!("[TUI] Player command error: {e}");
                             app.ui.error_message = Some(e.to_string());
                             app.enter_overlay_mode(InputMode::ShowError);
                             app.playback.is_playing = false;
@@ -110,7 +126,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                 AppEvent::MediaControl(event) => {
                     if let Some(cmd) = handle_media_control_event(app, event) {
                         if let Err(e) = handle_player_command(player, app, cmd) {
-                            log::error!("[TUI] Media control command error: {}", e);
+                            log::error!("[TUI] Media control command error: {e}");
                             app.ui.error_message = Some(e.to_string());
                             app.enter_overlay_mode(InputMode::ShowError);
                             app.playback.is_playing = false;
@@ -256,7 +272,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         app.enter_overlay_mode(InputMode::ShowError);
                         app.playback.is_playing = false;
                     } else if let Some(err) = state.last_error {
-                        log::error!("[TUI] Playback error: {}", err);
+                        log::error!("[TUI] Playback error: {err}");
                         app.ui.error_message = Some(err);
                         app.enter_overlay_mode(InputMode::ShowError);
                         app.playback.is_playing = false;
@@ -289,7 +305,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
 
                         // Advance to next
                         if let Some(path) = app.next_track() {
-                            log::info!("[TUI] Auto-advancing to: {:?}", path);
+                            log::info!("[TUI] Auto-advancing to: {path:?}");
 
                             let track_channels =
                                 app.current_track().and_then(|t| t.channels).unwrap_or(2) as usize;
@@ -314,8 +330,8 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                             }
 
                             if let Err(e) = start_playback(player, app, path, track_channels) {
-                                log::error!("[TUI] Failed to auto-advance: {}", e);
-                                app.ui.error_message = Some(format!("Auto-advance failed: {}", e));
+                                log::error!("[TUI] Failed to auto-advance: {e}");
+                                app.ui.error_message = Some(format!("Auto-advance failed: {e}"));
                                 app.enter_overlay_mode(InputMode::ShowError);
                                 app.playback.is_playing = false;
                             } else {
@@ -358,19 +374,17 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                         // Check if enough time has passed since last attempt
                         let should_attempt = match app.plugin_rack.update_last_attempt {
                             None => true,
-                            Some(last) => last.elapsed().as_millis() >= DEBOUNCE_MS as u128,
+                            Some(last) => last.elapsed().as_millis() >= u128::from(DEBOUNCE_MS),
                         };
 
                         if should_attempt {
                             // Check retry limit
                             if app.plugin_rack.update_retry_count >= MAX_RETRIES {
                                 log::error!(
-                                    "[TUI] Plugin update failed after {} retries, giving up",
-                                    MAX_RETRIES
+                                    "[TUI] Plugin update failed after {MAX_RETRIES} retries, giving up"
                                 );
                                 app.ui.status_message = Some(format!(
-                                    "Plugin update failed after {} retries. Check logs for details.",
-                                    MAX_RETRIES
+                                    "Plugin update failed after {MAX_RETRIES} retries. Check logs for details."
                                 ));
                                 app.plugin_rack.needs_update = false;
                                 app.plugin_rack.update_retry_count = 0;
@@ -395,8 +409,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 let sample_rate = app
                                     .playback
                                     .current_sample_rate
-                                    .map(|r| r as f64)
-                                    .unwrap_or_else(|| app.get_current_sample_rate());
+                                    .map_or_else(|| app.get_current_sample_rate(), f64::from);
 
                                 // Branch on graph topology — flattening a
                                 // non-linear graph through `to_plugin_configs`
@@ -447,7 +460,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                         } else {
                                             // Max retries reached
                                             app.ui.status_message =
-                                                Some(format!("Plugin update failed: {}", e));
+                                                Some(format!("Plugin update failed: {e}"));
                                         }
                                     }
                                 }
@@ -475,7 +488,7 @@ pub(super) fn run_app<B: ratatui::backend::Backend<Error: 'static>>(
                                 log::debug!("[TUI] Parameter updated successfully");
                             }
                             Err(e) => {
-                                log::warn!("[TUI] Failed to update parameter: {}", e);
+                                log::warn!("[TUI] Failed to update parameter: {e}");
                                 if is_loudness_control {
                                     app.report_loudness_control_submission_error(e.to_string());
                                 }

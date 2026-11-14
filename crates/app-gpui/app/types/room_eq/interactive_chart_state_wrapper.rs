@@ -1,4 +1,4 @@
-/// Wrapper for InteractiveChartState that implements Debug
+/// Wrapper for `InteractiveChartState` that implements Debug
 #[derive(Clone)]
 pub struct InteractiveChartStateWrapper(pub gpui_px::interaction::InteractiveChartState);
 
@@ -11,22 +11,26 @@ impl std::fmt::Debug for InteractiveChartStateWrapper {
 }
 
 impl InteractiveChartStateWrapper {
+    #[must_use]
     pub fn new(x_min: f64, x_max: f64, y_min: f64, y_max: f64) -> Self {
         Self(gpui_px::interaction::InteractiveChartState::new(
             x_min, x_max, y_min, y_max,
         ))
     }
 
+    #[must_use]
     pub fn with_log_x(mut self, is_log: bool) -> Self {
         self.0 = self.0.with_log_x(is_log);
         self
     }
 
+    #[must_use]
     pub fn with_size(mut self, width: f32, height: f32) -> Self {
         self.0 = self.0.with_size(width, height);
         self
     }
 
+    #[must_use]
     pub fn inner(&self) -> &gpui_px::interaction::InteractiveChartState {
         &self.0
     }

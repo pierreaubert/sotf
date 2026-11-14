@@ -42,6 +42,10 @@ pub(super) fn print_sotf_api_connection_qr() -> Result<(), Box<dyn std::error::E
 /// Compute a cheap signature of loudness data for redraw gating.
 /// Rounded to 0.1 dB so the meter "ticks" register as changes while
 /// noise-floor jitter does not force a redraw every tick.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Redraw signatures deliberately quantize finite measurements to tenths of a decibel"
+)]
 pub(super) fn loudness_redraw_signature(l: Option<&sotf_audio_player::LoudnessData>) -> u64 {
     let Some(l) = l else {
         return 0;
@@ -50,7 +54,9 @@ pub(super) fn loudness_redraw_signature(l: Option<&sotf_audio_player::LoudnessDa
         if !x.is_finite() {
             return u64::MAX;
         }
-        ((x * 10.0).round() as i64).wrapping_add(i64::MAX / 2) as u64
+        ((x * 10.0).round() as i64)
+            .wrapping_add(i64::MAX / 2)
+            .cast_unsigned()
     };
     let mut sig = q(l.momentary_lufs)
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
@@ -120,12 +126,12 @@ pub(super) fn signal_path_redraw_signature(p: Option<&sotf_audio_player::SignalP
         return 0;
     };
     let source_rate = p.source.as_ref().map_or(0, |s| s.sample_rate_hz);
-    let mut sig = (source_rate as u64)
+    let mut sig = u64::from(source_rate)
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(p.output.sample_rate_hz);
     sig = sig
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add(p.is_resampled() as u64);
+        .wrapping_add(u64::from(p.is_resampled()));
     sig = sig
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(p.health.underruns);
@@ -137,7 +143,7 @@ pub(super) fn signal_path_redraw_signature(p: Option<&sotf_audio_player::SignalP
         .wrapping_add(p.health.frames_dropped);
     sig = sig
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add(p.health.clipping_detected.map_or(2, |c| c as u64));
+        .wrapping_add(p.health.clipping_detected.map_or(2, u64::from));
     sig
 }
 
@@ -190,9 +196,7 @@ pub(super) fn start_playback(
 
     let device_max = app.get_device_max_channels();
     log::info!(
-        "[TUI] Plugin chain wants {} output channels, device max = {:?}",
-        output_channels,
-        device_max,
+        "[TUI] Plugin chain wants {output_channels} output channels, device max = {device_max:?}",
     );
 
     // Clamp output channels to device max — the playback thread will
@@ -202,9 +206,7 @@ pub(super) fn start_playback(
         && output_channels > max_channels
     {
         log::info!(
-            "[TUI] Clamping output from {} to {} channels (device limit)",
-            output_channels,
-            max_channels
+            "[TUI] Clamping output from {output_channels} to {max_channels} channels (device limit)"
         );
         output_channels = max_channels;
     }
@@ -215,7 +217,7 @@ pub(super) fn start_playback(
     // Service streams (Tidal/Spotify) are resolved by the engine decoder
     // thread via the resolver hook installed at startup — no pre-resolution
     // here, failures surface as decode-time errors.
-    let source_path = source.as_path().map(|p| p.to_path_buf());
+    let source_path = source.as_path().map(std::path::Path::to_path_buf);
     player.load_and_play_source(
         source,
         plugins,
@@ -297,25 +299,19 @@ pub(super) fn handle_player_command(
             app.audio_devices.current_output_name = Some(device_name.clone());
             player.set_output_device(device_name.clone())?;
             app.ui.status_message = Some(format!(
-                "Output device set to '{}'; will be used for next playback",
-                device_name
+                "Output device set to '{device_name}'; will be used for next playback"
             ));
             log::info!("Output device changed");
         }
         PlayerCommand::Seek(position) => {
             player.seek(position)?;
-            log::info!("Seeked to {} seconds", position);
+            log::info!("Seeked to {position} seconds");
         }
         PlayerCommand::SeekRelative(offset) => {
             let current_pos = player.get_position();
             let new_pos = (current_pos + offset).max(0.0);
             player.seek(new_pos)?;
-            log::info!(
-                "Seeked {} seconds (from {} to {})",
-                offset,
-                current_pos,
-                new_pos
-            );
+            log::info!("Seeked {offset} seconds (from {current_pos} to {new_pos})");
         }
         PlayerCommand::ToggleMute => {
             app.playback.muted = !app.playback.muted;
@@ -401,6 +397,10 @@ pub(super) fn update_media_controls(
 }
 
 #[cfg(feature = "dev-api")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep application startup, event dispatch, and shutdown ordering together"
+)]
 pub(super) fn process_dev_command(
     app: &mut App,
     player: &mut Player,
@@ -577,7 +577,7 @@ fn dispatch_dev_key(
 
     if let Some(command) = handle_key_event(app, key) {
         if let Err(error) = handle_player_command(player, app, command) {
-            log::error!("[dev-api] Player command error: {}", error);
+            log::error!("[dev-api] Player command error: {error}");
             app.ui.error_message = Some(error.to_string());
             app.enter_overlay_mode(InputMode::ShowError);
             app.playback.is_playing = false;
@@ -647,15 +647,23 @@ fn tui_snapshot_revision(state_hash: &str) -> u64 {
     let revision = REVISION.get_or_init(|| std::sync::Mutex::new((String::new(), 0)));
     let mut revision = revision
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if revision.0 != state_hash {
-        revision.0 = state_hash.to_owned();
+        state_hash.clone_into(&mut revision.0);
         revision.1 = revision.1.saturating_add(1);
     }
     revision.1
 }
 
 #[cfg(feature = "dev-api")]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep application startup, event dispatch, and shutdown ordering together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The application runner and command dispatcher own their received inputs"
+)]
 pub(super) fn dispatch_tui_action(
     app: &mut App,
     name: &str,
@@ -670,43 +678,43 @@ pub(super) fn dispatch_tui_action(
             return Ok(());
         }
         "PluginAdd" => {
-            let plugin_type = payload_str(&payload, "plugin_type")?;
+            let plugin_type = payload_str(payload.as_ref(), "plugin_type")?;
             let ty = sotf_audio_player::PluginType::from_name(plugin_type)
                 .ok_or_else(|| anyhow::anyhow!("unknown plugin type `{plugin_type}`"))?;
             app.add_plugin(&ty);
             return Ok(());
         }
         "PluginRemove" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
             app.remove_plugin(idx);
             return Ok(());
         }
         "PluginToggle" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
             app.toggle_plugin(idx);
             return Ok(());
         }
         "PluginMoveUp" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
             app.move_plugin_up(idx);
             return Ok(());
         }
         "PluginMoveDown" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
             app.move_plugin_down(idx);
             return Ok(());
         }
         "PluginSetParam" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
-            let param_idx = payload_u64(payload.as_ref(), "param_index")? as usize;
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
+            let param_idx = usize::try_from(payload_u64(payload.as_ref(), "param_index")?)?;
             let value = payload_f64(payload.as_ref(), "value")?;
             app.set_plugin_param(idx, param_idx, value);
             return Ok(());
         }
         "PluginSetParamString" => {
-            let idx = payload_u64(payload.as_ref(), "index")? as usize;
-            let param_idx = payload_u64(payload.as_ref(), "param_index")? as usize;
-            let value = payload_str(&payload, "value")?.to_string();
+            let idx = usize::try_from(payload_u64(payload.as_ref(), "index")?)?;
+            let param_idx = usize::try_from(payload_u64(payload.as_ref(), "param_index")?)?;
+            let value = payload_str(payload.as_ref(), "value")?.to_string();
             let plugin = app
                 .plugin_rack
                 .graph
@@ -723,13 +731,13 @@ pub(super) fn dispatch_tui_action(
             return Ok(());
         }
         "PluginChainSave" => {
-            let path = std::path::Path::new(payload_str(&payload, "path")?);
+            let path = std::path::Path::new(payload_str(payload.as_ref(), "path")?);
             app.save_plugins_to_path(path)
                 .map_err(|e| anyhow::anyhow!(e))?;
             return Ok(());
         }
         "PluginChainLoad" => {
-            let path = std::path::Path::new(payload_str(&payload, "path")?);
+            let path = std::path::Path::new(payload_str(payload.as_ref(), "path")?);
             app.load_plugins_from_path(path)
                 .map_err(|e| anyhow::anyhow!(e))?;
             return Ok(());
@@ -807,8 +815,8 @@ pub(super) fn dispatch_tui_action(
                 .metadata_editor
                 .as_mut()
                 .ok_or_else(|| anyhow::anyhow!("metadata editor is not open"))?;
-            let field = payload_str(&payload, "field")?;
-            let value = payload_str(&payload, "value")?;
+            let field = payload_str(payload.as_ref(), "field")?;
+            let value = payload_str(payload.as_ref(), "value")?;
             let field_index = metadata_field_index(field)
                 .ok_or_else(|| anyhow::anyhow!("unknown metadata field `{field}`"))?;
             editor.set_field_value(field_index, value.to_string());
@@ -879,9 +887,8 @@ pub(super) fn dispatch_tui_action(
 }
 
 #[cfg(feature = "dev-api")]
-fn payload_str<'a>(payload: &'a Option<serde_json::Value>, key: &str) -> anyhow::Result<&'a str> {
+fn payload_str<'a>(payload: Option<&'a serde_json::Value>, key: &str) -> anyhow::Result<&'a str> {
     payload
-        .as_ref()
         .and_then(|value| value.get(key))
         .and_then(serde_json::Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("metadata action payload needs string `{key}`"))

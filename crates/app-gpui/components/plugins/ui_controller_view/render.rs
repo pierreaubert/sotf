@@ -17,7 +17,7 @@ use crate::app::AppState;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Empty, Entity, FontWeight, Rgba, ScrollHandle, div, px, rems};
 use gpui_audio_kit::{VerticalSlider, VerticalSliderSize};
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Slider, SliderSize,
@@ -38,6 +38,10 @@ struct ControllerGeometry {
     fader_cell_height: f32,
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn controller_geometry(
     available_width: f32,
     layout_scale: f32,
@@ -88,11 +92,8 @@ pub fn render_controller_view(
     // Page indicator only when the device actually paginates — single-page
     // controllers (Xone:K2 / LCXL on small layouts) drop the header entirely
     // since the controller name already appears in the View dropdown above.
-    let header: Option<AnyElement> = if total_pages > 1 {
-        Some(render_page_indicator(d, current_page, total_pages, theme).into_any_element())
-    } else {
-        None
-    };
+    let header: Option<AnyElement> = (total_pages > 1)
+        .then(|| render_page_indicator(d, current_page, total_pages, theme).into_any_element());
 
     let grid = render_grid(
         d,
@@ -177,7 +178,14 @@ fn render_legend(d: &Ds, theme: &Theme) -> impl IntoElement {
         .child(chip("Reserved", theme.error))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_grid(
     d: &Ds,
     layout: &ControllerLayout,
@@ -254,13 +262,24 @@ fn render_grid(
         .flex_col()
         .flex_shrink_0()
         .w(px(
-            geometry.cell_width * cols as f32 + column_gap * (cols - 1) as f32
+            geometry.cell_width * f32::from(cols) + column_gap * f32::from(cols - 1)
         ))
         .gap(d.gap_md)
         .children(row_elements)
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_cell(
     d: &Ds,
     ctrl: &PhysicalControl,
@@ -314,18 +333,24 @@ fn render_cell(
                 ContinuousKind::Fader,
                 cx,
             )
-            .map(|(el, label)| (el, label, theme.text_primary))
-            .unwrap_or_else(|| {
-                (
-                    static_fader(theme, widget_scale).into_any_element(),
-                    ctrl.label.clone(),
-                    theme.text_muted,
-                )
-            }),
+            .map_or_else(
+                || {
+                    (
+                        static_fader(theme, widget_scale).into_any_element(),
+                        ctrl.label.clone(),
+                        theme.text_muted,
+                    )
+                },
+                |(el, label)| (el, label, theme.text_primary),
+            ),
             // Pot / encoder on a continuous param.
-            (Some(b), false, PhysicalControlKind::Pot)
-            | (Some(b), false, PhysicalControlKind::Encoder)
-            | (Some(b), false, PhysicalControlKind::EncoderWithButton) => render_continuous_widget(
+            (
+                Some(b),
+                false,
+                PhysicalControlKind::Pot
+                | PhysicalControlKind::Encoder
+                | PhysicalControlKind::EncoderWithButton,
+            ) => render_continuous_widget(
                 d,
                 ctrl,
                 b,
@@ -339,14 +364,16 @@ fn render_cell(
                 ContinuousKind::Knob,
                 cx,
             )
-            .map(|(el, label)| (el, label, theme.text_primary))
-            .unwrap_or_else(|| {
-                (
-                    static_slider(theme, theme.accent, widget_scale).into_any_element(),
-                    ctrl.label.clone(),
-                    theme.text_muted,
-                )
-            }),
+            .map_or_else(
+                || {
+                    (
+                        static_slider(theme, theme.accent, widget_scale).into_any_element(),
+                        ctrl.label.clone(),
+                        theme.text_muted,
+                    )
+                },
+                |(el, label)| (el, label, theme.text_primary),
+            ),
             // Button on a discrete param.
             (Some(b), false, PhysicalControlKind::Button) => render_button_widget(
                 d,
@@ -361,14 +388,16 @@ fn render_cell(
                 widget_scale,
                 cx,
             )
-            .map(|(el, label)| (el, label, theme.text_primary))
-            .unwrap_or_else(|| {
-                (
-                    static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
-                    ctrl.label.clone(),
-                    theme.text_muted,
-                )
-            }),
+            .map_or_else(
+                || {
+                    (
+                        static_button(theme, theme.text_secondary, widget_scale).into_any_element(),
+                        ctrl.label.clone(),
+                        theme.text_muted,
+                    )
+                },
+                |(el, label)| (el, label, theme.text_primary),
+            ),
             // Unmapped controls: static placeholder + physical id label.
             (None, false, PhysicalControlKind::Fader) => (
                 static_fader(theme, widget_scale).into_any_element(),
@@ -380,8 +409,11 @@ fn render_cell(
                 ctrl.label.clone(),
                 theme.text_muted,
             ),
-            (None, false, PhysicalControlKind::Encoder)
-            | (None, false, PhysicalControlKind::EncoderWithButton) => (
+            (
+                None,
+                false,
+                PhysicalControlKind::Encoder | PhysicalControlKind::EncoderWithButton,
+            ) => (
                 static_slider(theme, theme.warning, widget_scale).into_any_element(),
                 ctrl.label.clone(),
                 theme.text_muted,
@@ -459,7 +491,10 @@ fn render_cell(
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
 fn render_continuous_widget(
     d: &Ds,
     ctrl: &PhysicalControl,
@@ -537,6 +572,11 @@ fn render_continuous_widget(
     clippy::too_many_arguments,
     reason = "Controller cell geometry and binding are supplied by the existing renderer"
 )]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_controller_slider(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -576,7 +616,9 @@ fn render_controller_slider(
                 entity.update(cx, |state, cx| {
                     state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                     state.app.plugin_state.plugin_param_selection = idx;
-                    state.app.set_plugin_param(plugin_idx, idx, value as f64);
+                    state
+                        .app
+                        .set_plugin_param(plugin_idx, idx, f64::from(value));
                     cx.notify();
                 });
             }
@@ -665,7 +707,14 @@ fn render_controller_number(
     exact.into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_compact_fader(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -689,7 +738,7 @@ fn render_compact_fader(
         .min(min * display_scale)
         .max(max * display_scale)
         .unit(spec.unit.to_string())
-        .label("".to_string())
+        .label(String::new())
         .size(if widget_scale >= 1.35 {
             VerticalSliderSize::Md
         } else {
@@ -769,6 +818,15 @@ fn controller_param_value(
 #[expect(
     clippy::too_many_arguments,
     reason = "Existing controller cell supplies its binding and geometry"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
 )]
 fn render_button_widget(
     d: &Ds,

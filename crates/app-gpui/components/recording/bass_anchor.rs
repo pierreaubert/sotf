@@ -37,7 +37,16 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
-    /// Render the BassAnchor step UI.
+    /// Render the `BassAnchor` step UI.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     pub(crate) fn render_recording_bass_anchor_step(
         &self,
         cx: &mut Context<Self>,
@@ -54,7 +63,7 @@ impl PlayerView {
         let running = matches!(bac.status, BassAnchorCaptureStatus::Running { .. });
         let loopback_channel = rec.recording_config.ctc_loopback_input_channel;
         let loopback_hint = match loopback_channel {
-            Some(ch) => format!(" + loopback ref ch {}", ch),
+            Some(ch) => format!(" + loopback ref ch {ch}"),
             None => String::new(),
         };
 
@@ -109,7 +118,7 @@ impl PlayerView {
                 cx,
                 &theme,
                 "Frequency (Hz)",
-                bac.bass_freq_hz as f64,
+                f64::from(bac.bass_freq_hz),
                 5.0,
                 |rec, delta| {
                     rec.bass_anchor_capture.bass_freq_hz =
@@ -120,7 +129,7 @@ impl PlayerView {
                 cx,
                 &theme,
                 "Duration (s)",
-                bac.bass_duration_s as f64,
+                f64::from(bac.bass_duration_s),
                 0.5,
                 |rec, delta| {
                     rec.bass_anchor_capture.bass_duration_s =
@@ -131,10 +140,10 @@ impl PlayerView {
                 cx,
                 &theme,
                 "Sub-windows",
-                bac.num_windows as f64,
+                f64::from(bac.num_windows),
                 1.0,
                 |rec, delta| {
-                    let next = rec.bass_anchor_capture.num_windows as i32 + delta as i32;
+                    let next = i32::from(rec.bass_anchor_capture.num_windows) + delta as i32;
                     rec.bass_anchor_capture.num_windows = next.clamp(4, 16) as u16;
                 },
             ))
@@ -153,7 +162,7 @@ impl PlayerView {
             for ch in &results.channels {
                 let reliable = ch.bass_anchor_stability_deg < 20.0;
                 let lb_part = match (ch.bass_anchor_loopback_phase_deg, ch.bass_anchor_coherence) {
-                    (Some(lb), Some(coh)) => format!(", lb {:+.1}°, γ² {:.3}", lb, coh),
+                    (Some(lb), Some(coh)) => format!(", lb {lb:+.1}°, γ² {coh:.3}"),
                     _ => String::new(),
                 };
                 let line = format!(
@@ -183,6 +192,10 @@ impl PlayerView {
     /// worker. Mirrors `start_probe_capture` (probe.rs) — derives the
     /// channel list from `playback_config.channel_mappings`, sets the
     /// status to Running, and on completion calls `apply_results`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn start_bass_anchor_capture(&mut self, cx: &mut Context<Self>) {
         #[cfg(feature = "dev-api")]
         if self.complete_qa_fake_bass_anchor_capture(cx) {
@@ -213,10 +226,14 @@ impl PlayerView {
                 return;
             }
             let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-            let indices: Vec<u16> = mappings
+            let Ok(indices) = mappings
                 .iter()
-                .map(|m| m.interface_channel() as u16)
-                .collect();
+                .map(|m| u16::try_from(m.interface_channel()))
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                log::error!("Output channel exceeds the capture channel range");
+                return;
+            };
             let dir = rec
                 .recording_directory
                 .clone()
@@ -232,14 +249,11 @@ impl PlayerView {
                 rec.bass_anchor_capture.input_channel,
                 rec.recording_config
                     .ctc_loopback_input_channel
-                    .and_then(|c| match u16::try_from(c) {
-                        Ok(v) => Some(v),
-                        Err(_) => {
-                            log::warn!(
-                                "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
-                            );
-                            None
-                        }
+                    .and_then(|c| if let Ok(v) = u16::try_from(c) { Some(v) } else {
+                        log::warn!(
+                            "Loopback input channel {c} exceeds u16::MAX — bass anchor will run without loopback reference",
+                        );
+                        None
                     }),
                 rec.signal_level_db + BASS_ANCHOR_SIGNAL_BOOST_DB,
                 indices,
@@ -252,8 +266,7 @@ impl PlayerView {
 
         let started_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
         let (capture_generation, cancel_flag) = self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
@@ -263,12 +276,15 @@ impl PlayerView {
             rec.bass_anchor_capture.status = BassAnchorCaptureStatus::Running { started_at_ms };
             rec.bass_anchor_capture.results = None;
             cx.notify();
-            (capture_generation, rec.bass_anchor_cancel_requested.clone())
+            (
+                capture_generation,
+                std::sync::Arc::clone(&rec.bass_anchor_cancel_requested),
+            )
         });
 
         let state_clone = self.state.clone();
         let wav_path_for_state = wav_path.clone();
-        let cancel_for_task = cancel_flag.clone();
+        let cancel_for_task = std::sync::Arc::clone(&cancel_flag);
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
                 #[cfg(not(target_os = "ios"))]
@@ -343,7 +359,7 @@ impl PlayerView {
                         bac.status = BassAnchorCaptureStatus::Idle;
                     }
                     Err(e) => {
-                        log::warn!("Bass anchor capture failed: {}", e);
+                        log::warn!("Bass anchor capture failed: {e}");
                         bac.status = BassAnchorCaptureStatus::Failed(e);
                     }
                 }
@@ -355,6 +371,10 @@ impl PlayerView {
 
     /// Complete the QA bass-anchor capture through the visible Run action.
     #[cfg(feature = "dev-api")]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     fn complete_qa_fake_bass_anchor_capture(&mut self, cx: &mut Context<Self>) -> bool {
         self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
@@ -427,7 +447,7 @@ fn bass_anchor_number_row(
         .child(Text::new(label).size(TextSize::Xs))
         // intentional: compact numeric value uses bold microtype, not an eyebrow label.
         .child(
-            Text::new(format!("{:.0}", current))
+            Text::new(format!("{current:.0}"))
                 .size(TextSize::Xs)
                 .weight(TextWeight::Bold),
         )

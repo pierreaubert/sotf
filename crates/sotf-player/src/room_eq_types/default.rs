@@ -9,6 +9,7 @@ use std::collections::HashMap;
 /// reference, so saving a recording with an LFE channel and no crossover left
 /// the JSON unusable until manually edited. Emitting this default lets the
 /// optimizer pick the best crossover frequency in a sensible range.
+#[must_use]
 pub fn default_bass_management_crossovers() -> HashMap<String, roomeq_model::CrossoverConfig> {
     let mut map = HashMap::new();
     map.insert(
@@ -48,7 +49,7 @@ pub(super) fn default_area_quadrature_num_points() -> usize {
 }
 
 pub(super) fn default_area_quadrature_seed() -> u64 {
-    0xC0FFEE
+    0x00C0_FFEE
 }
 
 pub(super) fn default_area_gauss_legendre_points_per_axis() -> usize {
@@ -92,7 +93,7 @@ pub(super) fn default_bootstrap_alpha() -> f64 {
 }
 
 pub(super) fn default_bootstrap_seed() -> u64 {
-    0xC0FFEE
+    0x00C0_FFEE
 }
 
 pub(super) fn default_bootstrap_scalarisation() -> String {

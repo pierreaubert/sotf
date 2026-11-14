@@ -2,8 +2,8 @@
 use crate::app::dev_api::DevTrackExt;
 use crate::i18n::{HeadphoneEasyTranslations, HeadphoneEqTranslations};
 use crate::ui::PlayerView;
+use gpui::SharedString;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
@@ -28,6 +28,10 @@ impl PlayerView {
     // Step 4: Export
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_headphone_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -115,8 +119,7 @@ impl PlayerView {
 
                                                     Button::new(
                                                         SharedString::from(format!(
-                                                            "headphone-export-format-{}",
-                                                            value
+                                                            "headphone-export-format-{value}"
                                                         )),
                                                         *label,
                                                     )
@@ -134,7 +137,8 @@ impl PlayerView {
                                                                     .app
                                                                     .measurement_state
                                                                     .headphone_eq_state
-                                                                    .export_format = value.clone();
+                                                                    .export_format
+                                                                    .clone_from(&value);
                                                             });
                                                             cx.notify();
                                                         },

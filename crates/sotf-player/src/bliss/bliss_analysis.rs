@@ -24,6 +24,7 @@ pub struct BlissAnalysis {
 
 impl BlissAnalysis {
     /// Create from a feature vector (23 elements, bliss v2 order)
+    #[must_use]
     pub fn from_features(features: Vec<f32>) -> Self {
         Self {
             tempo: features.first().copied().unwrap_or(0.0),
@@ -37,6 +38,7 @@ impl BlissAnalysis {
     }
 
     /// Serialize features to bytes for database storage
+    #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(self.features.len() * 4);
         for f in &self.features {
@@ -46,6 +48,7 @@ impl BlissAnalysis {
     }
 
     /// Deserialize features from bytes
+    #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if !bytes.len().is_multiple_of(4) {
             return None;
@@ -66,6 +69,7 @@ impl BlissAnalysis {
     }
 
     /// Compute Euclidean distance to another analysis (for similarity)
+    #[must_use]
     pub fn distance(&self, other: &BlissAnalysis) -> f32 {
         if self.features.len() != other.features.len() {
             return f32::MAX;
@@ -81,6 +85,9 @@ impl BlissAnalysis {
 }
 
 /// Analyze a single audio file and return analysis features
+///
+/// # Errors
+/// Returns an error if the scan is already running or its database cannot be opened.
 pub fn analyze_file(path: &Path) -> Result<BlissAnalysis, String> {
     let samples = decode_for_analysis(path)?;
     let features = audio_features::analyze_audio_features(&samples, ANALYSIS_SAMPLE_RATE)

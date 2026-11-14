@@ -7,7 +7,7 @@
             .theme(toggle_theme.clone());
 
         if let Some(ref handler) = on_asymmetric_loss_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             asymmetric_toggle = asymmetric_toggle.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -41,7 +41,7 @@
             .theme(toggle_theme.clone());
 
         if let Some(ref h) = on_broadband_target_matching_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             broadband_toggle = broadband_toggle.on_change(move |v, w, cx| h(v, w, cx));
         }
 

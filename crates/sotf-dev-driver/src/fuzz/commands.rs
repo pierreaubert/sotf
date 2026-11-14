@@ -45,6 +45,14 @@ pub struct FuzzCommandOptions {
     pub opt_ins: BTreeSet<String>,
 }
 
+/// Runs the configured fuzz workers.
+///
+/// # Errors
+/// Returns an error for invalid options, target failures, or artifact I/O failures.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Preserve owned command options while sharing configuration among worker threads"
+)]
 pub fn run_fuzz_command(options: FuzzCommandOptions) -> Result<Vec<FuzzRunResult>> {
     if options.workers == 0 {
         bail!("worker count must be at least one");
@@ -77,7 +85,11 @@ pub fn run_fuzz_command(options: FuzzCommandOptions) -> Result<Vec<FuzzRunResult
             .collect::<Vec<_>>();
         handles
             .into_iter()
-            .map(|handle| handle.join().map_err(|_| anyhow!("fuzz worker panicked"))?)
+            .map(|handle| {
+                handle
+                    .join()
+                    .map_err(|_panic| anyhow!("fuzz worker panicked"))?
+            })
             .collect::<Result<Vec<_>>>()
     })?;
     Ok(results)
@@ -147,7 +159,7 @@ fn make_target(
             Ok(Box::new(ProcessTarget::new(ProcessTargetConfig {
                 target,
                 executable: executable.unwrap_or(default_executable),
-                environment: Default::default(),
+                environment: std::collections::BTreeMap::default(),
             })))
         }
         TargetId::HeadlessServer => {
@@ -183,6 +195,7 @@ fn make_target(
     }
 }
 
+#[must_use]
 pub fn default_manifest_path(target: TargetId) -> PathBuf {
     let name = format!("{}.toml", target.as_str());
     let checked_in = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -205,6 +218,10 @@ pub struct ReplayCommandOptions {
     pub best_effort_capabilities: bool,
 }
 
+/// Replays a recorded fuzz run.
+///
+/// # Errors
+/// Returns an error for invalid replay data, target failures, or artifact I/O failures.
 pub fn run_replay_command(options: &ReplayCommandOptions) -> Result<Option<FailureSignature>> {
     if options.run_id.is_some() && options.url.is_none() {
         bail!("--run-id is only valid together with --url");
@@ -232,7 +249,6 @@ pub fn run_replay_command(options: &ReplayCommandOptions) -> Result<Option<Failu
     )
 }
 
-#[allow(clippy::too_many_arguments)]
 fn replay_actions(
     replay: &ReplayConfig,
     actions: &[Action],
@@ -249,9 +265,7 @@ fn replay_actions(
     for directory in ["qa", "tmp", "logs", "hang"] {
         store.create_dir(directory)?;
     }
-    let raw_run_id = run_id
-        .map(str::to_owned)
-        .unwrap_or_else(|| Uuid::new_v4().simple().to_string());
+    let raw_run_id = run_id.map_or_else(|| Uuid::new_v4().simple().to_string(), str::to_owned);
     let run_id = RunId::parse(raw_run_id)?;
     let context = LaunchContext {
         run_id: &run_id,
@@ -316,7 +330,7 @@ fn replay_actions(
         if let Some(next) = observation.snapshot {
             if let Some(manifest) = manifest
                 && let Some(signature) =
-                    replay_invariant_signature(target, manifest, &snapshot, &next, &store)?
+                    replay_invariant_signature(target, manifest, &snapshot, &next, &store)
             {
                 let _ = target.shutdown();
                 return Ok(Some(signature));
@@ -337,13 +351,13 @@ fn replay_invariant_signature(
     previous: &Snapshot,
     current: &Snapshot,
     store: &ArtifactStore,
-) -> Result<Option<FailureSignature>> {
+) -> Option<FailureSignature> {
     let run_dir = store.run_dir().to_str();
     if current.state_revision < previous.state_revision {
-        return Ok(Some(FailureSignature {
+        return Some(FailureSignature {
             class: FailureClass::InvariantViolation,
             normalized: normalize_signature("state_revision_monotonic", run_dir),
-        }));
+        });
     }
     for invariant in &manifest.invariants {
         if invariant.condition.evaluate(current) {
@@ -358,13 +372,13 @@ fn replay_invariant_signature(
             }
         };
         if confirmed {
-            return Ok(Some(FailureSignature {
+            return Some(FailureSignature {
                 class: FailureClass::InvariantViolation,
                 normalized: normalize_signature(&invariant.id, run_dir),
-            }));
+            });
         }
     }
-    Ok(None)
+    None
 }
 
 /// Shared replay signature pipeline: same classification and normalization as
@@ -399,6 +413,10 @@ pub struct MinimizeCommandOptions {
     pub run_id: Option<String>,
 }
 
+/// Minimizes a reproducible fuzz failure.
+///
+/// # Errors
+/// Returns an error for unsupported failures, invalid replay data, or target and I/O failures.
 pub fn run_minimize_command(options: &MinimizeCommandOptions) -> Result<PathBuf> {
     if options.run_id.is_some() && options.url.is_none() {
         bail!("--run-id is only valid together with --url");

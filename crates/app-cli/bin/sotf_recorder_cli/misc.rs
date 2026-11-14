@@ -8,8 +8,7 @@ fn validated_amp(amp: Option<f32>, flag: &str) -> Result<f32, String> {
     let amp = amp.unwrap_or(0.5);
     if !amp.is_finite() || amp <= 0.0 || amp > 1.0 {
         return Err(format!(
-            "{} must be in the range (0.0, 1.0] — level must be ≤ 0 dBFS to avoid clipping the stimulus, got {}",
-            flag, amp
+            "{flag} must be in the range (0.0, 1.0] — level must be ≤ 0 dBFS to avoid clipping the stimulus, got {amp}"
         ));
     }
     Ok(amp)
@@ -31,7 +30,7 @@ pub(super) fn list_audio_devices() -> Result<(), String> {
                 "Failed to enumerate audio devices",
                 &e,
             )
-            .to_string());
+            .clone());
         }
     };
 
@@ -101,24 +100,34 @@ pub(super) fn list_audio_devices() -> Result<(), String> {
 
 pub(super) fn format_sample_rate_range(rates: &[u32]) -> String {
     match (rates.first(), rates.last()) {
-        (None, _) => "unknown".to_string(),
-        (Some(rate), Some(_)) if rates.len() == 1 => format!("{} Hz", rate),
-        (Some(first), Some(last)) => format!("{}-{} Hz", first, last),
+        (Some(rate), Some(_)) if rates.len() == 1 => format!("{rate} Hz"),
+        (Some(first), Some(last)) => format!("{first}-{last} Hz"),
         _ => "unknown".to_string(),
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn record_signal(
-    signal: String,
+#[allow(
+    clippy::too_many_arguments,
+    reason = "CLI options are passed explicitly at the command boundary"
+)]
+/// Records and analyzes a measurement signal.
+///
+/// # Errors
+/// Returns an error for invalid signal or channel settings, output I/O failures, or capture and analysis failures.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The command owns signal preparation, capture, analysis, and output reporting"
+)]
+pub fn record_signal<S: std::hash::BuildHasher>(
+    signal: &str,
     duration: f32,
     sample_rate: u32,
     channels: u16,
-    hwaudio_send_to: String,
-    hwaudio_record_from: String,
-    name: Option<String>,
+    hwaudio_send_to: &str,
+    hwaudio_record_from: &str,
+    name: Option<&str>,
     output_dir: Option<std::path::PathBuf>,
-    device: Option<String>,
+    device: Option<&str>,
     freq: Option<f32>,
     freq1: Option<f32>,
     freq2: Option<f32>,
@@ -128,11 +137,15 @@ pub fn record_signal(
     amp1: Option<f32>,
     amp2: Option<f32>,
     mls_order: Option<u8>,
-    microphone_compensation: Option<String>,
-    mic_calibration_map: std::collections::HashMap<usize, String>,
+    microphone_compensation: Option<&str>,
+    mic_calibration_map: &std::collections::HashMap<usize, String, S>,
 ) -> Result<(), String> {
     use sotf_audio::engine_playback::EnginePlayback;
-    use sotf_audio::signal_recorder::*;
+    use sotf_audio::signal_recorder::{
+        DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_output_filenames_stereo,
+        generate_signal, parse_channel_list, prepare_measurement_signal, prepare_signal,
+        record_and_analyze_with, validate_signal_params, write_temp_wav,
+    };
 
     let output_dir = match output_dir {
         Some(dir) => dir,
@@ -149,17 +162,16 @@ pub fn record_signal(
     // Validate channels
     if channels != 1 {
         return Err(format!(
-            "Channels must be 1 (mono signal generation), got {}",
-            channels
+            "Channels must be 1 (mono signal generation), got {channels}"
         ));
     }
 
     // Parse signal type
-    let signal_type = SignalType::from_str(&signal)?;
+    let signal_type = SignalType::from_str(signal)?;
 
     // Parse channel lists
-    let send_to_channels = parse_channel_list(&hwaudio_send_to)?;
-    let record_from_channels = parse_channel_list(&hwaudio_record_from)?;
+    let send_to_channels = parse_channel_list(hwaudio_send_to)?;
+    let record_from_channels = parse_channel_list(hwaudio_record_from)?;
 
     // Validate that we have at least one send-to channel
     if send_to_channels.is_empty() {
@@ -232,10 +244,10 @@ pub fn record_signal(
 
     println!("\nConfiguration:");
     println!("  Signal: {}", signal_type.as_str());
-    println!("  Duration: {:.2}s", duration);
-    println!("  Sample rate: {}Hz", sample_rate);
-    if let Some(ref dev) = device {
-        println!("  Audio device: {}", dev);
+    println!("  Duration: {duration:.2}s");
+    println!("  Sample rate: {sample_rate}Hz");
+    if let Some(dev) = device {
+        println!("  Audio device: {dev}");
     } else {
         println!("  Audio device: [DEFAULT]");
     }
@@ -244,20 +256,20 @@ pub fn record_signal(
     if record_from_channels.len() == 1 {
         let record_ch = record_from_channels[0];
         for &send_ch in &send_to_channels {
-            println!("    hw output {} → hw input {}", send_ch, record_ch);
+            println!("    hw output {send_ch} → hw input {record_ch}");
         }
     } else {
         // 1:1 mapping
         for (&send_ch, &record_ch) in send_to_channels.iter().zip(record_from_channels.iter()) {
-            println!("    hw output {} → hw input {}", send_ch, record_ch);
+            println!("    hw output {send_ch} → hw input {record_ch}");
         }
     }
     println!(
         "  Total recordings: {} (one mono file per pair)",
         send_to_channels.len()
     );
-    if let Some(ref n) = name {
-        println!("  Output prefix: {}", n);
+    if let Some(n) = name {
+        println!("  Output prefix: {n}");
     }
     println!();
 
@@ -281,8 +293,7 @@ pub fn record_signal(
             let compensation = MicrophoneCompensation::from_file(Path::new(comp_path))?;
             if signal_type == SignalType::Sweep {
                 println!(
-                    "  Applying inverse microphone compensation to sweep ({} Hz - {} Hz)...",
-                    start_freq, end_freq
+                    "  Applying inverse microphone compensation to sweep ({start_freq} Hz - {end_freq} Hz)..."
                 );
                 println!(
                     "  This pre-compensates the playback signal so the microphone records flat"
@@ -337,34 +348,29 @@ pub fn record_signal(
         );
 
         // Generate output filenames - include both send and record channels
-        let (wav_path, csv_path) = generate_output_filenames_stereo(
-            name.as_deref(),
-            signal_type,
-            send_ch,
-            record_ch,
-            sample_rate,
-        );
+        let (wav_path, csv_path) =
+            generate_output_filenames_stereo(name, signal_type, send_ch, record_ch, sample_rate);
         let wav_path = output_dir.join(wav_path);
         let csv_path = output_dir.join(csv_path);
 
-        println!("  Output WAV: {:?}", wav_path);
-        println!("  Output CSV: {:?}", csv_path);
+        println!("  Output WAV: {}", wav_path.display());
+        println!("  Output CSV: {}", csv_path.display());
 
         // Write mono signal to temporary WAV file
         println!("  Writing temporary mono WAV file...");
         let temp_wav = write_temp_wav(&prepared_signal, sample_rate, 1)?;
-        println!("  Temp file: {:?}", temp_wav.path());
+        println!("  Temp file: {}", temp_wav.path().display());
 
         // Perform actual playback and recording
         println!("  Starting playback and recording...");
-        println!("  Playing mono signal to hw output channel {}", send_ch);
-        println!("  Recording mono from hw input channel {}", record_ch);
+        println!("  Playing mono signal to hw output channel {send_ch}");
+        println!("  Recording mono from hw input channel {record_ch}");
 
         // Resolve per-channel calibration: per-channel override > global fallback
         let effective_mic_comp = mic_calibration_map
             .get(&(record_ch as usize))
-            .map(|s| s.as_str())
-            .or(microphone_compensation.as_deref());
+            .map(std::string::String::as_str)
+            .or(microphone_compensation);
 
         let capture = record_and_analyze_with(
             &mut EnginePlayback::new(true, "record_and_analyze"),
@@ -375,8 +381,8 @@ pub fn record_signal(
             &csv_path,
             send_ch,            // Output channel
             record_ch,          // Input channel
-            device.as_deref(),  // Optional output device name
-            device.as_deref(),  // Optional input device name
+            device,             // Optional output device name
+            device,             // Optional input device name
             effective_mic_comp, // Per-channel or global microphone compensation
             None,               // Optional sweep range
             1,                  // num_sweeps: CLI captures a single sweep (no repeat flag)
@@ -388,9 +394,9 @@ pub fn record_signal(
         let quality = sotf_audio_player::recording_helpers::summarize_take_quality(&capture);
         let verdict = sotf_audio_player::recording_helpers::take_verdict_text(&quality);
         if quality.trustworthy {
-            println!("  ✓ Recording complete — {}", verdict);
+            println!("  ✓ Recording complete — {verdict}");
         } else {
-            println!("  ⚠ Recording NEEDS REVIEW — {}", verdict);
+            println!("  ⚠ Recording NEEDS REVIEW — {verdict}");
             println!("    Consider re-recording this channel before using the measurement.");
         }
 
@@ -451,12 +457,12 @@ mod tests {
         // Directory creation is the first fallible step, so this exercises
         // the error path without touching any audio device.
         let err = super::record_signal(
-            "sine".to_string(),
+            "sine",
             1.0,
             48000,
             1,
-            "1".to_string(),
-            "1".to_string(),
+            "1",
+            "1",
             None,
             Some(std::path::PathBuf::from(
                 "/dev/null/sotf-cli-test-unwritable",
@@ -472,7 +478,7 @@ mod tests {
             None,
             None,
             None,
-            HashMap::new(),
+            &HashMap::new(),
         )
         .expect_err("uncreatable output dir must fail");
         assert!(
@@ -490,12 +496,12 @@ mod tests {
         // instead of failing on a missing flag. Signal preparation runs
         // before any hardware access, so this stays hardware-free.
         let err = super::record_signal(
-            "stipa".to_string(),
+            "stipa",
             1.0,
             16000,
             1,
-            "0".to_string(),
-            "0".to_string(),
+            "0",
+            "0",
             None,
             None,
             None,
@@ -509,7 +515,7 @@ mod tests {
             None,
             None,
             None,
-            HashMap::new(),
+            &HashMap::new(),
         )
         .expect_err("below-minimum STIPA sample rate must fail");
         assert!(

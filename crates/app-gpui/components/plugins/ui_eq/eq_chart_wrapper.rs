@@ -1,5 +1,8 @@
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, Bounds, ElementId, GlobalElementId, InspectorElementId, LayoutId, Pixels,
+    Window,
+};
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -19,6 +19,10 @@ pub fn plugin_sandbox_media_paths(library_dirs: impl IntoIterator<Item = PathBuf
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// Plugin sandbox runtime status.
+///
+/// # Errors
+/// Returns an error if sandbox runtime status cannot be queried.
 pub fn plugin_sandbox_runtime_status(
     library_dirs: impl IntoIterator<Item = PathBuf>,
 ) -> Result<PluginSandboxRuntimeStatus, Box<dyn std::error::Error>> {

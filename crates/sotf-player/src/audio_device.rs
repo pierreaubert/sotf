@@ -19,11 +19,13 @@ pub struct AudioOutputDeviceState {
 }
 
 impl AudioOutputDeviceState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Get the currently selected output device.
+    #[must_use]
     pub fn selected_device(&self) -> Option<&AudioDevice> {
         self.devices.get(self.selected_index)
     }
@@ -74,6 +76,7 @@ impl AudioOutputDeviceState {
     }
 
     /// Get the max channels supported by the selected device.
+    #[must_use]
     pub fn max_channels(&self) -> Option<usize> {
         self.selected_device()
             .and_then(|device| device.default_config.as_ref())
@@ -81,15 +84,16 @@ impl AudioOutputDeviceState {
     }
 
     /// Get the current device sample rate, or 48 kHz as fallback.
+    #[must_use]
     pub fn current_sample_rate(&self) -> f64 {
         self.selected_device()
             .and_then(|device| device.default_config.as_ref())
-            .map(|config| config.sample_rate as f64)
-            .unwrap_or(48000.0)
+            .map_or(48000.0, |config| f64::from(config.sample_rate))
     }
 
     /// Find the best default output device index.
     /// Priority: system default non-virtual > any non-virtual > system default > first.
+    #[must_use]
     pub fn find_best_default_index(&self) -> usize {
         // Prefer system default that's not virtual
         if let Some((idx, _)) = self
@@ -116,12 +120,12 @@ impl AudioOutputDeviceState {
             .iter()
             .enumerate()
             .find(|(_, d)| d.is_default)
-            .map(|(idx, _)| idx)
-            .unwrap_or(0)
+            .map_or(0, |(idx, _)| idx)
     }
 }
 
 /// Check if a device name is a virtual/passthrough device that shouldn't be default.
+#[must_use]
 pub fn is_virtual_device(name: &str) -> bool {
     let lower_name = name.to_lowercase();
     lower_name.contains("sotf")

@@ -9,7 +9,7 @@ use d3rs::gpu3d::{Line3D, Lines3DElement, Lines3DScene, Lines3DState, Polygon3D}
 #[cfg(feature = "gpu-3d")]
 use glam::Vec3;
 #[cfg(feature = "gpu-3d")]
-use gpui::*;
+use gpui::{AnyElement, IntoElement, Rgba};
 #[cfg(feature = "gpu-3d")]
 use sotf_plugins::speaker_config::SpeakerConfig;
 #[cfg(feature = "gpu-3d")]
@@ -47,11 +47,13 @@ impl<'a> SpiderView3D<'a> {
         }
     }
 
+    #[must_use]
     pub fn colors(mut self, colors: SpiderColors) -> Self {
         self.colors = colors;
         self
     }
 
+    #[must_use]
     pub fn vertical_color(mut self, color: Rgba) -> Self {
         self.vertical_color = color;
         self
@@ -59,6 +61,10 @@ impl<'a> SpiderView3D<'a> {
 
     /// Build the wireframe reference frame: XYZ axes + unit-radius circle on
     /// each reference plane.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn reference_lines(colors: &SpiderColors) -> Vec<Line3D> {
         let grid = colors.grid;
         let mut out = Vec::new();
@@ -154,7 +160,7 @@ impl IntoElement for SpiderView3D<'_> {
         let mut lines = Self::reference_lines(&self.colors);
         // Speaker "spokes" from origin out to each vertex on both planes —
         // visually anchors the polygon to the centre.
-        for v in horizontal.iter() {
+        for v in &horizontal {
             lines.push(Line3D {
                 from: Vec3::ZERO,
                 to: Vec3::new(v.direction[0] * v.radius, v.direction[1] * v.radius, 0.0),
@@ -162,7 +168,7 @@ impl IntoElement for SpiderView3D<'_> {
                 width: 1.0,
             });
         }
-        for v in vertical.iter() {
+        for v in &vertical {
             lines.push(Line3D {
                 from: Vec3::ZERO,
                 to: Vec3::new(0.0, v.direction[1] * v.radius, v.direction[2] * v.radius),
@@ -177,5 +183,14 @@ impl IntoElement for SpiderView3D<'_> {
             polygons: vec![horizontal_poly, vertical_poly],
         };
         Lines3DElement::new(self.state, scene).into_any_element()
+    }
+}
+
+#[cfg(feature = "gpu-3d")]
+impl std::fmt::Debug for SpiderView3D<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpiderView3D")
+            .field("colors", &self.colors)
+            .finish_non_exhaustive()
     }
 }

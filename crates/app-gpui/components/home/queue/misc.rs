@@ -6,7 +6,10 @@ use crate::components::plugins::level_meters::LevelMeterManager;
 use crate::queue_render::queue_meters_panel_width;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, ClickEvent, FontWeight, MouseButton, MouseMoveEvent, MouseUpEvent, SharedString,
+    div, img, px, relative, rems,
+};
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSet, ButtonSetOption, ButtonSetSize,
     ButtonSize, ButtonVariant, CollapseDirection, IconButton, IconButtonSize, IconButtonVariant,
@@ -47,6 +50,10 @@ impl PlayerView {
         self.render_queue_screen(Some(width), cx).into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_queue_screen(
         &self,
         solved_queue_width: Option<f32>,
@@ -162,7 +169,7 @@ impl PlayerView {
                                 layout.is_dragging_meters_divider = false;
                                 layout.is_dragging_lufs_divider = false;
                                 if let Err(e) = state.app.save_config(layout) {
-                                    log::warn!("Failed to save panel layout: {}", e);
+                                    log::warn!("Failed to save panel layout: {e}");
                                 }
                             }
                         });
@@ -278,7 +285,7 @@ impl PlayerView {
                                     .child(
                                         div()
                                             .overflow_hidden()
-                                            .when(level_meters_collapsed, |el| el.flex_1())
+                                            .when(level_meters_collapsed, gpui::Styled::flex_1)
                                             .when(!level_meters_collapsed, |el| {
                                                 el.h(relative(lufs_ratio.clamp(0.20, 0.82)))
                                                     .flex_shrink_0()
@@ -432,6 +439,14 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_queue_accordion_pane(
         &self,
         translations: &crate::i18n::Translations,
@@ -662,10 +677,10 @@ impl PlayerView {
                     view.state
                         .update(cx, |state, _cx| match state.app.fill_queue_magic() {
                             Ok(count) => {
-                                log::info!("[Queue] Magic Radio added {} tracks", count);
+                                log::info!("[Queue] Magic Radio added {count} tracks");
                             }
                             Err(e) => {
-                                log::error!("[Queue] Magic Radio error: {}", e);
+                                log::error!("[Queue] Magic Radio error: {e}");
                             }
                         });
                     cx.notify();
@@ -675,6 +690,14 @@ impl PlayerView {
         .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub(super) fn render_queue_album_detail(
         &self,
         queue_idx: usize,
@@ -717,11 +740,10 @@ impl PlayerView {
                     .to_uppercase();
                 let bd = track
                     .bit_depth
-                    .map(|b| b.to_string())
-                    .unwrap_or_else(|| "--".to_string());
-                let sr = track
-                    .sample_rate
-                    .map(|s| {
+                    .map_or_else(|| "--".to_string(), |b| b.to_string());
+                let sr = track.sample_rate.map_or_else(
+                    || "--".to_string(),
+                    |s| {
                         if s >= 1000 {
                             if s % 1000 == 0 {
                                 format!("{}k", s / 1000)
@@ -729,13 +751,13 @@ impl PlayerView {
                                 format!("{:.1}k", s as f32 / 1000.0)
                             }
                         } else {
-                            format!("{}", s)
+                            format!("{s}")
                         }
-                    })
-                    .unwrap_or_else(|| "--".to_string());
+                    },
+                );
                 (ext, bd, sr)
             } else {
-                ("".into(), "--".into(), "--".into())
+                (String::new(), "--".into(), "--".into())
             };
 
             let track_count = album.tracks.len();
@@ -867,13 +889,13 @@ impl PlayerView {
                                                 .text_size(d.text_xs)
                                                 .font_weight(FontWeight::BOLD)
                                                 .text_color(theme.text_secondary)
-                                                .child(format!("{} {}/{}", file_type, bit_depth, sample_rate_str)),
+                                                .child(format!("{file_type} {bit_depth}/{sample_rate_str}")),
                                         )
                                         .child(
                                             div()
                                                 .text_size(d.text_xs)
                                                 .text_color(theme.text_muted)
-                                                .child(format!("#{}", track_count)),
+                                                .child(format!("#{track_count}")),
                                         )
                                         .child(
                                             div()
@@ -891,9 +913,7 @@ impl PlayerView {
                                                     theme.text_muted
                                                 })
                                                 .child(
-                                                    replay_gain
-                                                        .map(|g| format!("{:+.1}dB", g))
-                                                        .unwrap_or_else(|| "N/A".to_string()),
+                                                    replay_gain.map_or_else(|| "N/A".to_string(), |g| format!("{g:+.1}dB")),
                                                 ),
                                         )
                                         .child(
@@ -907,7 +927,7 @@ impl PlayerView {
                                                 .text_size(d.text_xs)
                                                 .font_weight(FontWeight::MEDIUM)
                                                 .text_color(theme.text_secondary)
-                                                .child(format!("{}", channels)),
+                                                .child(format!("{channels}")),
                                         )
                                         // Album favorite heart
                                         .when_some(album_id, |el, aid| {
@@ -1055,6 +1075,14 @@ impl PlayerView {
     }
 
     /// Render the track list with clickable items
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_track_list(
         &self,
         queue_idx: usize,
@@ -1079,7 +1107,7 @@ impl PlayerView {
         let disc_count = disc_map.len();
         let mut all_elements: Vec<AnyElement> = Vec::new();
 
-        for (disc_num, tracks) in disc_map.iter() {
+        for (disc_num, tracks) in disc_map {
             let show_header = disc_count > 1;
 
             if show_header {
@@ -1096,7 +1124,7 @@ impl PlayerView {
                 );
             }
 
-            for (idx, track) in tracks.iter() {
+            for (idx, track) in tracks {
                 let idx = *idx;
                 let title_raw = track.title.clone().unwrap_or_else(|| "Unknown".to_string());
 
@@ -1135,7 +1163,7 @@ impl PlayerView {
 
                 all_elements.push(
                     div()
-                        .id(SharedString::from(format!("track-{}", idx)))
+                        .id(SharedString::from(format!("track-{idx}")))
                         .flex()
                         .items_center()
                         .gap(d.gap)
@@ -1235,13 +1263,13 @@ impl PlayerView {
                                     } else {
                                         theme_c.text_muted
                                     })
-                                    .child(format!("#{}", track_play_count)),
+                                    .child(format!("#{track_play_count}")),
                             )
                         })
                         // Favorite heart icon
                         .child(
                             div()
-                                .id(SharedString::from(format!("heart-track-{}", idx)))
+                                .id(SharedString::from(format!("heart-track-{idx}")))
                                 .cursor_pointer()
                                 .on_mouse_up(
                                     MouseButton::Left,
@@ -1313,7 +1341,7 @@ impl PlayerView {
             album_title
                 .split(':')
                 .skip(1)
-                .map(|s| s.trim())
+                .map(str::trim)
                 .filter(|s| s.len() >= 5) // Minimum meaningful prefix length
                 .collect()
         } else {

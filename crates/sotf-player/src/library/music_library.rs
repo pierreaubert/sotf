@@ -48,6 +48,7 @@ pub struct MusicLibrary {
 }
 
 impl MusicLibrary {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -88,6 +89,9 @@ impl MusicLibrary {
 
     /// Persist a qualified listen and update the in-memory presentation data.
     /// Returns false when no database is attached or the listen is too short.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn record_play(&mut self, path: &Path, duration_secs: u64) -> rusqlite::Result<bool> {
         if duration_secs < 30 {
             return Ok(false);
@@ -138,6 +142,9 @@ impl MusicLibrary {
 
     /// Create a new library with database persistence.
     /// The backup runs on a background thread so it does not block startup.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn with_database() -> Result<Self, Box<dyn std::error::Error>> {
         let db_path =
             MusicDatabase::default_path().ok_or("Could not determine config directory")?;
@@ -154,7 +161,7 @@ impl MusicLibrary {
             .spawn(move || {
                 let t0 = std::time::Instant::now();
                 if let Err(e) = crate::database::backup_existing_database(&backup_path) {
-                    log::warn!("[startup] Database backup failed: {}", e);
+                    log::warn!("[startup] Database backup failed: {e}");
                 } else {
                     log::info!(
                         "[startup] Database backup completed in {:.1}ms",
@@ -171,6 +178,9 @@ impl MusicLibrary {
 
     /// Create a new library for a secondary (read-only-intent) instance.
     /// Skips backup, WAL pragma, and schema migration.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn with_database_secondary() -> Result<Self, Box<dyn std::error::Error>> {
         let db_path =
             MusicDatabase::default_path().ok_or("Could not determine config directory")?;
@@ -187,6 +197,9 @@ impl MusicLibrary {
     ///
     /// This method is primarily intended for testing but is available in all builds.
     /// For production use, prefer `with_database()` which uses the default database location.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn with_custom_database<P: AsRef<std::path::Path>>(
         db_path: P,
     ) -> Result<Self, Box<dyn std::error::Error>> {
@@ -225,6 +238,9 @@ impl MusicLibrary {
     }
 
     /// Load library from database
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let t_total = std::time::Instant::now();
 
@@ -328,6 +344,10 @@ impl MusicLibrary {
         Ok(())
     }
 
+    /// Add directory.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn add_directory(&mut self, path: PathBuf) -> Result<bool, String> {
         // Check if this exact path already exists
         if self.directories.iter().any(|d| d.path == path) {
@@ -422,7 +442,7 @@ impl MusicLibrary {
             ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
             ChannelFilter::Surround => {
                 // 5.0 (5 channels) or 5.1 (6 channels)
-                matches!(album.uniform_channel_count(), Some(5) | Some(6))
+                matches!(album.uniform_channel_count(), Some(5 | 6))
             }
             ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
             ChannelFilter::SurroundPlus => {
@@ -459,7 +479,7 @@ impl MusicLibrary {
                             .first()
                             .and_then(|track| track.genre.as_ref())
                             .map(|genre| genre.to_lowercase()),
-                        album.artist().to_string(),
+                        album.artist().clone(),
                         album.title.clone(),
                     )
                 });
@@ -492,7 +512,7 @@ impl MusicLibrary {
                             .first()
                             .and_then(|track| track.composer.as_ref())
                             .map(|composer| composer.to_lowercase()),
-                        album.artist().to_string(),
+                        album.artist().clone(),
                         album.title.clone(),
                     )
                 });
@@ -501,7 +521,7 @@ impl MusicLibrary {
                 merged_albums.sort_by_cached_key(|album| {
                     (
                         std::cmp::Reverse(album.play_count),
-                        album.artist().to_string(),
+                        album.artist().clone(),
                         album.title.clone(),
                     )
                 });
@@ -513,8 +533,6 @@ impl MusicLibrary {
 
     /// Get flattened directory tree for display (Recursive)
     pub fn get_directory_tree_items(&self) -> Vec<(PathBuf, usize, bool)> {
-        let mut items = Vec::new();
-
         fn add_recursive(
             items: &mut Vec<(PathBuf, usize, bool)>,
             dir_info: &DirectoryInfo,
@@ -529,6 +547,8 @@ impl MusicLibrary {
             }
         }
 
+        let mut items = Vec::new();
+
         for dir_info in &self.directories {
             add_recursive(&mut items, dir_info, 0);
         }
@@ -536,7 +556,7 @@ impl MusicLibrary {
     }
 
     pub fn remove_directory(&mut self, index: usize) -> Option<PathBuf> {
-        if index < self.directories.len() {
+        (index < self.directories.len()).then(|| {
             let removed = self.directories.remove(index);
             let path = removed.path.clone();
 
@@ -566,19 +586,27 @@ impl MusicLibrary {
             self.albums
                 .retain(|album| !album.tracks.iter().all(|t| t.path.starts_with(&path)));
 
-            Some(path)
-        } else {
-            None
-        }
+            path
+        })
     }
 
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Diagnostic and compatibility helpers are retained across platform and feature configurations"
+    )]
+    /// Scan.
+    ///
+    /// # Errors
+    /// Returns an error if directory scanning or database persistence fails, or the scan is cancelled.
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_incremental(false)
     }
 
     /// Scan directories with progress callback
-    /// The callback is called periodically with (tracks_scanned, albums_found)
+    /// The callback is called periodically with (`tracks_scanned`, `albums_found`)
+    ///
+    /// # Errors
+    /// Returns an error if directory scanning or database persistence fails, or the scan is cancelled.
     pub fn scan_with_progress<F>(
         &mut self,
         progress_callback: F,
@@ -591,7 +619,13 @@ impl MusicLibrary {
 
     /// Scan directories with optional incremental mode
     /// If incremental is true, only scan new or modified files
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Diagnostic and compatibility helpers are retained across platform and feature configurations"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error if directory scanning or database persistence fails, or the scan is cancelled.
     pub fn scan_incremental(
         &mut self,
         incremental: bool,
@@ -603,7 +637,10 @@ impl MusicLibrary {
     ///
     /// If `incremental` is true, only scan new or modified files (based on mtime).
     /// If `incremental` is false, scan all files regardless of modification time.
-    /// ReplayGain values are preserved in the database (not overwritten during scan).
+    /// `ReplayGain` values are preserved in the database (not overwritten during scan).
+    ///
+    /// # Errors
+    /// Returns an error if directory scanning or database persistence fails, or the scan is cancelled.
     pub fn scan_incremental_with_progress<F>(
         &mut self,
         incremental: bool,
@@ -622,6 +659,21 @@ impl MusicLibrary {
     }
 
     /// Scan directories with optional incremental mode, progress reporting, and pause support
+    ///
+    /// # Errors
+    /// Returns an error if directory scanning or database persistence fails, or the scan is cancelled.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Album dynamic range is an average over track measurements"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Incremental scanning coordinates one cancellation-aware filesystem and database lifecycle"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public scan API owns cancellation and pause handles for the entire scan lifecycle "
+    )]
     pub fn scan_incremental_with_progress_and_pause<F>(
         &mut self,
         incremental: bool,
@@ -766,11 +818,6 @@ impl MusicLibrary {
                 let folder_key = folder_album_key(&existing_album);
                 let merge_key = if album_map.contains_key(&title_key) {
                     title_key
-                } else if folder_key
-                    .as_ref()
-                    .is_some_and(|key| album_map.contains_key(key))
-                {
-                    folder_key.expect("folder key checked")
                 } else {
                     folder_key.unwrap_or(title_key)
                 };
@@ -781,10 +828,14 @@ impl MusicLibrary {
                             album.id = existing_album.id;
                         }
                         if album.album_art_path.is_none() {
-                            album.album_art_path = existing_album.album_art_path.clone();
+                            album
+                                .album_art_path
+                                .clone_from(&existing_album.album_art_path);
                         }
                         if album.album_art_thumbnail.is_none() {
-                            album.album_art_thumbnail = existing_album.album_art_thumbnail.clone();
+                            album
+                                .album_art_thumbnail
+                                .clone_from(&existing_album.album_art_thumbnail);
                         }
                         album.tracks.extend(existing_album.tracks);
                     }
@@ -889,7 +940,7 @@ impl MusicLibrary {
                 // Full scans rewrite every row, so rebuild once from the final state.
                 let t0 = Instant::now();
                 if let Err(e) = db.sync_fts_index() {
-                    log::warn!("Failed to sync FTS index after scan: {}", e);
+                    log::warn!("Failed to sync FTS index after scan: {e}");
                 }
                 log::info!("[scan] sync FTS index took {} ms", t0.elapsed().as_millis());
             }
@@ -909,7 +960,7 @@ impl MusicLibrary {
             // (e.g., the TUI read connection) hold read snapshots.
             let t0 = Instant::now();
             if let Err(e) = db.checkpoint_wal() {
-                log::warn!("Failed to checkpoint WAL after scan: {}", e);
+                log::warn!("Failed to checkpoint WAL after scan: {e}");
             }
             log::info!("[scan] checkpoint WAL took {} ms", t0.elapsed().as_millis());
         }
@@ -933,12 +984,18 @@ impl MusicLibrary {
     }
 
     /// Clean up database by removing tracks for files that no longer exist
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         self.clean_database_with_progress(|_, _| {})
     }
 
     /// Clean up database with progress callback
     /// The callback is called periodically with (checked, total)
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn clean_database_with_progress<F>(
         &mut self,
         progress_callback: F,
@@ -957,6 +1014,9 @@ impl MusicLibrary {
     }
 
     /// Clear all persisted library albums/tracks and reset the in-memory view.
+    ///
+    /// # Errors
+    /// Returns an error if library filesystem access, scanning, or database operations fail.
     pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         let removed = if let Some(db) = &mut self.db {
             db.clear_library_content()?
@@ -972,7 +1032,14 @@ impl MusicLibrary {
         Ok(removed)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The operation accepts the complete plugin or scan context explicitly"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public scan API owns cancellation and pause handles for the entire scan lifecycle "
+    )]
     pub(super) fn scan_directory<F>(
         &self,
         dir: &Path,
@@ -999,7 +1066,7 @@ impl MusicLibrary {
         for entry in WalkDir::new(dir)
             .follow_links(true)
             .into_iter()
-            .filter_map(|e| e.ok())
+            .filter_map(std::result::Result::ok)
         {
             let path = entry.path();
 
@@ -1076,10 +1143,10 @@ impl MusicLibrary {
                             } else {
                                 // Use parent folder name as album title so all untagged
                                 // files in the same directory are grouped together.
-                                path.parent()
-                                    .and_then(|p| p.file_name())
-                                    .map(|n| n.to_string_lossy().to_string())
-                                    .unwrap_or_else(|| "Unknown Album".to_string())
+                                path.parent().and_then(|p| p.file_name()).map_or_else(
+                                    || "Unknown Album".to_string(),
+                                    |n| n.to_string_lossy().to_string(),
+                                )
                             };
 
                             let album_title = clean_album_title(&raw_album_title);
@@ -1093,9 +1160,8 @@ impl MusicLibrary {
                                 // directory become one album.
                                 let folder = path
                                     .parent()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_default();
-                                format!("__folder__|{}", folder)
+                                    .map_or_default(|p| p.to_string_lossy().to_string());
+                                format!("__folder__|{folder}")
                             };
 
                             let album = album_map.entry(key).or_insert_with(|| {
@@ -1219,8 +1285,7 @@ impl MusicLibrary {
             // from their on-disk QA/source folder.
             if track.path.ancestors().any(|path| {
                 path.file_name()
-                    .map(|name| name.to_string_lossy().to_lowercase().contains(query_lower))
-                    .unwrap_or(false)
+                    .is_some_and(|name| name.to_string_lossy().to_lowercase().contains(query_lower))
             }) {
                 return true;
             }

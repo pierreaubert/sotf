@@ -37,6 +37,7 @@ pub enum PhoneHomeShelf {
 }
 
 impl PhoneHomeShelf {
+    #[must_use]
     pub fn title(self) -> &'static str {
         match self {
             Self::RecentlyPlayed => "Recently Played",
@@ -48,6 +49,7 @@ impl PhoneHomeShelf {
 }
 
 impl Screen {
+    #[must_use]
     pub const fn all() -> &'static [Self] {
         &[
             Self::Home,
@@ -72,6 +74,7 @@ impl Screen {
         ]
     }
 
+    #[must_use]
     pub fn primary_destinations() -> &'static [Self] {
         const DESTINATIONS: &[Screen] = &[
             Screen::Home,
@@ -85,6 +88,7 @@ impl Screen {
         DESTINATIONS
     }
 
+    #[must_use]
     pub fn primary_destination_index(self) -> usize {
         if let Some(index) = Self::primary_destinations()
             .iter()
@@ -105,6 +109,7 @@ impl Screen {
         }
     }
 
+    #[must_use]
     pub fn is_player_surface(self) -> bool {
         matches!(
             self,
@@ -119,10 +124,12 @@ impl Screen {
         )
     }
 
+    #[must_use]
     pub fn is_studio_surface(self) -> bool {
         matches!(self, Screen::StudioHub | Screen::EqCurve) || self.is_studio_tool()
     }
 
+    #[must_use]
     pub fn is_studio_tool(self) -> bool {
         matches!(
             self,
@@ -138,6 +145,7 @@ impl Screen {
         )
     }
 
+    #[must_use]
     pub fn from_view_menu_id(id: &str) -> Option<Self> {
         match id {
             "now-playing" => Some(Screen::NowPlaying),
@@ -213,6 +221,7 @@ pub enum InputMode {
 impl InputMode {
     /// Check if this mode captures text input (blocking keyboard shortcuts).
     /// Use this to determine if actions should be blocked when in text entry modes.
+    #[must_use]
     pub fn is_text_input(&self) -> bool {
         matches!(
             self,
@@ -261,6 +270,7 @@ pub enum PlatformStyle {
 }
 
 impl PlatformStyle {
+    #[must_use]
     pub fn for_window(width: f32, height: f32, is_ios_family: bool) -> Self {
         #[cfg(feature = "dev-api")]
         if std::env::var_os("SOTF_QA_DIR").is_some()
@@ -276,6 +286,7 @@ impl PlatformStyle {
         }
     }
 
+    #[must_use]
     pub fn is_phone(self) -> bool {
         matches!(self, Self::Phone)
     }
@@ -293,12 +304,14 @@ pub enum DensityMode {
 }
 
 impl DensityMode {
+    #[must_use]
     pub fn all() -> &'static [Self] {
         const MODES: &[DensityMode] = &[DensityMode::Standard, DensityMode::Expert];
 
         MODES
     }
 
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             DensityMode::Standard => "Standard",
@@ -306,6 +319,7 @@ impl DensityMode {
         }
     }
 
+    #[must_use]
     pub fn value(self) -> &'static str {
         match self {
             DensityMode::Standard => "standard",
@@ -313,6 +327,7 @@ impl DensityMode {
         }
     }
 
+    #[must_use]
     pub fn from_value(value: &str) -> Option<Self> {
         match value {
             "standard" => Some(DensityMode::Standard),
@@ -321,6 +336,7 @@ impl DensityMode {
         }
     }
 
+    #[must_use]
     pub fn layout_mode_for_window(self, width: f32, height: f32) -> LayoutMode {
         match self {
             DensityMode::Expert
@@ -421,6 +437,10 @@ pub struct MetadataEditorState {
 }
 
 impl MetadataEditorState {
+    /// Builds a metadata editor for the album.
+    ///
+    /// # Errors
+    /// Returns an error if album identification or editable metadata values are invalid.
     pub fn for_album(album: &sotf_audio_player::Album) -> Result<Self, String> {
         let album_id = album
             .id
@@ -439,7 +459,7 @@ impl MetadataEditorState {
                 title: title.clone(),
                 artist,
                 album_artist,
-                year: album.year.map(|year| year.to_string()).unwrap_or_default(),
+                year: album.year.map_or_default(|year| year.to_string()),
                 genre: first
                     .and_then(|track| track.genre.clone())
                     .unwrap_or_default(),
@@ -448,8 +468,7 @@ impl MetadataEditorState {
                     .unwrap_or_default(),
                 disc_number: first
                     .and_then(|track| track.disc_number)
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
+                    .map_or_default(|value| value.to_string()),
                 conductor: first
                     .and_then(|track| track.conductor.clone())
                     .unwrap_or_default(),
@@ -475,6 +494,7 @@ impl MetadataEditorState {
         })
     }
 
+    #[must_use]
     pub fn for_track(track: &sotf_audio_player::Track) -> Self {
         let title = track
             .title
@@ -484,7 +504,7 @@ impl MetadataEditorState {
         Self {
             scope: MetadataEditorScope::Track,
             target: sotf_audio_player::MetadataTarget::TrackPath(track.path.clone()),
-            target_label: format!("Track \"{}\"", title),
+            target_label: format!("Track \"{title}\""),
             fields: MetadataEditorFields {
                 title: title.clone(),
                 artist: artist.clone(),
@@ -492,14 +512,8 @@ impl MetadataEditorState {
                 year: String::new(),
                 genre: track.genre.clone().unwrap_or_default(),
                 composer: track.composer.clone().unwrap_or_default(),
-                disc_number: track
-                    .disc_number
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
-                track_number: track
-                    .track_number
-                    .map(|value| value.to_string())
-                    .unwrap_or_default(),
+                disc_number: track.disc_number.map_or_default(|value| value.to_string()),
+                track_number: track.track_number.map_or_default(|value| value.to_string()),
                 conductor: track.conductor.clone().unwrap_or_default(),
                 performer: track.performer.clone().unwrap_or_default(),
                 isrc: track.isrc.clone().unwrap_or_default(),
@@ -508,7 +522,7 @@ impl MetadataEditorState {
             },
             preview: None,
             error: None,
-            search_query: format!("{} {}", artist, title).trim().to_string(),
+            search_query: format!("{artist} {title}").trim().to_string(),
             search_results: Vec::new(),
             selected_result: 0,
             search_error: None,
@@ -516,6 +530,10 @@ impl MetadataEditorState {
         }
     }
 
+    /// Parses the editable metadata fields.
+    ///
+    /// # Errors
+    /// Returns an error if album identification or editable metadata values are invalid.
     pub fn patch(&self) -> Result<sotf_audio_player::MetadataPatch, String> {
         fn text(value: &str) -> Option<String> {
             let trimmed = value.trim();
@@ -530,7 +548,7 @@ impl MetadataEditorState {
             trimmed
                 .parse::<u32>()
                 .map(Some)
-                .map_err(|_| format!("{label} must be a positive number"))
+                .map_err(|_error| format!("{label} must be a positive number"))
         }
 
         Ok(sotf_audio_player::MetadataPatch {
@@ -589,7 +607,7 @@ impl MetadataEditorState {
 /// Type of plugin update needed for audio engine synchronization
 #[derive(Debug, Clone)]
 pub enum PluginUpdateType {
-    /// Single parameter change - use set_plugin_parameter() for zero-dropout update
+    /// Single parameter change - use `set_plugin_parameter()` for zero-dropout update
     Parameter {
         plugin_index: usize,
         param_index: usize,
@@ -607,7 +625,7 @@ pub enum PluginUpdateType {
         value: bool,
         request_id: u64,
     },
-    /// Structural change (add/remove/reorder/toggle) - use update_plugins() for full rebuild
+    /// Structural change (add/remove/reorder/toggle) - use `update_plugins()` for full rebuild
     Structural,
 }
 
@@ -663,6 +681,10 @@ impl Default for MeasureState {
 
 /// UI state for optimization forms (dropdowns open/closed)
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct OptimizationUiState {
     pub peq_model_open: bool,
     pub algo_open: bool,

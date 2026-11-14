@@ -2,13 +2,17 @@ use crate::components::design::Ds;
 use crate::components::home::album_detail::AlbumAction;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, div, uniform_list};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_library_tracks(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let labels =
@@ -55,12 +59,10 @@ impl PlayerView {
                                     });
                                     let artist =
                                         track.artist.clone().unwrap_or_else(|| album.artist());
-                                    let duration = track
-                                        .duration_secs
-                                        .map(|seconds| {
-                                            format!("{}:{:02}", seconds / 60, seconds % 60)
-                                        })
-                                        .unwrap_or_else(|| "—".into());
+                                    let duration = track.duration_secs.map_or_else(
+                                        || "—".into(),
+                                        |seconds| format!("{}:{:02}", seconds / 60, seconds % 60),
+                                    );
                                     let mut actions = Vec::new();
                                     for (suffix, label, action) in [
                                         ("play", title, AlbumAction::Play),

@@ -1,4 +1,5 @@
 use super::misc::get_brand_image_path;
+#[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::i18n::AudioDeviceTranslations;
 #[cfg(all(target_os = "macos", feature = "hal"))]
 use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_sample_rate};
@@ -6,8 +7,14 @@ use crate::app::state::audio_device::{HalConfig, format_buffer_size, format_samp
 use crate::app::types::PlaybackSource;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use gpui::{ClickEvent, Entity, Window};
+
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, FontWeight, MouseButton, MouseUpEvent, ObjectFit, Rgba, SharedString, div,
+    img, rems,
+};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption};
 use gpui_ui_kit::{HStack, StackAlign, StackSpacing, Text, VStack};
 
@@ -174,25 +181,25 @@ impl PlayerView {
             state.app.audio_device_state.output_draft.error = Some(message);
             return;
         }
-        match state.player.stop_with_receipt() {
-            Ok(receipt) => {
-                pending.receipt = receipt;
-                pending.recovery =
-                    Some(crate::app::state::audio_device::AudioApplyRecovery::Stopping(message));
-                state.app.audio_device_state.audio_apply.pending = Some(pending);
-            }
-            Err(_) => {
-                let detail =
-                    crate::app::i18n::AudioPreferencesPersistenceTranslations::recovery_stopped(
-                        state.app.ui_state.language,
-                        false,
-                    );
-                state.app.audio_device_state.output_draft.error =
-                    Some(format!("{message}. {detail}"));
-            }
+        if let Ok(receipt) = state.player.stop_with_receipt() {
+            pending.receipt = receipt;
+            pending.recovery =
+                Some(crate::app::state::audio_device::AudioApplyRecovery::Stopping(message));
+            state.app.audio_device_state.audio_apply.pending = Some(pending);
+        } else {
+            let detail =
+                crate::app::i18n::AudioPreferencesPersistenceTranslations::recovery_stopped(
+                    state.app.ui_state.language,
+                    false,
+                );
+            state.app.audio_device_state.output_draft.error = Some(format!("{message}. {detail}"));
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn apply_audio_output_draft(state: &mut crate::app::AppState, cx: &App) -> bool {
         if state.app.audio_device_state.audio_apply.pending.is_some() {
             return false;
@@ -217,17 +224,17 @@ impl PlayerView {
         ));
         let target_source = devices.playback_source;
         #[cfg(all(target_os = "macos", feature = "hal"))]
-        let target_source = devices
-            .output_draft
-            .systemwide_input
-            .map(|enabled| {
-                if enabled {
-                    PlaybackSource::HalDevice
-                } else {
-                    PlaybackSource::File
-                }
-            })
-            .unwrap_or(target_source);
+        let target_source =
+            devices
+                .output_draft
+                .systemwide_input
+                .map_or(target_source, |enabled| {
+                    if enabled {
+                        PlaybackSource::HalDevice
+                    } else {
+                        PlaybackSource::File
+                    }
+                });
         let mut target_format = devices.hal_config.clone();
         target_format.sample_rate = devices
             .output_draft
@@ -413,7 +420,6 @@ impl PlayerView {
     }
 
     pub(crate) fn render_audio_output_draft(&self, cx: &mut Context<Self>) -> AnyElement {
-        use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let devices = &state.app.audio_device_state;
@@ -497,6 +503,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_audio_device_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -505,8 +515,10 @@ impl PlayerView {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let translations = state.app.ui_state.translations.clone();
-        let _text = AudioDeviceTranslations::for_language(state.app.ui_state.language);
-        let _playback_source = state.app.audio_device_state.playback_source;
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let text = AudioDeviceTranslations::for_language(state.app.ui_state.language);
+        #[cfg(all(target_os = "macos", feature = "hal"))]
+        let playback_source = state.app.audio_device_state.playback_source;
         let unnamed_device =
             crate::app::i18n::AudioPreferencesPersistenceTranslations::unnamed_device(
                 state.app.ui_state.language,
@@ -521,8 +533,7 @@ impl PlayerView {
                 .output_devices
                 .iter()
                 .position(|device| device.name == name)
-                .map(|index| format!("device:{index}"))
-                .unwrap_or_else(|| "unavailable".into()),
+                .map_or_else(|| "unavailable".into(), |index| format!("device:{index}")),
             None => "system-default".into(),
         };
         let mut options = vec![SelectOption::new(
@@ -593,7 +604,8 @@ impl PlayerView {
                 let _ = state_toggle.update(cx, |state, _| {
                     state.app.audio_device_state.output_ui.open = open;
                     if open {
-                        state.app.audio_device_state.hal_dropdowns = Default::default();
+                        state.app.audio_device_state.hal_dropdowns =
+                            crate::app::state::audio_device::HalDropdownState::default();
                     }
                     state.app.audio_device_state.output_ui.highlight = None;
                 });
@@ -601,7 +613,7 @@ impl PlayerView {
             })
             .on_highlight(move |highlight, _, cx| {
                 state_highlight.update(cx, |state, _| {
-                    state.app.audio_device_state.output_ui.highlight = highlight
+                    state.app.audio_device_state.output_ui.highlight = highlight;
                 });
                 let _ = view_highlight.update(cx, |_, cx| cx.notify());
             });
@@ -642,16 +654,16 @@ impl PlayerView {
                 .audio_device_state
                 .output_draft
                 .systemwide_input
-                .unwrap_or(matches!(_playback_source, PlaybackSource::HalDevice));
+                .unwrap_or(matches!(playback_source, PlaybackSource::HalDevice));
             let state_entity = self.state.clone();
             let view_entity = cx.entity().downgrade();
             content = content
-                .child(Text::label(_text.audio_source))
+                .child(Text::label(text.audio_source))
                 .child({
                     let mut choices = div().flex().flex_wrap().gap(d.gap);
                     for (systemwide, key, label) in [
-                        (false, "file", _text.file_player),
-                        (true, "hal", _text.hal_device),
+                        (false, "file", text.file_player),
+                        (true, "hal", text.hal_device),
                     ] {
                         let button = Button::new(format!("audio-source-{key}"), label)
                             .size(ButtonSize::Sm)
@@ -754,7 +766,7 @@ impl PlayerView {
                     ).color(theme.text_secondary));
                 }
                 content = content
-                    .child(Text::label(_text.hal_configuration))
+                    .child(Text::label(text.hal_configuration))
                     .child(
                         div()
                             .flex()
@@ -769,7 +781,7 @@ impl PlayerView {
                                 let state_for_highlight = state_entity.clone();
                                 let view_for_highlight = view_entity.clone();
                                 Select::new("hal-sample-rate")
-                                    .label(_text.sample_rate)
+                                    .label(text.sample_rate)
                                     .options(sample_rate_options)
                                     .selected(hal_config.sample_rate.to_string())
                                     .is_open(hal_dropdowns.sample_rate_open)
@@ -833,7 +845,7 @@ impl PlayerView {
                                 let state_for_highlight = state_entity.clone();
                                 let view_for_highlight = view_entity.clone();
                                 Select::new("hal-channel-count")
-                                    .label(_text.channels)
+                                    .label(text.channels)
                                     .options(channel_options)
                                     .selected(hal_config.channel_count.to_string())
                                     .is_open(hal_dropdowns.channel_count_open)
@@ -897,7 +909,7 @@ impl PlayerView {
                                 let state_for_highlight = state_entity.clone();
                                 let view_for_highlight = view_entity.clone();
                                 Select::new("hal-buffer-size")
-                                    .label(_text.buffer_size)
+                                    .label(text.buffer_size)
                                     .options(buffer_options)
                                     .selected(hal_config.buffer_frames.to_string())
                                     .is_open(hal_dropdowns.buffer_size_open)
@@ -965,7 +977,7 @@ impl PlayerView {
                 HStack::new()
                     .spacing(StackSpacing::Sm)
                     .align(StackAlign::Center)
-                    .child(Text::label(_text.wireless_devices))
+                    .child(Text::label(text.wireless_devices))
                     .child(
                         Button::new("show-airplay-route-picker", "AirPlay")
                             .variant(ButtonVariant::Secondary)
@@ -1050,16 +1062,9 @@ impl PlayerView {
                                         .current_output_device_name
                                         .as_deref(),
                                 ) == Some(device.name.as_str());
-                            let sample_rate = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.sample_rate)
-                                .unwrap_or(0);
-                            let channels = device
-                                .default_config
-                                .as_ref()
-                                .map(|c| c.channels)
-                                .unwrap_or(0);
+                            let sample_rate =
+                                device.default_config.as_ref().map_or(0, |c| c.sample_rate);
+                            let channels = device.default_config.as_ref().map_or(0, |c| c.channels);
                             let theme = theme.clone();
                             let device_name = device.name.clone();
                             let is_default = device.is_default;
@@ -1116,7 +1121,7 @@ impl PlayerView {
                                                     HStack::new()
                                                         .spacing(StackSpacing::Sm)
                                                         .child(device_info_pill(
-                                                            format!("{} ch", channels),
+                                                            format!("{channels} ch"),
                                                             &theme,
                                                             d,
                                                         ))
@@ -1127,7 +1132,7 @@ impl PlayerView {
                                                                     sample_rate / 1000
                                                                 )
                                                             } else {
-                                                                format!("{} Hz", sample_rate)
+                                                                format!("{sample_rate} Hz")
                                                             },
                                                             &theme,
                                                             d,
@@ -1201,7 +1206,7 @@ impl PlayerView {
             .app
             .plugin_state
             .graph
-            .to_plugin_configs(sample_rate as f64)
+            .to_plugin_configs(f64::from(sample_rate))
         {
             plugins.push(plugin_config);
         }
@@ -1240,18 +1245,14 @@ impl PlayerView {
                 state.app.audio_device_state.audio_apply.last_submission = Some(receipt);
                 state.app.audio_device_state.playback_source = PlaybackSource::HalDevice;
                 state.app.playback.is_playing = true;
-                log::info!(
-                    "HAL playback started: {}Hz, {} channels",
-                    sample_rate,
-                    channels
-                );
+                log::info!("HAL playback started: {sample_rate}Hz, {channels} channels");
                 true
             }
             Err(e) => {
-                log::error!("Failed to start HAL playback: {}", e);
+                log::error!("Failed to start HAL playback: {e}");
                 state.app.playback.is_playing = false;
                 state.app.ui_state.toast_message = Some(crate::app::types::ToastMessage::error(
-                    format!("Failed to start HAL: {}", e),
+                    format!("Failed to start HAL: {e}"),
                 ));
                 false
             }

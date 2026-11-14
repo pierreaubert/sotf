@@ -5,6 +5,7 @@ use sotf_audio_player_gpui::app::actions::ToggleSearch;
 use sotf_audio_player_gpui::app::state::library::{ChannelFilter, LibrarySortOrder};
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct LibraryPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

@@ -46,8 +46,7 @@ impl std::fmt::Debug for WebApiToken {
 fn now_unix() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0)
+        .map_or(0, |d| d.as_secs())
 }
 
 impl WebApiToken {
@@ -101,8 +100,8 @@ impl WebApiToken {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            opts.mode(0o600);
-        }
+            opts.mode(0o600)
+        };
         let mut file = opts
             .open(&path)
             .map_err(|e| ServiceError::Other(format!("Failed to write {}: {e}", path.display())))?;

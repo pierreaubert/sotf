@@ -1,6 +1,13 @@
 impl PlayerView {
     /// Render split view with Library on top and Queue on bottom (expanded mode)
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_split_view(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (theme, queue_ratio) = {
             let state = self.state.read(cx);
@@ -67,7 +74,7 @@ impl PlayerView {
                     let window_width: f32 = window_size.width.into();
                     let mouse_x: f32 = mouse_pos.x.into();
                     // Meters are on the right, so ratio is from the right edge
-                    let right_edge_ratio: f32 = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.8);
+                    let right_edge_ratio = (1.0 - (mouse_x / window_width)).clamp(0.1, 0.8);
 
                     view.state.update(cx, |state, cx| {
                         state.layout.update(cx, |layout, _| {
@@ -103,7 +110,7 @@ impl PlayerView {
                     let delta_y = vd.start_y - mouse_y; // Inverted: up = positive
                     // Scale: 100px drag = full volume range
                     let volume_delta = delta_y / 100.0;
-                    let new_volume: f32 = (vd.start_value + volume_delta).clamp(0.0, 1.0);
+                    let new_volume = (vd.start_value + volume_delta).clamp(0.0, 1.0);
                     view.state.update(cx, |state, _cx| {
                         state.app.playback.volume = new_volume;
                         if let Err(e) = state.player.set_volume(new_volume) {
@@ -130,8 +137,7 @@ impl PlayerView {
                                     .app
                                     .layout
                                     .divider_click_start
-                                    .map(|start| start.elapsed().as_millis() < 200)
-                                    .unwrap_or(false);
+                                    .is_some_and(|start| start.elapsed().as_millis() < 200);
 
                                 if was_click {
                                     if layout.queue_list_ratio > 0.05 {
@@ -150,8 +156,7 @@ impl PlayerView {
                                     .app
                                     .layout
                                     .divider_click_start
-                                    .map(|start| start.elapsed().as_millis() < 200)
-                                    .unwrap_or(false);
+                                    .is_some_and(|start| start.elapsed().as_millis() < 200);
 
                                 if was_click {
                                     if layout.meters_panel_ratio > 0.05 {
@@ -177,7 +182,7 @@ impl PlayerView {
                         if needs_save {
                             let layout = state.layout.read(cx);
                             if let Err(e) = state.app.save_config(layout) {
-                                log::warn!("Failed to save panel layout: {}", e);
+                                log::warn!("Failed to save panel layout: {e}");
                             }
                         }
                     });

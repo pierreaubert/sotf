@@ -4,6 +4,7 @@ use gpui::{TestAppContext, VisualTestContext, WindowHandle};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct MuteSoloLevelMeterScenario;
 
 impl TestScenario for MuteSoloLevelMeterScenario {

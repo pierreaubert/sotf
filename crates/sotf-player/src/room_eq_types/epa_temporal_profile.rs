@@ -15,6 +15,7 @@ pub enum EpaTemporalProfile {
 }
 
 impl EpaTemporalProfile {
+    #[must_use]
     pub fn all() -> &'static [EpaTemporalProfile] {
         &[
             EpaTemporalProfile::Transient,
@@ -23,6 +24,7 @@ impl EpaTemporalProfile {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             EpaTemporalProfile::Transient => "Transient",

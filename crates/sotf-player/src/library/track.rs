@@ -63,6 +63,7 @@ impl Track {
     ///
     /// If an explicit `source` override is set (e.g. for streaming tracks),
     /// it is returned. Otherwise, the local file path is used.
+    #[must_use]
     pub fn audio_source(&self) -> sotf_audio::decoder::AudioSource {
         self.source
             .clone()

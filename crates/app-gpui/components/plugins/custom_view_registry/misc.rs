@@ -1,6 +1,7 @@
 use sotf_audio_player::PluginSettings;
 
-/// Extract a type key string from a PluginSettings variant.
+/// Extract a type key string from a `PluginSettings` variant.
+#[must_use]
 pub fn plugin_type_key(settings: &PluginSettings) -> &'static str {
     match settings {
         PluginSettings::EQ { .. } => "eq",

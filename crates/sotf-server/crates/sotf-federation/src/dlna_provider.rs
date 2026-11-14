@@ -21,13 +21,14 @@ pub use types::*;
 use http_browse_source::fetch_all_albums_blocking;
 use parse::http_get;
 
-/// A DLNA MediaServer federation provider.
+/// A DLNA `MediaServer` federation provider.
 pub struct DlnaProvider {
     source_id: SourceId,
     config: DlnaProviderConfig,
 }
 
 impl DlnaProvider {
+    #[must_use]
     pub fn new(source_id: SourceId, config: DlnaProviderConfig) -> Self {
         Self { source_id, config }
     }
@@ -112,5 +113,13 @@ impl LibraryProvider for DlnaProvider {
     fn is_available(&self) -> ProviderFuture<'_, bool> {
         let url = self.config.location_url.clone();
         Box::pin(async move { http_get(&url).is_ok() })
+    }
+}
+
+impl std::fmt::Debug for DlnaProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DlnaProvider")
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
     }
 }

@@ -1,10 +1,17 @@
-#![allow(clippy::field_reassign_with_default)]
+#![allow(
+    clippy::field_reassign_with_default,
+    reason = "Settings edits start from canonical defaults before applying persisted fields"
+)]
 use super::PlayerCommand;
 use crate::app::{App, InputMode, ServerSection};
 use crossterm::event::{KeyCode, KeyEvent};
 use sotf_audio_player::federation_config::MpdAuthMode;
 use sotf_audio_player::server::normalize_certificate_fingerprint;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     let state = &mut app.server_state;
 
@@ -156,11 +163,9 @@ pub(super) fn handle_server_keys(app: &mut App, key: KeyEvent) -> Option<PlayerC
 fn next_section(section: ServerSection, key: KeyCode) -> ServerSection {
     match (section, key) {
         (ServerSection::Mpd, KeyCode::Left) => ServerSection::Api,
-        (ServerSection::Mpd, _) => ServerSection::Dlna,
-        (ServerSection::Dlna, KeyCode::Left) => ServerSection::Mpd,
+        (ServerSection::Mpd, _) | (ServerSection::Api, KeyCode::Left) => ServerSection::Dlna,
+        (ServerSection::Dlna, KeyCode::Left) | (ServerSection::Api, _) => ServerSection::Mpd,
         (ServerSection::Dlna, _) => ServerSection::Api,
-        (ServerSection::Api, KeyCode::Left) => ServerSection::Dlna,
-        (ServerSection::Api, _) => ServerSection::Mpd,
     }
 }
 

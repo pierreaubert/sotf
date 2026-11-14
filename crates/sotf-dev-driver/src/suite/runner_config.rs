@@ -53,8 +53,10 @@ pub(super) fn spawn_app(
 ) -> Result<Child> {
     let stdout_path = scenario_dir.join("sotf.stdout.log");
     let stderr_path = scenario_dir.join("sotf.stderr.log");
-    let stdout = File::create(&stdout_path).with_context(|| format!("creating {stdout_path:?}"))?;
-    let stderr = File::create(&stderr_path).with_context(|| format!("creating {stderr_path:?}"))?;
+    let stdout = File::create(&stdout_path)
+        .with_context(|| format!("creating {}", stdout_path.display()))?;
+    let stderr = File::create(&stderr_path)
+        .with_context(|| format!("creating {}", stderr_path.display()))?;
 
     let mut cmd = Command::new(&runner.app_bin);
     cmd.arg("--qa").arg(qa_dir);

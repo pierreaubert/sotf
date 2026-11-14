@@ -22,7 +22,7 @@ use crate::app::types::{CustomTargetCurve, TargetCurveControlPoint};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, AppContext, Bounds, Entity, MouseButton, Pixels, div, px};
 use gpui_px::{ChartTheme, ScaleType, line};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Dialog, DialogSize, Text, TextSize};
 use std::cell::RefCell;
@@ -56,11 +56,11 @@ impl PlayerView {
                                 });
                             }
                             Err(e) => {
-                                log::error!("Failed to parse target curve: {}", e);
+                                log::error!("Failed to parse target curve: {e}");
                             }
                         },
                         Err(e) => {
-                            log::error!("Failed to read file: {}", e);
+                            log::error!("Failed to read file: {e}");
                         }
                     }
                 }
@@ -94,11 +94,11 @@ impl PlayerView {
                     match serde_json::to_string_pretty(&curve) {
                         Ok(json) => {
                             if let Err(e) = std::fs::write(&path, json) {
-                                log::error!("Failed to write file: {}", e);
+                                log::error!("Failed to write file: {e}");
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to serialize target curve: {}", e);
+                            log::error!("Failed to serialize target curve: {e}");
                         }
                     }
                 }
@@ -108,6 +108,10 @@ impl PlayerView {
     }
 
     /// Render the custom target curve editor modal
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_custom_target_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -375,6 +379,18 @@ fn render_preset_option(
 }
 
 /// Render the target curve graph with interactive control points
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_target_curve_graph(
     entity: Entity<AppState>,
     curve: &CustomTargetCurve,
@@ -407,7 +423,7 @@ fn render_target_curve_graph(
         .x_range(MIN_FREQ, MAX_FREQ)
         .y_range(MIN_DB, MAX_DB)
         .size(CHART_WIDTH, CHART_HEIGHT)
-        .color(0x3b82f6) // Blue
+        .color(0x003b_82f6) // Blue
         .stroke_width(2.5)
         .label(text.target_curve)
         .theme(chart_theme);
@@ -436,7 +452,7 @@ fn render_target_curve_graph(
 
         let entity_click = entity.clone();
         let entity_drag = entity.clone();
-        let bounds_ref_drag = bounds_ref.clone();
+        let bounds_ref_drag = std::rc::Rc::clone(&bounds_ref);
 
         let control_point = div()
             .id(("target-control-point", i))
@@ -483,9 +499,7 @@ fn render_target_curve_graph(
             )
             .on_drag_move::<TargetControlPointDrag>({
                 move |event, _window, cx| {
-                    let bounds = if let Some(b) = *bounds_ref_drag.borrow() {
-                        b
-                    } else {
+                    let Some(bounds) = *bounds_ref_drag.borrow() else {
                         return;
                     };
                     let drag_data = event.drag(cx);
@@ -517,7 +531,7 @@ fn render_target_curve_graph(
 
     // Create the container with click-to-add functionality
     let entity_add = entity.clone();
-    let bounds_ref_add = bounds_ref.clone();
+    let bounds_ref_add = std::rc::Rc::clone(&bounds_ref);
 
     let container = div()
         .id("target-curve-chart-container")
@@ -531,9 +545,7 @@ fn render_target_curve_graph(
             if event.click_count == 1 {
                 cx.stop_propagation();
 
-                let bounds = if let Some(b) = *bounds_ref_add.borrow() {
-                    b
-                } else {
+                let Some(bounds) = *bounds_ref_add.borrow() else {
                     return;
                 };
 

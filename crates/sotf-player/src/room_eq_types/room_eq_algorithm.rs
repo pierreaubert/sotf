@@ -9,11 +9,12 @@ pub enum RoomEqAlgorithm {
     BayesianOptimization,
     CmaEs,
     /// Legacy value kept so older saved configs deserialize. It is not exposed
-    /// in algorithm selectors now that NLopt backends are gone.
+    /// in algorithm selectors now that `NLopt` backends are gone.
     NelderMead,
 }
 
 impl RoomEqAlgorithm {
+    #[must_use]
     pub fn all() -> &'static [RoomEqAlgorithm] {
         &[
             RoomEqAlgorithm::Cobyla,
@@ -23,6 +24,7 @@ impl RoomEqAlgorithm {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             RoomEqAlgorithm::Cobyla => "COBYLA",
@@ -33,13 +35,13 @@ impl RoomEqAlgorithm {
         }
     }
 
+    #[must_use]
     pub fn to_autoeq_string(&self) -> &'static str {
         match self {
-            RoomEqAlgorithm::Cobyla => "autoeq:cobyla",
             RoomEqAlgorithm::DifferentialEvolution => "autoeq:de",
             RoomEqAlgorithm::BayesianOptimization => "autoeq:bo",
             RoomEqAlgorithm::CmaEs => "autoeq:cmaes",
-            RoomEqAlgorithm::NelderMead => "autoeq:cobyla",
+            RoomEqAlgorithm::Cobyla | RoomEqAlgorithm::NelderMead => "autoeq:cobyla",
         }
     }
 }

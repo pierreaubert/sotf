@@ -4,8 +4,8 @@
 //! organized into submodules by functionality.
 //!
 //! Note: Plugin editing and level meter logic have been moved to ui/components:
-//! - Plugin editing: ui/components/host/plugin_editing.rs
-//! - Level meters: ui/components/plugins/level_meters.rs
+//! - Plugin editing: `ui/components/host/plugin_editing.rs`
+//! - Level meters: `ui/components/plugins/level_meters.rs`
 
 pub mod actions;
 mod autocomplete;

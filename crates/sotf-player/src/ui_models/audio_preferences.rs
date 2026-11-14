@@ -2,7 +2,7 @@
 
 use crate::ReplayGainMode;
 
-pub const INPUT_SAMPLE_RATES_HZ: &[u32] = &[44100, 48000, 88200, 96000, 176400, 192000];
+pub const INPUT_SAMPLE_RATES_HZ: &[u32] = &[44100, 48000, 88200, 96000, 176_400, 192_000];
 pub const INPUT_CHANNEL_COUNTS: &[u32] = &[2, 4, 6, 8];
 pub const INPUT_BUFFER_FRAMES: &[u32] = &[128, 256, 512, 1024, 2048, 4096];
 
@@ -37,6 +37,10 @@ impl Default for AudioPreferences {
 }
 
 impl AudioPreferences {
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if the sample rate, channel count, or buffer size is unsupported.
     pub fn validate(&self) -> Result<(), &'static str> {
         if !INPUT_SAMPLE_RATES_HZ.contains(&self.sample_rate_hz) {
             return Err("Unsupported systemwide sample rate");
@@ -105,6 +109,7 @@ impl AudioOutputDraft {
     }
 
     /// Inactive systemwide format edits must not interrupt file playback.
+    #[must_use]
     pub fn requires_restart(&self, active_systemwide: bool) -> bool {
         self.system_default
             || self.device_name.is_some()
@@ -117,6 +122,7 @@ impl AudioOutputDraft {
                     || self.buffer_frames.is_some()))
     }
 
+    #[must_use]
     pub fn is_dirty(&self) -> bool {
         self.system_default
             || self.device_name.is_some()
@@ -174,6 +180,7 @@ impl AudioOutputDraft {
         *self = Self::default();
     }
 
+    #[must_use]
     pub fn selected_name<'a>(&'a self, active: Option<&'a str>) -> Option<&'a str> {
         if self.system_default {
             None

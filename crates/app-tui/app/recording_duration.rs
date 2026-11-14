@@ -15,8 +15,9 @@ pub(crate) fn recording_acquisition_config(
     let (sweep_start, sweep_end) = model
         .current_recording_channel
         .and_then(|index| model.channel_recordings.get(index))
-        .map(|channel| (channel.sweep_start_freq, channel.sweep_end_freq))
-        .unwrap_or((model.sweep_start_freq, model.sweep_end_freq));
+        .map_or((model.sweep_start_freq, model.sweep_end_freq), |channel| {
+            (channel.sweep_start_freq, channel.sweep_end_freq)
+        });
     recording_acquisition_config_for_range(model, sweep_start, sweep_end)
 }
 
@@ -30,7 +31,7 @@ pub(crate) fn recording_acquisition_config_for_range(
         signal_type,
         sweep_start,
         sweep_end,
-        measurement_amplitude(model.signal_level_db as f64),
+        measurement_amplitude(f64::from(model.signal_level_db)),
         Some(model.bass_octave_duration_s),
         Some(model.pre_silence_s),
         model.post_silence_s,

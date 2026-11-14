@@ -7,6 +7,7 @@ use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct FletcherMunsonScenario;
 
 impl TestScenario for FletcherMunsonScenario {

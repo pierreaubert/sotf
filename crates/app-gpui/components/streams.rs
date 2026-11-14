@@ -1,7 +1,7 @@
 //! Saved HTTP/SOTF stream screen.
 
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, MouseButton, SharedString, div, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, HStack, Heading, Input, InputSize, StackAlign, StackSpacing,
     Text, TextSize, TextWeight, Toggle, ToggleSize, ToggleStyle, VStack,
@@ -27,6 +27,10 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_streams_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let (theme, streams, name, url, format_hint, seekable, last_error, last_status) = {
@@ -140,6 +144,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_stream_editor(
         &self,
         name: String,
@@ -265,7 +273,7 @@ impl PlayerView {
                                     ) {
                                         Ok(stream) => match state.app.play_stream_now(stream) {
                                             Ok(Some(source)) => {
-                                                PlayerView::play_track(state, source)
+                                                PlayerView::play_track(state, source);
                                             }
                                             Ok(None) => {}
                                             Err(err) => state.app.record_stream_error(err),
@@ -296,6 +304,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_stream_row(
         &self,
         index: usize,

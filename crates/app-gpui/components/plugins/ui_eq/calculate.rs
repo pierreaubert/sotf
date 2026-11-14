@@ -4,10 +4,12 @@ use super::consts::{SAMPLE_RATE, filter_log_response_at_rate};
 use sotf_audio_player::EQFilter;
 
 /// Calculate the combined response in dB at a given frequency
+#[must_use]
 pub fn calculate_response_at_freq(filters: &[EQFilter], freq: f64) -> f64 {
     calculate_response_at_rate(filters, freq, SAMPLE_RATE)
 }
 
+#[must_use]
 pub fn calculate_response_at_rate(filters: &[EQFilter], freq: f64, sample_rate: f64) -> f64 {
     if filters.is_empty() {
         return 0.0;
@@ -29,10 +31,12 @@ pub fn calculate_response_at_rate(filters: &[EQFilter], freq: f64, sample_rate: 
 }
 
 /// Calculate single band response at a frequency
+#[must_use]
 pub fn calculate_band_response(filter: &EQFilter, freq: f64) -> f64 {
     calculate_band_response_at_rate(filter, freq, SAMPLE_RATE)
 }
 
+#[must_use]
 pub fn calculate_band_response_at_rate(filter: &EQFilter, freq: f64, sample_rate: f64) -> f64 {
     if filter.muted {
         return 0.0;
@@ -41,7 +45,7 @@ pub fn calculate_band_response_at_rate(filter: &EQFilter, freq: f64, sample_rate
 }
 
 /// Calculate dynamic y-axis range based on filter gains.
-/// Returns (min_db, max_db) for the chart y-axis.
+/// Returns (`min_db`, `max_db`) for the chart y-axis.
 ///
 /// Logic:
 /// - If max absolute gain <= 0.5 dB, use -1.0 to +1.0 dB
@@ -88,6 +92,10 @@ pub(super) fn calculate_dynamic_y_range(filters: &[EQFilter]) -> (f64, f64) {
 /// * `chart_width` - Total width of the chart container
 /// * `labels` - Iterator of label strings to calculate legend width from
 /// * `has_title` - Whether the chart has a title (affects vertical space, not width)
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &'a str>) -> f32 {
     // gpui-px constants
     const LEGEND_GAP: f32 = 20.0;
@@ -97,7 +105,7 @@ pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &
     const CHAR_WIDTH: f32 = 7.0; // Approximate width per character for text_xs
 
     // Find max label length
-    let max_label_len = labels.map(|l| l.len()).max().unwrap_or(0);
+    let max_label_len = labels.map(str::len).max().unwrap_or(0);
 
     // Calculate legend width (vertical legend for Right position)
     let estimated_text_width = (max_label_len as f32) * CHAR_WIDTH;
@@ -109,6 +117,7 @@ pub fn calculate_plot_width<'a>(chart_width: f32, labels: impl Iterator<Item = &
 }
 
 /// Calculate the plot width when the chart legend is hidden.
+#[must_use]
 pub fn calculate_plot_width_without_legend(chart_width: f32) -> f32 {
     (chart_width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN).max(0.0)
 }

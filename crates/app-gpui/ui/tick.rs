@@ -1,6 +1,10 @@
 /// Snapshot of observable tick state used to suppress redundant
 /// `cx.notify()` calls. Every notify re-renders the whole view tree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub(crate) struct TickSnapshot {
     is_playing: bool,
     /// Position in centiseconds; sub-frame precision is unnecessary for
@@ -54,6 +58,11 @@ pub(crate) struct TickSnapshot {
 /// rebuilding that screen at the engine's 100 ms polling cadence is costly.
 /// Keep the shared footer clock current to whole seconds on that screen and
 /// retain centisecond buckets everywhere else.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 fn playback_position_bucket(screen: Screen, position_secs: f64) -> u64 {
     let centiseconds = (position_secs.max(0.0) * 100.0) as u64;
     if screen == Screen::ListeningTest {
@@ -66,6 +75,7 @@ fn playback_position_bucket(screen: Screen, position_secs: f64) -> u64 {
 /// Screens where rack analyzer data is visible. Library/Queue only show rack
 /// data in expanded three-panel mode; compact mode renders a single content
 /// screen and should not pay for compressor/level-meter refreshes.
+#[must_use]
 pub fn screen_shows_rack_data(screen: Screen, layout_mode: crate::app::LayoutMode) -> bool {
     matches!(screen, Screen::Studio | Screen::PluginGraph)
         || (matches!(screen, Screen::NowPlaying | Screen::Library | Screen::Queue)
@@ -77,6 +87,11 @@ pub fn screen_shows_rack_data(screen: Screen, layout_mode: crate::app::LayoutMod
 /// (and track reloads as `Loading`/`Ready`/`Seeking`), none of which may
 /// advance; only a genuine stop (`Idle`/`Error`) or an end-of-stream flag
 /// means the current track is over.
+#[must_use]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "Independent presentation flags preserve the existing renderer interface"
+)]
 pub fn should_auto_advance_on_engine_stop(
     track_ended: bool,
     was_playing: bool,
@@ -100,6 +115,7 @@ pub fn should_auto_advance_on_engine_stop(
 /// Return live data only while playback is active. A stopped meter has no
 /// current observation; rendering a zeroed copy would present stale layout as
 /// plausible silence.
+#[must_use]
 pub fn visible_loudness(
     meters_live: bool,
     info: &Option<Arc<sotf_audio_player::LoudnessData>>,
@@ -110,6 +126,7 @@ pub fn visible_loudness(
 /// True when a clean engine stop has no queue context to auto-advance from,
 /// so the UI must clear stale "playing" state immediately. Pauses and
 /// transitional states (`Paused`/`Loading`/`Ready`/`Seeking`) are not stops.
+#[must_use]
 pub fn engine_stop_without_queue_should_clear(
     was_playing: bool,
     engine_is_playing: bool,
@@ -129,6 +146,11 @@ impl PlayerView {
     /// Build a `TickSnapshot` from the current state. Cheap (no allocation,
     /// just a few field reads). Used to suppress `cx.notify()` when no
     /// observable state changed in the tick.
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+    )]
     fn tick_snapshot(view: &PlayerView, cx: &mut Context<Self>) -> TickSnapshot {
         let state = view.state.read(cx);
         let current_screen = state.app.ui_state.current_screen;
@@ -175,7 +197,7 @@ impl PlayerView {
                 .playback
                 .signal_path
                 .as_ref()
-                .is_some_and(|p| p.is_resampled()),
+                .is_some_and(sotf_audio_player::SignalPath::is_resampled),
             signal_path_underruns: state
                 .app
                 .playback
@@ -246,6 +268,14 @@ impl PlayerView {
     /// the tick wrapper whenever `apply_plugin_update` runs.
     ///
     /// Returns `(engine_playback_state, was_playing)` for downstream tick work.
+    #[expect(
+        clippy::option_option,
+        reason = "The outer option distinguishes an uninitialized or unhandled value from an initialized absent value"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     fn sync_playback_data(
         state: &mut AppState,
         frame_count: u64,
@@ -324,13 +354,12 @@ impl PlayerView {
                 None
             };
             let compressor_idx = if include_compressor {
-                match *compressor_idx_cache {
-                    Some(cached) => cached,
-                    None => {
-                        let found = graph.compressor_engine_index();
-                        *compressor_idx_cache = Some(found);
-                        found
-                    }
+                if let Some(cached) = *compressor_idx_cache {
+                    cached
+                } else {
+                    let found = graph.compressor_engine_index();
+                    *compressor_idx_cache = Some(found);
+                    found
                 }
             } else {
                 None
@@ -432,21 +461,26 @@ impl PlayerView {
         let input_loudness_info = visible_loudness(meters_live, &snapshot.input_loudness_info);
         let loudness_info = visible_loudness(meters_live, &snapshot.loudness_info);
         #[cfg(feature = "dev-api")]
-        let input_loudness_info = state
-            .app
-            .playback
-            .qa_loudness_fixture
-            .as_ref()
-            .map(|fixture| Some(fixture.clone()))
-            .unwrap_or(input_loudness_info);
+        let input_loudness_info = state.app.playback.qa_loudness_fixture.as_ref().map_or(
+            input_loudness_info,
+            |fixture| {
+                Some(std::sync::Arc::<sotf_audio_player::LoudnessData>::clone(
+                    fixture,
+                ))
+            },
+        );
         #[cfg(feature = "dev-api")]
-        let loudness_info = state
-            .app
-            .playback
-            .qa_loudness_fixture
-            .as_ref()
-            .map(|fixture| Some(fixture.clone()))
-            .unwrap_or(loudness_info);
+        let loudness_info =
+            state
+                .app
+                .playback
+                .qa_loudness_fixture
+                .as_ref()
+                .map_or(loudness_info, |fixture| {
+                    Some(std::sync::Arc::<sotf_audio_player::LoudnessData>::clone(
+                        fixture,
+                    ))
+                });
         state.app.playback.input_loudness_info = input_loudness_info;
         state.app.playback.loudness_info = loudness_info;
         if publish_spectrum {
@@ -456,7 +490,7 @@ impl PlayerView {
                 .playback
                 .qa_spectrum_fixture
                 .as_ref()
-                .map(|frame| frame.data.clone())
+                .map(|frame| std::sync::Arc::clone(&frame.data))
                 .or_else(|| {
                     meters_live
                         .then(|| snapshot.spectrum_info.clone())
@@ -469,7 +503,11 @@ impl PlayerView {
             state.app.playback.spectrum_info = spectrum_info;
         }
         if include_compressor {
-            state.app.playback.compressor_info = snapshot.compressor_info.clone();
+            state
+                .app
+                .playback
+                .compressor_info
+                .clone_from(&snapshot.compressor_info);
         } else {
             state.app.playback.compressor_info = None;
         }
@@ -519,7 +557,7 @@ impl PlayerView {
                                 updates_idle,
                             )
                     });
-                    external_current.then(|| data.clone())
+                    external_current.then(|| std::sync::Arc::clone(data))
                 }
                 _ => None,
             }
@@ -532,7 +570,9 @@ impl PlayerView {
             && include_rack_data
             && rack_plugin_idx == Some(*fixture_index)
         {
-            state.app.playback.rack_plugin_data = Some(fixture.clone());
+            state.app.playback.rack_plugin_data = Some(std::sync::Arc::<
+                sotf_audio_player::LoudnessData,
+            >::clone(fixture));
         }
 
         // Only current owned External snapshots are published above. Persist
@@ -665,7 +705,7 @@ impl PlayerView {
                 format!("{next_gain_db:.3}"),
             )
         {
-            log::warn!("Failed to update chain AutoGain: {}", e);
+            log::warn!("Failed to update chain AutoGain: {e}");
         }
 
         if include_level_meters {
@@ -676,7 +716,7 @@ impl PlayerView {
         (playback_state, was_playing)
     }
 
-    /// Keep the rack AutoGain trim aligned with the current IN/OUT loudness.
+    /// Keep the rack `AutoGain` trim aligned with the current IN/OUT loudness.
     fn sync_chain_autogain(state: &mut AppState, frame_count: u64) -> Option<(usize, f64)> {
         const UPDATE_INTERVAL_FRAMES: u64 = 5;
         const DEAD_BAND_DB: f64 = 0.25;
@@ -749,11 +789,10 @@ impl PlayerView {
                 "Audio engine crashed. Please play a new track to restart.",
             ));
         } else if let Some(ref err) = playback_state.last_error {
-            log::error!("[GPUI] Playback error: {}", err);
+            log::error!("[GPUI] Playback error: {err}");
             state.app.playback.is_playing = false;
             state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
-                "Playback error: {}",
-                err
+                "Playback error: {err}"
             )));
         } else if playback_state.engine_restarted {
             log::info!("[GPUI] Engine auto-restarted after crash, resuming playback");

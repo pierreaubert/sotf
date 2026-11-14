@@ -1,8 +1,14 @@
 use crate::app::types::PreferencesSetting;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+#[cfg(all(target_os = "macos", feature = "hal"))]
+use gpui::rems;
+
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, ClickEvent, ElementId, FocusHandle, KeyDownEvent, SharedString, Window, div,
+    point, px,
+};
 use gpui_ui_kit::{Button, Input, NumberInput, Toggle};
 
 use std::collections::HashMap;
@@ -67,7 +73,7 @@ impl PlayerView {
     ) -> AnyElement {
         let d = Ds::from_cx(cx);
         let action = std::rc::Rc::new(action);
-        let keyboard_action = action.clone();
+        let keyboard_action = std::rc::Rc::clone(&action);
         let control = button
             .disabled(disabled)
             .build()

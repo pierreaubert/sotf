@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 
-/// Helper struct to manage ReplayGain scanning state
+/// Helper struct to manage `ReplayGain` scanning state
 #[derive(Debug)]
 pub struct ReplayGainScanManager {
     pub scanner: Option<Arc<ReplayGainScanner>>,
@@ -40,6 +40,7 @@ impl Default for ReplayGainScanManager {
 }
 
 impl ReplayGainScanManager {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -69,15 +70,15 @@ impl ReplayGainScanManager {
 
     /// Get the effective number of threads to use.
     pub(super) fn effective_num_threads(&self) -> usize {
-        self.num_threads.unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get().min(4))
-                .unwrap_or(2)
-        })
+        self.num_threads
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(2, |n| n.get().min(4)))
     }
 
     /// Start scanning all tracks in the database that are missing replaygain data
-    /// Clear all existing ReplayGain data and rescan every track.
+    /// Clear all existing `ReplayGain` data and rescan every track.
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if self.in_progress {
             return Ok("Scan already in progress".to_string());
@@ -91,6 +92,10 @@ impl ReplayGainScanManager {
         self.start_scan()
     }
 
+    /// Start scan.
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         // Skip if already in progress
         if self.in_progress {
@@ -125,7 +130,7 @@ impl ReplayGainScanManager {
 
         // Create scanner with configured thread count
         let num_threads = self.effective_num_threads();
-        log::info!("ReplayGain scanner using {} threads", num_threads);
+        log::info!("ReplayGain scanner using {num_threads} threads");
         let scanner = Arc::new(ReplayGainScanner::new(
             num_threads,
             db_path,
@@ -144,28 +149,31 @@ impl ReplayGainScanManager {
         self.failed = already_failed;
         self.album_gain_phase = AlbumGainPhase::Idle;
 
-        Ok(format!("Analyzing {} tracks for ReplayGain...", remaining))
+        Ok(format!("Analyzing {remaining} tracks for ReplayGain..."))
     }
 
     /// Start the album gain computation pass.
     /// This computes album gain from per-track EBU R128 gating stats captured during
     /// track analysis. Older databases without cached stats fall back to decoding the
     /// affected album once and persist the stats for future runs.
-    /// `start_scan` runs this pass automatically after the track ReplayGain pass.
+    /// `start_scan` runs this pass automatically after the track `ReplayGain` pass.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Album scanning owns cancellation, progress, and database updates for one worker lifecycle"
+    )]
     pub(super) fn start_album_gain_scan(&mut self) {
         if self.album_gain_phase == AlbumGainPhase::Scanning {
             return;
         }
 
-        let db_path = match MusicDatabase::default_path() {
-            Some(p) => p,
-            None => return,
+        let Some(db_path) = MusicDatabase::default_path() else {
+            return;
         };
 
         let db = match MusicDatabase::open(&db_path) {
             Ok(db) => db,
             Err(e) => {
-                log::error!("[AlbumGain] Failed to open database: {}", e);
+                log::error!("[AlbumGain] Failed to open database: {e}");
                 return;
             }
         };
@@ -173,7 +181,7 @@ impl ReplayGainScanManager {
         let albums = match db.get_albums_without_album_gain() {
             Ok(a) => a,
             Err(e) => {
-                log::error!("[AlbumGain] Failed to get albums: {}", e);
+                log::error!("[AlbumGain] Failed to get albums: {e}");
                 return;
             }
         };
@@ -186,10 +194,7 @@ impl ReplayGainScanManager {
         }
 
         let album_count = albums.len();
-        log::info!(
-            "[AlbumGain] Starting album gain computation for {} albums",
-            album_count
-        );
+        log::info!("[AlbumGain] Starting album gain computation for {album_count} albums");
 
         let (tx, rx) = channel::unbounded();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -204,7 +209,7 @@ impl ReplayGainScanManager {
             let db = match MusicDatabase::open(&db_path) {
                 Ok(db) => db,
                 Err(e) => {
-                    log::error!("[AlbumGain] Worker failed to open database: {}", e);
+                    log::error!("[AlbumGain] Worker failed to open database: {e}");
                     let _ = tx.send(AlbumGainMessage::Complete {
                         succeeded: 0,
                         failed: album_count,
@@ -225,7 +230,7 @@ impl ReplayGainScanManager {
                 let cached_track_data = match db.get_replay_gain_album_track_data(track_paths) {
                     Ok(data) => data,
                     Err(e) => {
-                        log::warn!("[AlbumGain] Failed to load cached track data: {}", e);
+                        log::warn!("[AlbumGain] Failed to load cached track data: {e}");
                         None
                     }
                 };
@@ -349,10 +354,7 @@ impl ReplayGainScanManager {
                         failed,
                     } => {
                         log::info!(
-                            "ReplayGain track scan complete: {}/{} succeeded, {} failed",
-                            succeeded,
-                            total,
-                            failed
+                            "ReplayGain track scan complete: {succeeded}/{total} succeeded, {failed} failed"
                         );
                     }
                 }
@@ -382,9 +384,7 @@ impl ReplayGainScanManager {
                         }
                         AlbumGainMessage::Complete { succeeded, failed } => {
                             log::info!(
-                                "[AlbumGain] Complete: {} succeeded, {} failed",
-                                succeeded,
-                                failed
+                                "[AlbumGain] Complete: {succeeded} succeeded, {failed} failed"
                             );
                             self.album_gain_phase = AlbumGainPhase::Done;
                             self.in_progress = false;
@@ -419,6 +419,11 @@ impl ReplayGainScanManager {
     }
 
     /// Get progress as a percentage
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Progress is an approximate floating-point percentage of completed tracks"
+    )]
     pub fn progress(&self) -> f32 {
         if self.total == 0 {
             return 0.0;
@@ -493,7 +498,7 @@ mod tests {
         let (message_tx, message_rx) = crossbeam::channel::unbounded::<ScanMessage>();
         let (stop_tx, _stop_rx) = crossbeam::channel::unbounded::<()>();
         let scanner = Arc::new(ReplayGainScanner {
-            _workers: Vec::new(),
+            workers: Vec::new(),
             task_tx,
             message_rx,
             stop_tx,

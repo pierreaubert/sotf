@@ -42,7 +42,7 @@ pub struct RoomEqState {
     pub review_chart_state: Option<InteractiveChartStateWrapper>,
     /// Whether to auto-scale Y axis for review graph.
     pub review_y_axis_auto: bool,
-    /// Per-graph controls used by the Python-style RoomEQ report charts.
+    /// Per-graph controls used by the Python-style `RoomEQ` report charts.
     pub review_graph_settings: RoomEqReviewGraphSettingsSet,
     /// Interactive chart state for progress chart (zoom/pan) - initialized lazily
     pub progress_chart_state: Option<InteractiveChartStateWrapper>,
@@ -56,7 +56,7 @@ pub struct RoomEqState {
     pub detail_level: sotf_audio_player::autoeq::DetailLevel,
     /// Currently selected preset id
     pub selected_preset: String,
-    /// Explicit speaker layout used by the beginner RoomEQ workflow.
+    /// Explicit speaker layout used by the beginner `RoomEQ` workflow.
     pub easy_layout: RoomEqEasyLayout,
 
     /// Monotonic generation of the current optimization run. Progress
@@ -71,7 +71,8 @@ impl Default for RoomEqState {
             model: RoomEqScreenModel::default(),
             result_inputs: None,
             result_sources: None,
-            delivery: Default::default(),
+            delivery:
+                sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery::default(),
             dropdowns: RoomEqDropdowns::default(),
             review_smoothing_octaves: 1.0 / 6.0, // Match display-roomeq.py default
             review_selected_channel: 0,
@@ -82,7 +83,7 @@ impl Default for RoomEqState {
             progress_chart_state: None,
             custom_target_curve: CustomTargetCurve::new_flat(),
             show_advanced_config: false,
-            autoeq_stage: Default::default(),
+            autoeq_stage: crate::components::autoeq::AutoEqStage::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "full-range".to_string(),
             easy_layout: RoomEqEasyLayout::Stereo20,
@@ -107,6 +108,7 @@ impl DerefMut for RoomEqState {
 
 impl RoomEqState {
     /// Capture the typed source identity of the current measurements.
+    #[must_use]
     pub fn capture_result_sources(&self) -> Vec<RoomEqResultSource> {
         self.model
             .channel_measurements
@@ -132,7 +134,32 @@ impl RoomEqState {
     /// with sampled response points. Replaces the previous full serde
     /// snapshot, which serialized every response curve on each
     /// freshness check (and therefore on each review/save render).
+    #[must_use]
     pub fn input_digest(&self) -> u64 {
+        fn hash_result(
+            hasher: &mut std::collections::hash_map::DefaultHasher,
+            result: &sotf_audio_player::recording_types::RecordingResult,
+        ) {
+            result.frequencies.len().hash(hasher);
+            result.sample_rate_hz.hash(hasher);
+            if let Some(ir) = &result.impulse_response {
+                ir.len().hash(hasher);
+            }
+            // Hash every grid value: still orders of magnitude cheaper
+            // than serializing the responses to JSON, and an interior
+            // edit cannot slip past sampled points.
+            result.frequencies.len().hash(hasher);
+            for value in &result.frequencies {
+                value.to_bits().hash(hasher);
+            }
+            for values in [&result.magnitude_db, &result.phase_deg] {
+                values.len().hash(hasher);
+                for value in values {
+                    value.to_bits().hash(hasher);
+                }
+            }
+        }
+
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
 
@@ -156,31 +183,6 @@ impl RoomEqState {
             }
         }
 
-        fn hash_result(
-            hasher: &mut std::collections::hash_map::DefaultHasher,
-            result: &sotf_audio_player::recording_types::RecordingResult,
-        ) {
-            use std::hash::Hash;
-            result.frequencies.len().hash(hasher);
-            result.sample_rate_hz.hash(hasher);
-            if let Some(ir) = &result.impulse_response {
-                ir.len().hash(hasher);
-            }
-            // Hash every grid value: still orders of magnitude cheaper
-            // than serializing the responses to JSON, and an interior
-            // edit cannot slip past sampled points.
-            result.frequencies.len().hash(hasher);
-            for value in &result.frequencies {
-                value.to_bits().hash(hasher);
-            }
-            for values in [&result.magnitude_db, &result.phase_deg] {
-                values.len().hash(hasher);
-                for value in values {
-                    value.to_bits().hash(hasher);
-                }
-            }
-        }
-
         for channel in &self.model.channel_measurements {
             channel.channel_name.hash(&mut hasher);
             channel.is_group.hash(&mut hasher);
@@ -196,11 +198,13 @@ impl RoomEqState {
         hasher.finish()
     }
 
+    #[must_use]
     pub fn result_is_current(&self) -> bool {
         self.result_inputs == Some(self.input_digest())
     }
 
     /// Returns the current DSP result's identity for asynchronous consumers.
+    #[must_use]
     pub fn current_result_identity(&self) -> Option<RoomEqResultIdentity> {
         let inputs = self.result_inputs?;
         if self.dsp_output.is_none() || !self.result_is_current() {
@@ -212,10 +216,13 @@ impl RoomEqState {
         })
     }
 
-    /// Load Room EQ domain state from the app-specific RecordingState.
+    /// Load Room EQ domain state from the app-specific `RecordingState`.
     ///
     /// This is a thin adapter over [`RoomEqScreenModel::load_from_recording`] that
     /// converts the GPUI recording wrapper into the shared player type.
+    ///
+    /// # Errors
+    /// Returns an error if recording sources or response data cannot be loaded into the room configuration.
     pub fn load_from_recording(
         &mut self,
         recording_state: &crate::app::types::RecordingState,
@@ -255,11 +262,13 @@ impl RoomEqState {
     }
 
     /// Normalize an SPL curve so its average over 1–2 kHz is 0 dB.
+    #[must_use]
     pub fn calculate_normalization_offset(frequencies: &[f64], spl: &[f64]) -> f64 {
         RoomEqScreenModel::calculate_normalization_offset(frequencies, spl)
     }
 
     /// Normalize a set of points by subtracting an offset.
+    #[must_use]
     pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
         RoomEqScreenModel::normalize_points(points, offset)
     }

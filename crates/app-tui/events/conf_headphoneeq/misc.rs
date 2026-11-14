@@ -45,7 +45,7 @@ pub(super) fn set_headphone_eq_field_from_string(app: &mut App) {
         }
         9 => {
             if let Ok(v) = buf.parse::<usize>() {
-                c.max_iter = v.clamp(1000, 100000);
+                c.max_iter = v.clamp(1000, 100_000);
             }
         }
         10 => {
@@ -72,6 +72,12 @@ pub(super) fn set_headphone_eq_field_from_string(app: &mut App) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
     // Field 100: preset cycling
     if app.headphone_eq.config_selected_field == 100 {
@@ -79,7 +85,7 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         let presets = autoeq::presets_for(EqWorkflow::Headphone);
         let ids: Vec<&str> = presets.iter().map(|p| p.id).collect();
         let new_id = super::super::cycle_string(&app.headphone_eq.selected_preset, &ids, delta);
-        app.headphone_eq.selected_preset = new_id.clone();
+        app.headphone_eq.selected_preset.clone_from(&new_id);
         // Apply preset parameters (skip for "custom")
         if let Some(preset) = autoeq::find_preset(EqWorkflow::Headphone, &new_id)
             && let Some(params) = preset.apply()
@@ -121,12 +127,12 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
             let n = c.num_filters as i32 + delta;
             c.num_filters = n.clamp(1, 30) as usize;
         }
-        1 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
-        2 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
-        3 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
-        4 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
-        5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
-        6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        1 => c.min_freq = (c.min_freq + f64::from(delta) * 10.0).clamp(20.0, 500.0),
+        2 => c.max_freq = (c.max_freq + f64::from(delta) * 500.0).clamp(1000.0, 20000.0),
+        3 => c.min_db = (c.min_db + f64::from(delta)).clamp(-24.0, 0.0),
+        4 => c.max_db = (c.max_db + f64::from(delta)).clamp(0.0, 12.0),
+        5 => c.min_q = (c.min_q + f64::from(delta) * 0.1).clamp(0.1, 2.0),
+        6 => c.max_q = (c.max_q + f64::from(delta) * 0.5).clamp(1.0, 20.0),
         7 => {
             c.peq_model = super::super::cycle_string(
                 &c.peq_model,
@@ -147,7 +153,7 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
         }
         9 => {
             let n = c.max_iter as i32 + delta * 1000;
-            c.max_iter = n.clamp(1000, 100000) as usize;
+            c.max_iter = n.clamp(1000, 100_000) as usize;
         }
         10 => {
             let n = c.population as i32 + delta * 10;
@@ -160,8 +166,8 @@ pub(super) fn adjust_headphone_eq_field(app: &mut App, delta: i32) {
                 delta,
             );
         }
-        12 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
-        13 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
+        12 => c.de_f = (c.de_f + f64::from(delta) * 0.1).clamp(0.1, 2.0),
+        13 => c.de_cr = (c.de_cr + f64::from(delta) * 0.1).clamp(0.1, 1.0),
         14 => c.refine = !c.refine,
         15 => {
             c.local_algo = super::super::cycle_string(&c.local_algo, &["cobyla"], delta);

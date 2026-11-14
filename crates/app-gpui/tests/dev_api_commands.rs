@@ -6,7 +6,10 @@
 #![cfg(feature = "dev-api")]
 // The included source defines `DevCommand` fields that are not used in this
 // test; suppress dead-code warnings for the test-only inclusion.
-#![allow(dead_code)]
+#![allow(
+    dead_code,
+    reason = "UI hooks and feature-gated state are retained across application configurations"
+)]
 
 #[path = "../app/dev_api/commands.rs"]
 mod commands;

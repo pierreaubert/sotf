@@ -1,4 +1,4 @@
-//! UI state for AutoEQ form dropdowns.
+//! UI state for `AutoEQ` form dropdowns.
 
 pub use sotf_audio_player::autoeq::DetailLevel;
 
@@ -22,6 +22,7 @@ impl AutoEqStage {
         Self::Review,
     ];
 
+    #[must_use]
     pub const fn index(self) -> usize {
         match self {
             Self::Goals => 0,
@@ -33,8 +34,12 @@ impl AutoEqStage {
     }
 }
 
-/// UI state for AutoEQ form dropdowns
+/// UI state for `AutoEQ` form dropdowns
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct AutoEqFormUiState {
     /// How much detail to show (Simple / Intermediate / Expert).
     pub detail_level: DetailLevel,
@@ -76,7 +81,7 @@ pub struct AutoEqFormUiState {
     pub mixed_crossover_type_open: bool,
     /// Mixed FIR band dropdown open state
     pub mixed_fir_band_open: bool,
-    /// VoG reference channel dropdown open state
+    /// `VoG` reference channel dropdown open state
     pub vog_reference_channel_open: bool,
     /// Multi-measurement strategy dropdown open state
     pub multi_measurement_strategy_open: bool,
@@ -88,7 +93,7 @@ pub struct AutoEqFormUiState {
     /// Selected target distance preset (near/mid/far/custom).
     /// UI helper only — drives `tilt_slope` pre-fill.
     pub selected_target_distance: Option<String>,
-    /// Selected optimization goal preset (match_target/natural/psychoacoustic).
-    /// Derived from loss_type + asymmetric_loss + psychoacoustic config fields.
+    /// Selected optimization goal preset (`match_target/natural/psychoacoustic`).
+    /// Derived from `loss_type` + `asymmetric_loss` + psychoacoustic config fields.
     pub selected_optimization_goal: Option<String>,
 }

@@ -1,10 +1,11 @@
-//! Static documentation content for AutoEQ parameter blocks.
+//! Static documentation content for `AutoEQ` parameter blocks.
 //!
 //! Each block of related parameters has a [`BlockDoc`] with a title, overview,
 //! and per-field documentation. The docs panel renders the block matching
 //! the currently focused section.
 
 /// Documentation for a single form field.
+#[derive(Debug)]
 pub struct FieldDoc {
     /// Field label (matches the UI label).
     pub name: &'static str,
@@ -17,6 +18,7 @@ pub struct FieldDoc {
 }
 
 /// Documentation for a block of related parameters.
+#[derive(Debug)]
 pub struct BlockDoc {
     /// Block identifier — matches the `focused_block` key.
     pub id: &'static str,
@@ -484,6 +486,7 @@ pub static BLOCK_DOCS: &[BlockDoc] = &[
 ];
 
 /// Look up the documentation for a block by its id.
+#[must_use]
 pub fn block_doc(id: &str) -> &'static BlockDoc {
     BLOCK_DOCS
         .iter()

@@ -1,4 +1,4 @@
-//! RoomEQ multi-microphone capture command.
+//! `RoomEQ` multi-microphone capture command.
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;

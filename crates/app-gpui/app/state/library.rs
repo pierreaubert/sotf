@@ -109,6 +109,7 @@ impl LibraryState {
         controller
     }
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             ctrl: Self::desktop_controller(LibraryController::new()),
@@ -135,6 +136,7 @@ impl LibraryState {
         }
     }
 
+    #[must_use]
     pub fn new_for_test() -> Self {
         Self {
             ctrl: Self::desktop_controller(LibraryController::new_for_test()),
@@ -157,6 +159,10 @@ impl LibraryState {
         self.bump_content_generation();
     }
 
+    /// Previews metadata edit.
+    ///
+    /// # Errors
+    /// Returns an error for an empty or invalid metadata patch or an unavailable edit target.
     pub fn preview_metadata_edit(
         &self,
         target: MetadataTarget,
@@ -165,6 +171,10 @@ impl LibraryState {
         self.ctrl.preview_metadata_edit(target, patch)
     }
 
+    /// Applies metadata edit.
+    ///
+    /// # Errors
+    /// Returns an error if metadata edits, tag writing, or database updates fail.
     pub fn apply_metadata_edit(
         &mut self,
         target: MetadataTarget,
@@ -177,6 +187,10 @@ impl LibraryState {
         result
     }
 
+    /// Imports metadata candidate.
+    ///
+    /// # Errors
+    /// Returns an error if candidate metadata cannot be converted or applied.
     pub fn import_metadata_candidate(
         &mut self,
         target: MetadataTarget,
@@ -189,6 +203,10 @@ impl LibraryState {
         result
     }
 
+    /// Scans .
+    ///
+    /// # Errors
+    /// Returns an error if metadata processing, scanning, or database persistence fails.
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let result = self.ctrl.scan();
         if result.is_ok() {
@@ -197,6 +215,10 @@ impl LibraryState {
         result
     }
 
+    /// Loads from database.
+    ///
+    /// # Errors
+    /// Returns an error if metadata processing, scanning, or database persistence fails.
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let result = self.ctrl.load_from_database();
         if result.is_ok() {
@@ -223,6 +245,10 @@ impl LibraryState {
         true
     }
 
+    /// Cleans database.
+    ///
+    /// # Errors
+    /// Returns an error if metadata processing, scanning, or database persistence fails.
     pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         let result = self.ctrl.clean_database();
         if result.as_ref().is_ok_and(|removed| *removed > 0) {
@@ -231,6 +257,10 @@ impl LibraryState {
         result
     }
 
+    /// Clears library content.
+    ///
+    /// # Errors
+    /// Returns an error if metadata processing, scanning, or database persistence fails.
     pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         let result = self.ctrl.clear_library_content();
         if result.is_ok() {

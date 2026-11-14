@@ -81,6 +81,10 @@ pub(super) async fn consume_commands(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
 pub(super) fn process_command(cmd: DevCommand, window: AnyWindowHandle, cx: &mut AsyncApp) {
     match cmd {
         DevCommand::Action {
@@ -395,7 +399,7 @@ pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut A
             .update(cx, |any_view, _, cx| {
                 let view = any_view
                     .downcast::<PlayerView>()
-                    .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                    .map_err(|_error| anyhow!("root view is not PlayerView"))?;
                 let state = view.read(cx).state.read(cx);
                 let canvas = state
                     .app
@@ -431,7 +435,7 @@ pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut A
     };
     window
         .update(cx, |_view, window, cx| {
-            let modifiers = Default::default();
+            let modifiers = gpui::Modifiers::default();
             window.dispatch_event(
                 PlatformInput::MouseMove(MouseMoveEvent {
                     position,
@@ -460,6 +464,18 @@ pub(super) fn dispatch_click(selector: &str, window: AnyWindowHandle, cx: &mut A
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 pub(super) fn dispatch_coordinate_input(
     input: CoordinateInput,
     window: AnyWindowHandle,
@@ -485,8 +501,8 @@ pub(super) fn dispatch_coordinate_input(
     window
         .update(cx, |_view, window, cx| {
             let bounds = window.bounds();
-            let width = f32::from(bounds.size.width) as f64;
-            let height = f32::from(bounds.size.height) as f64;
+            let width = f64::from(f32::from(bounds.size.width));
+            let height = f64::from(f32::from(bounds.size.height));
             let validate_point = |x: f64, y: f64| -> Result<Point<gpui::Pixels>> {
                 if !x.is_finite()
                     || !y.is_finite()
@@ -499,7 +515,7 @@ pub(super) fn dispatch_coordinate_input(
                 }
                 Ok(point(px(x as f32), px(y as f32)))
             };
-            let modifiers = Default::default();
+            let modifiers = gpui::Modifiers::default();
 
             match input {
                 CoordinateInput::Pointer {
@@ -593,7 +609,7 @@ pub(super) fn dispatch_hover(selector: &str, window: AnyWindowHandle, cx: &mut A
                 PlatformInput::MouseMove(MouseMoveEvent {
                     position,
                     pressed_button: None,
-                    modifiers: Default::default(),
+                    modifiers: gpui::Modifiers::default(),
                 }),
                 cx,
             );
@@ -622,7 +638,7 @@ pub(super) fn dispatch_drag(
     );
     window
         .update(cx, |_view, window, cx| {
-            let modifiers = Default::default();
+            let modifiers = gpui::Modifiers::default();
             window.dispatch_event(
                 PlatformInput::MouseMove(MouseMoveEvent {
                     position: source_position,
@@ -686,7 +702,7 @@ pub(super) fn dispatch_scroll(
                 PlatformInput::ScrollWheel(ScrollWheelEvent {
                     position,
                     delta: ScrollDelta::Pixels(point(px(0.0), px(delta_y))),
-                    modifiers: Default::default(),
+                    modifiers: gpui::Modifiers::default(),
                     touch_phase: TouchPhase::Moved,
                 }),
                 cx,
@@ -825,6 +841,12 @@ fn clear_screenshot_view(window: AnyWindowHandle, cx: &mut App) -> Result<()> {
         .map_err(|error| anyhow!("releasing screenshot view: {error:#}"))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub fn merge_missing_tracked_elements(
     refreshed: &mut image::RgbaImage,
     initial: &image::RgbaImage,
@@ -941,13 +963,13 @@ fn snapshot_payload(window: AnyWindowHandle, cx: &mut App) -> Result<Value> {
         .into_iter()
         .map(|(selector, element)| {
             let bounds = element.bounds;
-            let width = f32::from(bounds.size.width) as f64;
-            let height = f32::from(bounds.size.height) as f64;
+            let width = f64::from(f32::from(bounds.size.width));
+            let height = f64::from(f32::from(bounds.size.height));
             sotf_dev_api::TrackedElement {
                 selector,
                 bounds: sotf_dev_api::Rect {
-                    x: f32::from(bounds.origin.x) as f64,
-                    y: f32::from(bounds.origin.y) as f64,
+                    x: f64::from(f32::from(bounds.origin.x)),
+                    y: f64::from(f32::from(bounds.origin.y)),
                     width,
                     height,
                 },
@@ -1018,24 +1040,21 @@ fn snapshot_revision(state_hash: &str) -> u64 {
     let revision = SNAPSHOT_REVISION.get_or_init(|| std::sync::Mutex::new((String::new(), 0)));
     let mut revision = revision
         .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     if revision.0 != state_hash {
-        revision.0 = state_hash.to_owned();
+        state_hash.clone_into(&mut revision.0);
         revision.1 = revision.1.saturating_add(1);
     }
     revision.1
 }
 
 fn current_snapshot_revision() -> u64 {
-    SNAPSHOT_REVISION
-        .get()
-        .map(|revision| {
-            revision
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner())
-                .1
-        })
-        .unwrap_or(0)
+    SNAPSHOT_REVISION.get().map_or(0, |revision| {
+        revision
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .1
+    })
 }
 
 pub(super) fn dispatch_action(
@@ -1049,7 +1068,7 @@ pub(super) fn dispatch_action(
             .update(cx, |any_view, window, cx| {
                 let entity = any_view
                     .downcast::<PlayerView>()
-                    .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                    .map_err(|_error| anyhow!("root view is not PlayerView"))?;
                 Ok::<_, anyhow::Error>((
                     window.window_handle().window_id(),
                     entity.read(cx).qa_update_frame_count(),
@@ -1133,7 +1152,7 @@ fn dispatch_plugin_action(
             .and_then(Value::as_u64)
             .and_then(|value| usize::try_from(value).ok())
             .ok_or_else(|| anyhow!("missing or invalid param_index"))?;
-        let value = payload_str(&payload, "value")?.to_string();
+        let value = payload_str(payload.as_ref(), "value")?.to_string();
         with_app_state(window, cx, |state| {
             // File-picker completion uses this editor setter, including its
             // validation, graph target and correlated update receipt.
@@ -1158,6 +1177,19 @@ fn dispatch_plugin_action(
     Ok(true)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The command dispatcher accepts owned deserialized requests for one-shot handling"
+)]
 fn dispatch_metadata_action(
     name: &str,
     payload: Option<Value>,
@@ -1315,7 +1347,7 @@ fn dispatch_metadata_action(
                 view.state.update(cx, |state, _| {
                     state.app.playback.qa_spectrum_fixture =
                         active.then(|| crate::app::state::playback::HeldSpectrumFrame {
-                            data: data.clone(),
+                            data: std::sync::Arc::clone(&data),
                             sample_rate: Some(sample_rate as u32),
                         });
                     state.app.playback.spectrum_info = active.then_some(data);
@@ -1349,8 +1381,10 @@ fn dispatch_metadata_action(
                         fixture.update_peaks(&[0.82, 0.64, 0.48, 0.31, 0.56, 0.42]);
                         fixture.update_true_peaks(&[-1.2, -2.4, -4.0, -6.8, -3.1, -4.8]);
                         let fixture = std::sync::Arc::new(fixture);
-                        state.app.playback.qa_loudness_fixture = Some(fixture.clone());
-                        state.app.playback.input_loudness_info = Some(fixture.clone());
+                        state.app.playback.qa_loudness_fixture =
+                            Some(std::sync::Arc::clone(&fixture));
+                        state.app.playback.input_loudness_info =
+                            Some(std::sync::Arc::clone(&fixture));
                         state.app.playback.loudness_info = Some(fixture);
                     } else {
                         state.app.playback.qa_loudness_fixture = None;
@@ -1370,7 +1404,7 @@ fn dispatch_metadata_action(
             Ok(true)
         }
         "SettingsSetTab" => {
-            let tab = parse_settings_tab(payload_str(&payload, "tab")?)?;
+            let tab = parse_settings_tab(payload_str(payload.as_ref(), "tab")?)?;
             with_app_state(window, cx, |state| {
                 state.app.ui_state.current_screen = Screen::Settings;
                 state.app.ui_state.active_settings_tab = tab;
@@ -1586,7 +1620,7 @@ fn dispatch_metadata_action(
             let qa_dir = std::env::var_os("SOTF_QA_DIR")
                 .map(PathBuf::from)
                 .ok_or_else(|| anyhow!("Headphone file fixtures require isolated QA mode"))?;
-            let mode = payload_str(&payload, "mode")?;
+            let mode = payload_str(payload.as_ref(), "mode")?;
             let (name, content) = match mode {
                 "valid" => (
                     "headphone-file-valid.csv",
@@ -1640,7 +1674,7 @@ fn dispatch_metadata_action(
             let root = qa_dir
                 .parent()
                 .ok_or_else(|| anyhow!("QA scenario directory unavailable"))?;
-            let mode = payload_str(&payload, "mode")?;
+            let mode = payload_str(payload.as_ref(), "mode")?;
             with_app_state(window, cx, |state| {
                 let db = state
                     .app
@@ -1673,7 +1707,7 @@ fn dispatch_metadata_action(
                         }])?;
                     }
                     "restore" => {
-                        std::fs::write(fixture_dir.join("missing-0.flac"), b"restored fixture")?
+                        std::fs::write(fixture_dir.join("missing-0.flac"), b"restored fixture")?;
                     }
                     "refresh_failure" => {
                         state.app.settings.library.maintenance.qa_fail_next_refresh = true;
@@ -1695,7 +1729,7 @@ fn dispatch_metadata_action(
             Ok(true)
         }
         "SettingsSetLibraryPickerFixture" => {
-            let result = payload_str(&payload, "result")?;
+            let result = payload_str(payload.as_ref(), "result")?;
             let qa_dir = std::env::var_os("SOTF_QA_DIR")
                 .map(PathBuf::from)
                 .ok_or_else(|| anyhow!("SOTF_QA_DIR is unavailable"))?;
@@ -1730,7 +1764,7 @@ fn dispatch_metadata_action(
         }
         #[cfg(feature = "tidal")]
         "SettingsSetTidalLoginFixture" => {
-            let result = payload_str(&payload, "result")?;
+            let result = payload_str(payload.as_ref(), "result")?;
             with_player_view(window, cx, |view, cx| {
                 view.state.update(cx, |state, _cx| {
                     state
@@ -1948,11 +1982,10 @@ fn dispatch_metadata_action(
             let qa_dir = std::env::var_os("SOTF_QA_DIR")
                 .map(PathBuf::from)
                 .ok_or_else(|| anyhow!("Listening source fixtures require isolated QA mode"))?;
-            let mode = payload_str(&payload, "mode")?;
+            let mode = payload_str(payload.as_ref(), "mode")?;
             let (name, channels) = match mode {
                 "first" => ("practice-source-mono.wav", 1),
-                "second" => ("practice-source-stereo.wav", 2),
-                "practice" => ("practice-source-stereo.wav", 2),
+                "second" | "practice" => ("practice-source-stereo.wav", 2),
                 "quad" => ("practice-source-quad.wav", 4),
                 "surround6" => ("practice-source-surround6.wav", 6),
                 "surround12" => ("practice-source-surround12.wav", 12),
@@ -2109,9 +2142,10 @@ fn dispatch_metadata_action(
             with_player_view(window, cx, |view, cx| {
                 view.state.update(cx, |state, _| {
                     let _ = state.app.plugin_state.leave_ab_test_runtime();
-                    state.app.plugin_state.plugin_ui_state.listening_workspace = Default::default();
+                    state.app.plugin_state.plugin_ui_state.listening_workspace =
+                        crate::app::state::plugin::ListeningWorkspaceState::default();
                     let listening = &mut state.app.plugin_state.listening_test_state;
-                    listening.ab_test = Default::default();
+                    listening.ab_test = sotf_audio_player::AbTestController::default();
                     listening.path_a = None;
                     listening.path_b = None;
                     listening.path_a_canvas = None;
@@ -2166,8 +2200,8 @@ fn dispatch_metadata_action(
                     .metadata_editor
                     .as_mut()
                     .ok_or_else(|| anyhow!("metadata editor is not open"))?;
-                let field = payload_str(&payload, "field")?;
-                let value = payload_str(&payload, "value")?;
+                let field = payload_str(payload.as_ref(), "field")?;
+                let value = payload_str(payload.as_ref(), "value")?;
                 set_metadata_field(editor, field, value.to_string())?;
                 Ok(())
             })?;
@@ -2273,9 +2307,8 @@ fn parse_settings_tab(value: &str) -> Result<SettingsTab> {
     }
 }
 
-fn payload_str<'a>(payload: &'a Option<Value>, key: &str) -> Result<&'a str> {
+fn payload_str<'a>(payload: Option<&'a Value>, key: &str) -> Result<&'a str> {
     payload
-        .as_ref()
         .and_then(|value| value.get(key))
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow!("metadata action payload needs string `{key}`"))
@@ -2352,6 +2385,10 @@ fn metadata_candidate_from_payload(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
 pub(super) fn dispatch_request(req: &HttpRequest, tx: &mpsc::SyncSender<DevCommand>) -> String {
     let (path, query) = split_path_query(&req.path);
     let result: Result<(u16, String)> = match (req.method.as_str(), path) {

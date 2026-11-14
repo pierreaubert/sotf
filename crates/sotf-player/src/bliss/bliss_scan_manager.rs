@@ -26,6 +26,7 @@ impl Default for BlissScanManager {
 }
 
 impl BlissScanManager {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -56,13 +57,11 @@ impl BlissScanManager {
         if self.in_progress {
             return;
         }
-        let db_path = match MusicDatabase::default_path() {
-            Some(p) => p,
-            None => return,
+        let Some(db_path) = MusicDatabase::default_path() else {
+            return;
         };
-        let db = match MusicDatabase::open(&db_path) {
-            Ok(d) => d,
-            Err(_) => return,
+        let Ok(db) = MusicDatabase::open(&db_path) else {
+            return;
         };
         let total = db.get_track_count().unwrap_or(0);
         let (succeeded, failed) = db.get_bliss_done_counts().unwrap_or((0, 0));
@@ -71,6 +70,10 @@ impl BlissScanManager {
         self.failed = failed;
     }
 
+    /// Start force scan.
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if self.in_progress {
             return Ok("Bliss scan already in progress".to_string());
@@ -84,6 +87,10 @@ impl BlissScanManager {
         self.start_scan()
     }
 
+    /// Start scan.
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         if self.in_progress {
             return Ok("Bliss scan already in progress".to_string());
@@ -117,8 +124,7 @@ impl BlissScanManager {
         self.failed = already_failed;
 
         Ok(format!(
-            "Analyzing {} tracks for bliss audio features...",
-            remaining
+            "Analyzing {remaining} tracks for bliss audio features..."
         ))
     }
 
@@ -128,7 +134,7 @@ impl BlissScanManager {
         }
 
         let num_threads = self.effective_num_threads();
-        log::info!("Bliss scanner using {} threads", num_threads);
+        log::info!("Bliss scanner using {num_threads} threads");
         let scanner = Arc::new(BlissScanner::new(
             num_threads,
             db_path,
@@ -184,6 +190,11 @@ impl BlissScanManager {
         self.in_progress = false;
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Progress is an approximate floating-point percentage of completed tracks"
+    )]
     pub fn progress(&self) -> f32 {
         if self.total == 0 {
             return 0.0;

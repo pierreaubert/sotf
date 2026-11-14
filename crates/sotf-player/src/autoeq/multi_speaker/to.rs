@@ -3,9 +3,10 @@ use super::types::MultiSpeakerOptimizationResult;
 use super::types::SingleSpeakerResult;
 pub use roomeq_workflow::RoomOptimizationResult;
 
-/// Convert RoomOptimizationResult to legacy SingleSpeakerResult format
+/// Convert `RoomOptimizationResult` to legacy `SingleSpeakerResult` format
 ///
 /// This is useful for integrating with existing UI code that expects per-speaker results.
+#[must_use]
 pub fn to_single_speaker_results(room_result: &RoomOptimizationResult) -> Vec<SingleSpeakerResult> {
     room_result
         .channel_results
@@ -30,9 +31,10 @@ pub fn to_single_speaker_results(room_result: &RoomOptimizationResult) -> Vec<Si
         .collect()
 }
 
-/// Convert multi-speaker result to individual SpeakerOptimizationResult instances
+/// Convert multi-speaker result to individual `SpeakerOptimizationResult` instances
 ///
 /// This is useful for integrating with existing UI code that expects per-speaker results.
+#[must_use]
 pub fn to_speaker_results(
     multi_result: &MultiSpeakerOptimizationResult,
 ) -> Vec<SpeakerOptimizationResult> {

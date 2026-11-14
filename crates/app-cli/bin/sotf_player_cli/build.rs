@@ -42,31 +42,38 @@ use sotf_audio::plugins::{
     UpmixerSubharmonicSettings,
 };
 use sotf_audio::{AudioEngineManager, PluginConfig, StreamingState};
-use std::path::PathBuf;
+use std::path::Path;
 use std::thread::sleep;
 use std::time::Duration;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "CLI options are passed explicitly at the command boundary"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The CLI assembles its complete ordered plugin configuration in one dispatch"
+)]
 pub(super) fn play_stream(
-    file: PathBuf,
+    file: &Path,
     device: Option<String>,
-    filter_specs: Vec<String>,
+    filter_specs: &[String],
     duration: u64,
     start_time: f64,
-    hwaudio_play: Option<String>,
+    hwaudio_play: Option<&str>,
     lufs: bool,
-    loudness: Option<LoudnessCompensation>,
+    loudness: Option<&LoudnessCompensation>,
     loudness_auto_gain: bool,
     loudness_auto_gain_max_db: f32,
     loudness_auto_gain_smoothing_ms: f32,
-    rack: Vec<String>,
+    rack: &[String],
     plugins: &PluginArgs,
 ) -> Result<(), String> {
     log::info!("Starting streaming playback...");
     log::info!("  File: {}", redact_secrets(&file.to_string_lossy()));
     log::info!("  Device: {:?}", device.as_deref().unwrap_or("default"));
     if start_time > 0.0 {
-        log::info!("  Start time: {:.2}s", start_time);
+        log::info!("  Start time: {start_time:.2}s");
     }
 
     log::info!("  Filter specs: {}", filter_specs.len());
@@ -91,13 +98,13 @@ pub(super) fn play_stream(
             seekable: false,
         }
     } else {
-        sotf_audio::decoder::AudioSource::File(file.clone())
+        sotf_audio::decoder::AudioSource::File(file.to_path_buf())
     };
 
     // Load the audio source (file or URL)
     let audio_info = streaming_manager
         .load_source(source)
-        .map_err(|e| format!("Failed to load audio: {}", e))?;
+        .map_err(|e| format!("Failed to load audio: {e}"))?;
 
     let msg = format!(
         "Loaded audio file:\n  Format: {}\n  Sample rate: {}Hz\n  Channels: {}\n  Bits per sample: {}",
@@ -106,13 +113,13 @@ pub(super) fn play_stream(
         audio_info.spec.channels,
         audio_info.spec.bits_per_sample
     );
-    log::info!("{}", msg);
-    println!("{}", msg);
+    log::info!("{msg}");
+    println!("{msg}");
 
     if let Some(duration_secs) = audio_info.duration_seconds {
-        let dur_msg = format!("  Duration: {:.2}s", duration_secs);
-        log::info!("{}", dur_msg);
-        println!("{}", dur_msg);
+        let dur_msg = format!("  Duration: {duration_secs:.2}s");
+        log::info!("{dur_msg}");
+        println!("{dur_msg}");
     }
     println!();
 
@@ -120,14 +127,15 @@ pub(super) fn play_stream(
     // constructed biquad coefficients match the rate actually rendered at.
     // (Previously filters were baked at a hard-coded 48 kHz in `main`,
     // before the file was even loaded.)
-    let negotiated_rate =
-        sotf_audio::select_output_sample_rate(audio_info.spec.sample_rate, device.as_deref())
-            as f64;
-    let filters: Vec<Biquad> = parse_filters(&filter_specs, negotiated_rate)
+    let negotiated_rate = f64::from(sotf_audio::select_output_sample_rate(
+        audio_info.spec.sample_rate,
+        device.as_deref(),
+    ));
+    let filters: Vec<Biquad> = parse_filters(filter_specs, negotiated_rate)
         .map_err(|e| format!("Error parsing filters: {e}"))?;
 
     if !filters.is_empty() {
-        log::info!("\nEQ Filters (@ {:.0} Hz):", negotiated_rate);
+        log::info!("\nEQ Filters (@ {negotiated_rate:.0} Hz):");
         for (idx, filter) in filters.iter().enumerate() {
             log::info!(
                 "  [{}] {} Hz, Q={:.2}, Gain={:.1} dB",
@@ -145,34 +153,34 @@ pub(super) fn play_stream(
         loudness_auto_gain_max_db,
         loudness_auto_gain_smoothing_ms,
     );
-    let (plugin_configs, output_channels, loudness_plugin_index) = if !rack.is_empty() {
-        build_rack_mode_plugins(
-            &rack,
-            &audio_info,
-            &filters,
-            &loudness,
-            loudness_auto_gain_params,
-            lufs,
-            hwaudio_play.as_deref(),
-            plugins,
-            device.as_deref(),
-        )?
-    } else {
+    let (plugin_configs, output_channels, loudness_plugin_index) = if rack.is_empty() {
         build_traditional_mode_plugins(
             &audio_info,
             &filters,
-            &loudness,
+            loudness,
             loudness_auto_gain_params,
             lufs,
-            hwaudio_play.as_deref(),
+            hwaudio_play,
             plugins,
+        )?
+    } else {
+        build_rack_mode_plugins(
+            rack,
+            &audio_info,
+            &filters,
+            loudness,
+            loudness_auto_gain_params,
+            lufs,
+            hwaudio_play,
+            plugins,
+            device.as_deref(),
         )?
     };
 
     // Start playback
     streaming_manager
         .start_playback(device, plugin_configs, output_channels)
-        .map_err(|e| format!("Failed to start streaming playback: {}", e))?;
+        .map_err(|e| format!("Failed to start streaming playback: {e}"))?;
 
     // Set loudness plugin index if monitoring is enabled
     if let Some(index) = loudness_plugin_index {
@@ -181,10 +189,10 @@ pub(super) fn play_stream(
 
     // Seek to start time if specified
     if start_time > 0.0 {
-        log::info!("Seeking to {:.2}s...", start_time);
+        log::info!("Seeking to {start_time:.2}s...");
         streaming_manager
             .seek(start_time)
-            .map_err(|e| format!("Failed to seek: {}", e))?;
+            .map_err(|e| format!("Failed to seek: {e}"))?;
     }
 
     log::info!("Streaming playback started successfully!");
@@ -240,7 +248,7 @@ pub(super) fn play_stream(
                 let shortterm_str = if st.is_infinite() {
                     "-∞".to_string()
                 } else {
-                    format!("{:5.1}", st)
+                    format!("{st:5.1}")
                 };
                 let rg = if st.is_infinite() { 0.0 } else { -18.0 - st };
                 log::debug!(
@@ -267,23 +275,32 @@ pub(super) fn play_stream(
     Ok(())
 }
 
-/// Build plugin chain using rack mode (PluginChain with specified plugin order)
-#[allow(clippy::too_many_arguments)]
+/// Build plugin chain using rack mode (`PluginChain` with specified plugin order)
+#[allow(
+    clippy::too_many_arguments,
+    reason = "CLI options are passed explicitly at the command boundary"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "The CLI assembles its complete ordered plugin configuration in one dispatch"
+)]
 pub(super) fn build_rack_mode_plugins(
     rack: &[String],
     audio_info: &sotf_audio::AudioFileInfo,
     filters: &[Biquad],
-    loudness: &Option<LoudnessCompensation>,
+    loudness: Option<&LoudnessCompensation>,
     loudness_auto_gain_params: (bool, f32, f32),
     lufs: bool,
     hwaudio_play: Option<&str>,
     plugins: &PluginArgs,
     device: Option<&str>,
 ) -> Result<(Vec<PluginConfig>, usize, Option<usize>), String> {
-    log::info!("Using rack mode with plugins: {:?}", rack);
+    log::info!("Using rack mode with plugins: {rack:?}");
 
-    let sample_rate =
-        sotf_audio::select_output_sample_rate(audio_info.spec.sample_rate, device) as f64;
+    let sample_rate = f64::from(sotf_audio::select_output_sample_rate(
+        audio_info.spec.sample_rate,
+        device,
+    ));
 
     let mut chain = PluginChain::new();
     let mut has_lufs = false;
@@ -303,60 +320,68 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::Upmixer {
                         speaker_config: plugins.upmixer.config.clone(),
                         gains: UpmixerGainSettings {
-                            gain_front_direct: plugins.upmixer.gain_front_direct as f64,
-                            gain_front_ambient: plugins.upmixer.gain_front_ambient as f64,
-                            gain_rear_ambient: plugins.upmixer.gain_rear_ambient as f64,
-                            height_gain: plugins.upmixer.height_gain as f64,
-                            stereo_width: plugins.upmixer.stereo_width as f64,
-                            center_spread: plugins.upmixer.center_spread as f64,
-                            surround_direct_bleed: plugins.upmixer.surround_direct_bleed as f64,
-                            rear_late_reflection: plugins.upmixer.rear_late_reflection as f64,
-                            ambient_boost: plugins.upmixer.ambient_boost as f64,
-                            rear_ambient_boost: plugins.upmixer.rear_ambient_boost as f64,
+                            gain_front_direct: f64::from(plugins.upmixer.gain_front_direct),
+                            gain_front_ambient: f64::from(plugins.upmixer.gain_front_ambient),
+                            gain_rear_ambient: f64::from(plugins.upmixer.gain_rear_ambient),
+                            height_gain: f64::from(plugins.upmixer.height_gain),
+                            stereo_width: f64::from(plugins.upmixer.stereo_width),
+                            center_spread: f64::from(plugins.upmixer.center_spread),
+                            surround_direct_bleed: f64::from(plugins.upmixer.surround_direct_bleed),
+                            rear_late_reflection: f64::from(plugins.upmixer.rear_late_reflection),
+                            ambient_boost: f64::from(plugins.upmixer.ambient_boost),
+                            rear_ambient_boost: f64::from(plugins.upmixer.rear_ambient_boost),
                         },
                         lfe: UpmixerLfeSettings {
-                            lfe_cutoff_hz: plugins.upmixer.lfe_cutoff_hz as f64,
-                            lfe_gain: plugins.upmixer.lfe_gain as f64,
-                            bandpass_hz: plugins.upmixer.bandpass_hz as f64,
+                            lfe_cutoff_hz: f64::from(plugins.upmixer.lfe_cutoff_hz),
+                            lfe_gain: f64::from(plugins.upmixer.lfe_gain),
+                            bandpass_hz: f64::from(plugins.upmixer.bandpass_hz),
                         },
                         subharmonic: UpmixerSubharmonicSettings {
                             enable_subharmonic_synth: plugins.upmixer.subharmonic,
-                            subharmonic_gain: plugins.upmixer.subharmonic_gain as f64,
-                            subharmonic_freq_hz: plugins.upmixer.subharmonic_freq_hz as f64,
-                            subharmonic_attack_ms: plugins.upmixer.subharmonic_attack_ms as f64,
-                            subharmonic_release_ms: plugins.upmixer.subharmonic_release_ms as f64,
+                            subharmonic_gain: f64::from(plugins.upmixer.subharmonic_gain),
+                            subharmonic_freq_hz: f64::from(plugins.upmixer.subharmonic_freq_hz),
+                            subharmonic_attack_ms: f64::from(plugins.upmixer.subharmonic_attack_ms),
+                            subharmonic_release_ms: f64::from(
+                                plugins.upmixer.subharmonic_release_ms,
+                            ),
                         },
                         decorrelation: UpmixerDecorrelationSettings {
                             decorrelation_mode: plugins.upmixer.decorrelation_mode,
-                            decorrelation_lfo_rate_hz: plugins.upmixer.decorrelation_lfo_rate_hz
-                                as f64,
-                            velvet_noise_duration_ms: plugins.upmixer.velvet_noise_duration_ms
-                                as f64,
-                            velvet_noise_density: plugins.upmixer.velvet_noise_density as f64,
+                            decorrelation_lfo_rate_hz: f64::from(
+                                plugins.upmixer.decorrelation_lfo_rate_hz,
+                            ),
+                            velvet_noise_duration_ms: f64::from(
+                                plugins.upmixer.velvet_noise_duration_ms,
+                            ),
+                            velvet_noise_density: f64::from(plugins.upmixer.velvet_noise_density),
                         },
                         height: UpmixerHeightSettings {
                             enable_hr_direct: plugins.upmixer.hr_direct,
-                            hr_sharpen: plugins.upmixer.hr_sharpen as f64,
-                            height_hf_cap_hz: plugins.upmixer.height_hf_cap_hz as f64,
-                            height_transient_reduction: plugins.upmixer.height_transient_reduction
-                                as f64,
-                            height_direct_leak: plugins.upmixer.height_direct_leak as f64,
+                            hr_sharpen: f64::from(plugins.upmixer.hr_sharpen),
+                            height_hf_cap_hz: f64::from(plugins.upmixer.height_hf_cap_hz),
+                            height_transient_reduction: f64::from(
+                                plugins.upmixer.height_transient_reduction,
+                            ),
+                            height_direct_leak: f64::from(plugins.upmixer.height_direct_leak),
                         },
                         ambient_analysis: UpmixerAmbientAnalysisSettings {
-                            safety_cap_db: plugins.upmixer.safety_cap_db as f64,
+                            safety_cap_db: f64::from(plugins.upmixer.safety_cap_db),
                             low_latency: plugins.upmixer.low_latency,
                             frequency_resolution: 0,
                         },
                         dialogue: UpmixerDialogueSettings {
-                            dialogue_weight: plugins.upmixer.dialogue_weight as f64,
-                            voice_freq_min_hz: plugins.upmixer.voice_freq_min_hz as f64,
-                            voice_freq_max_hz: plugins.upmixer.voice_freq_max_hz as f64,
-                            dialogue_centroid_weight: plugins.upmixer.dialogue_centroid_weight
-                                as f64,
-                            dialogue_variance_weight: plugins.upmixer.dialogue_variance_weight
-                                as f64,
-                            dialogue_coherence_weight: plugins.upmixer.dialogue_coherence_weight
-                                as f64,
+                            dialogue_weight: f64::from(plugins.upmixer.dialogue_weight),
+                            voice_freq_min_hz: f64::from(plugins.upmixer.voice_freq_min_hz),
+                            voice_freq_max_hz: f64::from(plugins.upmixer.voice_freq_max_hz),
+                            dialogue_centroid_weight: f64::from(
+                                plugins.upmixer.dialogue_centroid_weight,
+                            ),
+                            dialogue_variance_weight: f64::from(
+                                plugins.upmixer.dialogue_variance_weight,
+                            ),
+                            dialogue_coherence_weight: f64::from(
+                                plugins.upmixer.dialogue_coherence_weight,
+                            ),
                         },
                         bypass: UpmixerBypassSettings {
                             bypass_decorrelation: plugins.upmixer.bypass_decorrelation,
@@ -388,17 +413,17 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::AAE {
                         speaker_config: plugins.aae.config.clone(),
-                        room_size: plugins.aae.room_size as f64,
-                        rt60: plugins.aae.rt60 as f64,
+                        room_size: f64::from(plugins.aae.room_size),
+                        rt60: f64::from(plugins.aae.rt60),
                         bass_ratio: 1.2,
                         treble_ratio: 0.5,
-                        pre_delay_ms: plugins.aae.pre_delay_ms as f64,
+                        pre_delay_ms: f64::from(plugins.aae.pre_delay_ms),
                         room_preset: plugins.aae.room_preset.clone(),
-                        dry_level: plugins.aae.dry_level as f64,
-                        er_level: plugins.aae.er_level as f64,
-                        late_level: plugins.aae.late_level as f64,
+                        dry_level: f64::from(plugins.aae.dry_level),
+                        er_level: f64::from(plugins.aae.er_level),
+                        late_level: f64::from(plugins.aae.late_level),
                         lfe_level: 0.2,
-                        mod_depth: plugins.aae.mod_depth as f64,
+                        mod_depth: f64::from(plugins.aae.mod_depth),
                         er_mod_depth: 0.3,
                         input_diffusion: 0.7,
                         envelopment: 0.7,
@@ -407,8 +432,8 @@ pub(super) fn build_rack_mode_plugins(
                         dialogue_attenuation_db: 6.0,
                         safety_limit_db: 6.0,
                         auto_gain_enabled: plugins.aae.auto_gain_enabled,
-                        auto_gain_max_db: plugins.aae.auto_gain_max_db as f64,
-                        auto_gain_smoothing_ms: plugins.aae.auto_gain_smoothing_ms as f64,
+                        auto_gain_max_db: f64::from(plugins.aae.auto_gain_max_db),
+                        auto_gain_smoothing_ms: f64::from(plugins.aae.auto_gain_smoothing_ms),
                         bypass: false,
                         solo_early: false,
                         solo_late: false,
@@ -429,8 +454,8 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::BinauralDecoder {
                         sofa_file: sofa_path.to_string_lossy().to_string(),
                         input_channels,
-                        externalization: plugins.binaural.externalization as f64,
-                        near_field_strength: plugins.binaural.near_field as f64,
+                        externalization: f64::from(plugins.binaural.externalization),
+                        near_field_strength: f64::from(plugins.binaural.near_field),
                         crossfade_mode: 0,
                         late_reverb_enabled: false,
                         late_reverb_mix: 0.3,
@@ -463,8 +488,8 @@ pub(super) fn build_rack_mode_plugins(
                             mid_gain: 3.0,
                             mid_q: 0.707,
                             auto_gain_enabled,
-                            auto_gain_max_db: auto_gain_max_db as f64,
-                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            auto_gain_max_db: f64::from(auto_gain_max_db),
+                            auto_gain_smoothing_ms: f64::from(auto_gain_smoothing_ms),
                             mode: 0,
                             playback_level_db: 70.0,
                             reference_level_db: 83.0,
@@ -490,8 +515,8 @@ pub(super) fn build_rack_mode_plugins(
                             mid_gain: 0.0,
                             mid_q: 0.707,
                             auto_gain_enabled,
-                            auto_gain_max_db: auto_gain_max_db as f64,
-                            auto_gain_smoothing_ms: auto_gain_smoothing_ms as f64,
+                            auto_gain_max_db: f64::from(auto_gain_max_db),
+                            auto_gain_smoothing_ms: f64::from(auto_gain_smoothing_ms),
                             mode: 0,
                             playback_level_db: 70.0,
                             reference_level_db: 83.0,
@@ -503,8 +528,8 @@ pub(super) fn build_rack_mode_plugins(
                     }
                     let msg = "Note: `loudness` rack item used without --loudness-compensation; \
                          applying 0 dB shelves (no-op).";
-                    log::warn!("{}", msg);
-                    eprintln!("{}", msg);
+                    log::warn!("{msg}");
+                    eprintln!("{msg}");
                 }
                 log::info!("Rack: Added LoudnessCompensation plugin");
             }
@@ -537,8 +562,8 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Gain {
                         channels,
-                        gain_db: plugins.gain.gain_db as f64,
-                        smoothing_ms: plugins.gain.smoothing_ms as f64,
+                        gain_db: f64::from(plugins.gain.gain_db),
+                        smoothing_ms: f64::from(plugins.gain.smoothing_ms),
                     };
                 }
                 log::info!("Rack: Added Gain plugin ({:.1} dB)", plugins.gain.gain_db);
@@ -551,16 +576,16 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Compressor)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Compressor {
-                        threshold_db: plugins.compressor.threshold_db as f64,
-                        ratio: plugins.compressor.ratio as f64,
-                        attack_ms: plugins.compressor.attack_ms as f64,
-                        release_ms: plugins.compressor.release_ms as f64,
-                        knee_db: plugins.compressor.knee_db as f64,
-                        makeup_gain_db: plugins.compressor.makeup_gain_db as f64,
-                        mix: plugins.compressor.mix as f64,
+                        threshold_db: f64::from(plugins.compressor.threshold_db),
+                        ratio: f64::from(plugins.compressor.ratio),
+                        attack_ms: f64::from(plugins.compressor.attack_ms),
+                        release_ms: f64::from(plugins.compressor.release_ms),
+                        knee_db: f64::from(plugins.compressor.knee_db),
+                        makeup_gain_db: f64::from(plugins.compressor.makeup_gain_db),
+                        mix: f64::from(plugins.compressor.mix),
                         auto_makeup: plugins.compressor.auto_makeup,
                         link_channels: !plugins.compressor.unlink_channels,
-                        sidechain_hpf_hz: plugins.compressor.sidechain_hpf_hz as f64,
+                        sidechain_hpf_hz: f64::from(plugins.compressor.sidechain_hpf_hz),
                         sidechain_hpf_order: "2nd".to_string(),
                         detection_mode: "peak".to_string(),
                         lookahead_ms: 0.0,
@@ -581,16 +606,16 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::MultibandCompressor {
                         num_bands: plugins.multiband_compressor.num_bands,
                         crossover_preset: plugins.multiband_compressor.crossover_preset,
-                        crossover_freq_1: plugins.multiband_compressor.crossover_freq_1 as f64,
-                        crossover_freq_2: plugins.multiband_compressor.crossover_freq_2 as f64,
-                        crossover_freq_3: plugins.multiband_compressor.crossover_freq_3 as f64,
-                        crossover_freq_4: plugins.multiband_compressor.crossover_freq_4 as f64,
-                        threshold_db: plugins.multiband_compressor.threshold_db as f64,
-                        ratio: plugins.multiband_compressor.ratio as f64,
-                        attack_ms: plugins.multiband_compressor.attack_ms as f64,
-                        release_ms: plugins.multiband_compressor.release_ms as f64,
-                        knee_db: plugins.multiband_compressor.knee_db as f64,
-                        mix: plugins.multiband_compressor.mix as f64,
+                        crossover_freq_1: f64::from(plugins.multiband_compressor.crossover_freq_1),
+                        crossover_freq_2: f64::from(plugins.multiband_compressor.crossover_freq_2),
+                        crossover_freq_3: f64::from(plugins.multiband_compressor.crossover_freq_3),
+                        crossover_freq_4: f64::from(plugins.multiband_compressor.crossover_freq_4),
+                        threshold_db: f64::from(plugins.multiband_compressor.threshold_db),
+                        ratio: f64::from(plugins.multiband_compressor.ratio),
+                        attack_ms: f64::from(plugins.multiband_compressor.attack_ms),
+                        release_ms: f64::from(plugins.multiband_compressor.release_ms),
+                        knee_db: f64::from(plugins.multiband_compressor.knee_db),
+                        mix: f64::from(plugins.multiband_compressor.mix),
                         link_channels: !plugins.multiband_compressor.unlink_channels,
                         per_band_lookahead_ms: 0.0,
                         ms_mode: false,
@@ -613,14 +638,14 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Gate {
                         speech_protection: None,
-                        threshold_db: plugins.gate.threshold_db as f64,
-                        ratio: plugins.gate.ratio as f64,
-                        attack_ms: plugins.gate.attack_ms as f64,
-                        hold_ms: plugins.gate.hold_ms as f64,
-                        release_ms: plugins.gate.release_ms as f64,
-                        mix: plugins.gate.mix as f64,
+                        threshold_db: f64::from(plugins.gate.threshold_db),
+                        ratio: f64::from(plugins.gate.ratio),
+                        attack_ms: f64::from(plugins.gate.attack_ms),
+                        hold_ms: f64::from(plugins.gate.hold_ms),
+                        release_ms: f64::from(plugins.gate.release_ms),
+                        mix: f64::from(plugins.gate.mix),
                         link_channels: !plugins.gate.unlink_channels,
-                        sidechain_hpf_hz: plugins.gate.sidechain_hpf_hz as f64,
+                        sidechain_hpf_hz: f64::from(plugins.gate.sidechain_hpf_hz),
                         sidechain_hpf_order: "2nd".to_string(),
                         detection_mode: "Peak".to_string(),
                         sidechain_external: false,
@@ -629,7 +654,7 @@ pub(super) fn build_rack_mode_plugins(
                         knee_db: 0.0,
                         lookahead_ms: 0.0,
                         // Default::default() is the historical downward gate.
-                        mode: Default::default(),
+                        mode: sotf_plugins::plugin_gate::GateMode::default(),
                         max_boost_db: 12.0,
                     };
                 }
@@ -639,14 +664,14 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Limiter)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Limiter {
-                        threshold_db: plugins.limiter.threshold_db as f64,
-                        release_ms: plugins.limiter.release_ms as f64,
-                        lookahead_ms: plugins.limiter.lookahead_ms as f64,
+                        threshold_db: f64::from(plugins.limiter.threshold_db),
+                        release_ms: f64::from(plugins.limiter.release_ms),
+                        lookahead_ms: f64::from(plugins.limiter.lookahead_ms),
                         soft: plugins.limiter.soft,
                         true_peak: false,
                         isp_mode: false,
                         dual_release: false,
-                        mix: plugins.limiter.mix as f64,
+                        mix: f64::from(plugins.limiter.mix),
                         link_amount: 1.0,
                         feed_forward: false,
                         // Choice index: 0 = 1x (off).
@@ -659,17 +684,17 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Expander)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Expander {
-                        threshold_db: plugins.expander.threshold_db as f64,
-                        ratio: plugins.expander.ratio as f64,
-                        attack_ms: plugins.expander.attack_ms as f64,
-                        release_ms: plugins.expander.release_ms as f64,
-                        range_db: plugins.expander.range_db as f64,
-                        knee_db: plugins.expander.knee_db as f64,
-                        hysteresis_db: plugins.expander.hysteresis_db as f64,
-                        hold_ms: plugins.expander.hold_ms as f64,
-                        mix: plugins.expander.mix as f64,
+                        threshold_db: f64::from(plugins.expander.threshold_db),
+                        ratio: f64::from(plugins.expander.ratio),
+                        attack_ms: f64::from(plugins.expander.attack_ms),
+                        release_ms: f64::from(plugins.expander.release_ms),
+                        range_db: f64::from(plugins.expander.range_db),
+                        knee_db: f64::from(plugins.expander.knee_db),
+                        hysteresis_db: f64::from(plugins.expander.hysteresis_db),
+                        hold_ms: f64::from(plugins.expander.hold_ms),
+                        mix: f64::from(plugins.expander.mix),
                         link_channels: !plugins.expander.unlink_channels,
-                        sidechain_hpf_hz: plugins.expander.sidechain_hpf_hz as f64,
+                        sidechain_hpf_hz: f64::from(plugins.expander.sidechain_hpf_hz),
                         auto_makeup: false,
                         lookahead_ms: 0.0,
                         detection_mode: "peak".to_string(),
@@ -684,19 +709,19 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::MultibandExpander {
                         num_bands: plugins.multiband_expander.num_bands,
                         crossover_preset: plugins.multiband_expander.crossover_preset,
-                        crossover_freq_1: plugins.multiband_expander.crossover_freq_1 as f64,
-                        crossover_freq_2: plugins.multiband_expander.crossover_freq_2 as f64,
-                        crossover_freq_3: plugins.multiband_expander.crossover_freq_3 as f64,
-                        crossover_freq_4: plugins.multiband_expander.crossover_freq_4 as f64,
-                        threshold_db: plugins.multiband_expander.threshold_db as f64,
-                        ratio: plugins.multiband_expander.ratio as f64,
-                        attack_ms: plugins.multiband_expander.attack_ms as f64,
-                        release_ms: plugins.multiband_expander.release_ms as f64,
-                        range_db: plugins.multiband_expander.range_db as f64,
-                        knee_db: plugins.multiband_expander.knee_db as f64,
-                        hysteresis_db: plugins.multiband_expander.hysteresis_db as f64,
-                        hold_ms: plugins.multiband_expander.hold_ms as f64,
-                        mix: plugins.multiband_expander.mix as f64,
+                        crossover_freq_1: f64::from(plugins.multiband_expander.crossover_freq_1),
+                        crossover_freq_2: f64::from(plugins.multiband_expander.crossover_freq_2),
+                        crossover_freq_3: f64::from(plugins.multiband_expander.crossover_freq_3),
+                        crossover_freq_4: f64::from(plugins.multiband_expander.crossover_freq_4),
+                        threshold_db: f64::from(plugins.multiband_expander.threshold_db),
+                        ratio: f64::from(plugins.multiband_expander.ratio),
+                        attack_ms: f64::from(plugins.multiband_expander.attack_ms),
+                        release_ms: f64::from(plugins.multiband_expander.release_ms),
+                        range_db: f64::from(plugins.multiband_expander.range_db),
+                        knee_db: f64::from(plugins.multiband_expander.knee_db),
+                        hysteresis_db: f64::from(plugins.multiband_expander.hysteresis_db),
+                        hold_ms: f64::from(plugins.multiband_expander.hold_ms),
+                        mix: f64::from(plugins.multiband_expander.mix),
                         link_channels: !plugins.multiband_expander.unlink_channels,
                         detection_mode: "peak".to_string(),
                         lookahead_ms: 0.0,
@@ -709,19 +734,19 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::XTC)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::XTC {
-                        distance_m: plugins.xtc.distance_m as f64,
-                        speaker_angle_deg: plugins.xtc.speaker_angle_deg as f64,
-                        head_radius_m: plugins.xtc.head_radius_m as f64,
-                        beta_base: plugins.xtc.beta_base as f64,
-                        beta_low_freq_boost: plugins.xtc.beta_low_freq_boost as f64,
-                        beta_high_freq_boost: plugins.xtc.beta_high_freq_boost as f64,
-                        head_shadow_cutoff_hz: plugins.xtc.head_shadow_cutoff_hz as f64,
-                        head_shadow_slope_db_per_octave: plugins.xtc.head_shadow_slope as f64,
-                        max_gain_db: plugins.xtc.max_gain_db as f64,
-                        head_offset_x: plugins.xtc.head_offset_x as f64,
-                        head_offset_z: plugins.xtc.head_offset_z as f64,
-                        head_yaw_deg: plugins.xtc.head_yaw_deg as f64,
-                        head_tracking_smooth_s: plugins.xtc.head_tracking_smooth_s as f64,
+                        distance_m: f64::from(plugins.xtc.distance_m),
+                        speaker_angle_deg: f64::from(plugins.xtc.speaker_angle_deg),
+                        head_radius_m: f64::from(plugins.xtc.head_radius_m),
+                        beta_base: f64::from(plugins.xtc.beta_base),
+                        beta_low_freq_boost: f64::from(plugins.xtc.beta_low_freq_boost),
+                        beta_high_freq_boost: f64::from(plugins.xtc.beta_high_freq_boost),
+                        head_shadow_cutoff_hz: f64::from(plugins.xtc.head_shadow_cutoff_hz),
+                        head_shadow_slope_db_per_octave: f64::from(plugins.xtc.head_shadow_slope),
+                        max_gain_db: f64::from(plugins.xtc.max_gain_db),
+                        head_offset_x: f64::from(plugins.xtc.head_offset_x),
+                        head_offset_z: f64::from(plugins.xtc.head_offset_z),
+                        head_yaw_deg: f64::from(plugins.xtc.head_yaw_deg),
+                        head_tracking_smooth_s: f64::from(plugins.xtc.head_tracking_smooth_s),
                         spectral_normalization: plugins.xtc.spectral_normalization,
                         room_reflections_enabled: plugins.xtc.room_reflections,
                         room_ir_file: plugins
@@ -729,16 +754,16 @@ pub(super) fn build_rack_mode_plugins(
                             .room_ir_file
                             .as_ref()
                             .map(|p| p.to_string_lossy().to_string()),
-                        room_width_m: plugins.xtc.room_width_m as f64,
-                        room_depth_m: plugins.xtc.room_depth_m as f64,
-                        wall_absorption: plugins.xtc.wall_absorption as f64,
-                        reflection_beta_boost: plugins.xtc.reflection_beta_boost as f64,
+                        room_width_m: f64::from(plugins.xtc.room_width_m),
+                        room_depth_m: f64::from(plugins.xtc.room_depth_m),
+                        wall_absorption: f64::from(plugins.xtc.wall_absorption),
+                        reflection_beta_boost: f64::from(plugins.xtc.reflection_beta_boost),
                         bypass_xtc_filters: plugins.xtc.bypass_filters,
                         bypass_spectral_normalization: plugins.xtc.bypass_spectral_normalization,
                         bypass_neumann_refinement: plugins.xtc.bypass_neumann_refinement,
                         auto_gain_enabled: plugins.xtc.auto_gain,
-                        auto_gain_max_db: plugins.xtc.auto_gain_max_db as f64,
-                        auto_gain_smoothing_ms: plugins.xtc.auto_gain_smoothing_ms as f64,
+                        auto_gain_max_db: f64::from(plugins.xtc.auto_gain_max_db),
+                        auto_gain_smoothing_ms: f64::from(plugins.xtc.auto_gain_smoothing_ms),
                         pinna_model_enabled: plugins.xtc.pinna_model,
                         head_model: 0.0,
                     };
@@ -749,26 +774,26 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::Denoiser)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Denoiser {
-                        reduction_db: plugins.denoiser.reduction_db as f64,
-                        floor_db: plugins.denoiser.floor_db as f64,
-                        smoothing: plugins.denoiser.smoothing as f64,
-                        attack_ms: plugins.denoiser.attack_ms as f64,
-                        release_ms: plugins.denoiser.release_ms as f64,
+                        reduction_db: f64::from(plugins.denoiser.reduction_db),
+                        floor_db: f64::from(plugins.denoiser.floor_db),
+                        smoothing: f64::from(plugins.denoiser.smoothing),
+                        attack_ms: f64::from(plugins.denoiser.attack_ms),
+                        release_ms: f64::from(plugins.denoiser.release_ms),
                         low_latency: plugins.denoiser.low_latency,
                         polyphonic_detection: plugins.denoiser.polyphonic_detection,
-                        mcra_alpha_s: plugins.denoiser.mcra_alpha_s as f64,
-                        mcra_alpha_p: plugins.denoiser.mcra_alpha_p as f64,
+                        mcra_alpha_s: f64::from(plugins.denoiser.mcra_alpha_s),
+                        mcra_alpha_p: f64::from(plugins.denoiser.mcra_alpha_p),
                         mcra_l: plugins.denoiser.mcra_l,
-                        mcra_delta: plugins.denoiser.mcra_delta as f64,
-                        transparency: plugins.denoiser.transparency as f64,
+                        mcra_delta: f64::from(plugins.denoiser.mcra_delta),
+                        transparency: f64::from(plugins.denoiser.transparency),
                         dd_enabled: plugins.denoiser.dd_enabled,
-                        dd_alpha: plugins.denoiser.dd_alpha as f64,
+                        dd_alpha: f64::from(plugins.denoiser.dd_alpha),
                         psychoacoustic_masking: plugins.denoiser.psychoacoustic_masking,
                         spectral_smoothing_enabled: plugins.denoiser.spectral_smoothing_enabled,
                         temporal_smoothing_enabled: plugins.denoiser.temporal_smoothing_enabled,
                         spectral_sub_enabled: plugins.denoiser.spectral_sub_enabled,
-                        spectral_sub_alpha: plugins.denoiser.spectral_sub_alpha as f64,
-                        spectral_sub_beta: plugins.denoiser.spectral_sub_beta as f64,
+                        spectral_sub_alpha: f64::from(plugins.denoiser.spectral_sub_alpha),
+                        spectral_sub_beta: f64::from(plugins.denoiser.spectral_sub_beta),
                         learn_noise: plugins.denoiser.learn_noise,
                         use_captured_profile: plugins.denoiser.use_captured_profile,
                         clear_profile: plugins.denoiser.clear_profile,
@@ -791,9 +816,9 @@ pub(super) fn build_rack_mode_plugins(
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Pnd {
                         neural_pitch: None,
-                        correction_strength: plugins.pnd.correction_strength as f64,
-                        analysis_window_ms: plugins.pnd.analysis_window_ms as f64,
-                        drift_smoothing: plugins.pnd.drift_smoothing as f64,
+                        correction_strength: f64::from(plugins.pnd.correction_strength),
+                        analysis_window_ms: f64::from(plugins.pnd.analysis_window_ms),
+                        drift_smoothing: f64::from(plugins.pnd.drift_smoothing),
                         multi_channel_analysis: true,
                         confidence_threshold: 0.5,
                         reference_frequency_hz: 0.0,
@@ -823,7 +848,7 @@ pub(super) fn build_rack_mode_plugins(
                         mode: 2, // Auto
                         playback_level_db: 70.0,
                         reference_level_db: 83.0
-                            + plugins.fletcher_munson.reference_level_db as f64,
+                            + f64::from(plugins.fletcher_munson.reference_level_db),
                         playback_volume_db: 0.0,
                         auto_gain_position: 0,
                         headroom_normalized: false,
@@ -839,14 +864,17 @@ pub(super) fn build_rack_mode_plugins(
                     .as_ref()
                     .ok_or("Convolution requires --convolution-ir-file to be specified")?;
                 if !ir_path.exists() {
-                    return Err(format!("Convolution IR file not found: {:?}", ir_path));
+                    return Err(format!(
+                        "Convolution IR file not found: {}",
+                        ir_path.display()
+                    ));
                 }
                 let idx = chain.add_plugin(&PluginType::Convolution)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Convolution {
                         ir_file: ir_path.to_string_lossy().to_string(),
-                        mix: plugins.convolution.mix as f64,
-                        gain_db: plugins.convolution.gain_db as f64,
+                        mix: f64::from(plugins.convolution.mix),
+                        gain_db: f64::from(plugins.convolution.gain_db),
                         use_nupc: true,
                         zero_latency_head: false,
                         head_taps: 128,
@@ -910,7 +938,7 @@ pub(super) fn build_rack_mode_plugins(
                         // The CLI exposes the historical 2-band split only;
                         // multiband fields stay at their canonical defaults.
                         frequencies: None,
-                        recombination_mode: Default::default(),
+                        recombination_mode: sotf_plugins::BandSplitRecombinationMode::default(),
                         num_bands: 2,
                         frequency_2: 1_200.0,
                         frequency_3: 4_800.0,
@@ -936,13 +964,13 @@ pub(super) fn build_rack_mode_plugins(
                     plugin.settings = PluginSettings::Downmix {
                         input_channels,
                         input_layout: None,
-                        center_gain_db: plugins.downmix.center_gain_db as f64,
-                        surround_gain_db: plugins.downmix.surround_gain_db as f64,
-                        height_gain_db: plugins.downmix.height_gain_db as f64,
-                        lfe_gain_db: plugins.downmix.lfe_gain_db as f64,
+                        center_gain_db: f64::from(plugins.downmix.center_gain_db),
+                        surround_gain_db: f64::from(plugins.downmix.surround_gain_db),
+                        height_gain_db: f64::from(plugins.downmix.height_gain_db),
+                        lfe_gain_db: f64::from(plugins.downmix.lfe_gain_db),
                         phase_coherence: plugins.downmix.phase_coherence,
-                        phase_blend_low_hz: plugins.downmix.phase_blend_low_hz as f64,
-                        phase_blend_high_hz: plugins.downmix.phase_blend_high_hz as f64,
+                        phase_blend_low_hz: f64::from(plugins.downmix.phase_blend_low_hz),
+                        phase_blend_high_hz: f64::from(plugins.downmix.phase_blend_high_hz),
                         itu_mode: false,
                         matrix_ltrt: false,
                     };
@@ -953,10 +981,10 @@ pub(super) fn build_rack_mode_plugins(
                 let idx = chain.add_plugin(&PluginType::MonoToStereo)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::MonoToStereo {
-                        stereo_width: plugins.mono_to_stereo.stereo_width as f64,
-                        haas_delay_ms: plugins.mono_to_stereo.haas_delay_ms as f64,
-                        decor_low_hz: plugins.mono_to_stereo.decor_low_hz as f64,
-                        decor_high_hz: plugins.mono_to_stereo.decor_high_hz as f64,
+                        stereo_width: f64::from(plugins.mono_to_stereo.stereo_width),
+                        haas_delay_ms: f64::from(plugins.mono_to_stereo.haas_delay_ms),
+                        decor_low_hz: f64::from(plugins.mono_to_stereo.decor_low_hz),
+                        decor_high_hz: f64::from(plugins.mono_to_stereo.decor_high_hz),
                         freq_dependent: plugins.mono_to_stereo.enable_comp_eq,
                     };
                 }
@@ -971,20 +999,20 @@ pub(super) fn build_rack_mode_plugins(
                         mode,
                         preset,
                         enabled: true,
-                        mix: plugins.crossfeed.mix as f64,
-                        bauer_fcut_hz: plugins.crossfeed.bauer_fcut_hz as f64,
-                        bauer_feed_db: plugins.crossfeed.bauer_feed_db as f64,
-                        meier_level: plugins.crossfeed.meier_level as f64,
-                        mb_low_freq_hz: plugins.crossfeed.mb_low_freq_hz as f64,
-                        mb_mid_high_freq_hz: plugins.crossfeed.mb_mid_high_freq_hz as f64,
-                        mb_low_feed_db: plugins.crossfeed.mb_low_feed_db as f64,
-                        mb_mid_feed_db: plugins.crossfeed.mb_mid_feed_db as f64,
-                        mb_high_feed_db: plugins.crossfeed.mb_high_feed_db as f64,
+                        mix: f64::from(plugins.crossfeed.mix),
+                        bauer_fcut_hz: f64::from(plugins.crossfeed.bauer_fcut_hz),
+                        bauer_feed_db: f64::from(plugins.crossfeed.bauer_feed_db),
+                        meier_level: f64::from(plugins.crossfeed.meier_level),
+                        mb_low_freq_hz: f64::from(plugins.crossfeed.mb_low_freq_hz),
+                        mb_mid_high_freq_hz: f64::from(plugins.crossfeed.mb_mid_high_freq_hz),
+                        mb_low_feed_db: f64::from(plugins.crossfeed.mb_low_feed_db),
+                        mb_mid_feed_db: f64::from(plugins.crossfeed.mb_mid_feed_db),
+                        mb_high_feed_db: f64::from(plugins.crossfeed.mb_high_feed_db),
                         itd_delay_ms: 0.0,
                         autogain_enabled: plugins.crossfeed.autogain,
-                        autogain_target_lufs: plugins.crossfeed.autogain_target_lufs as f64,
-                        autogain_max_gain_db: plugins.crossfeed.autogain_max_gain_db as f64,
-                        autogain_smoothing_ms: plugins.crossfeed.autogain_smoothing_ms as f64,
+                        autogain_target_lufs: f64::from(plugins.crossfeed.autogain_target_lufs),
+                        autogain_max_gain_db: f64::from(plugins.crossfeed.autogain_max_gain_db),
+                        autogain_smoothing_ms: f64::from(plugins.crossfeed.autogain_smoothing_ms),
                         head_yaw_deg: 0.0,
                     };
                 }
@@ -1039,11 +1067,7 @@ pub(super) fn build_rack_mode_plugins(
                         channel_states: vec![],
                     };
                 }
-                log::info!(
-                    "Rack: Added Matrix plugin ({}ch -> {}ch)",
-                    input_channels,
-                    out_ch
-                );
+                log::info!("Rack: Added Matrix plugin ({input_channels}ch -> {out_ch}ch)");
             }
             "lufs" | "loudness-monitor" => {
                 chain.add_plugin(&PluginType::LoudnessMonitor)?;
@@ -1052,12 +1076,11 @@ pub(super) fn build_rack_mode_plugins(
             }
             unknown => {
                 return Err(format!(
-                    "Unknown plugin '{}'. Available: eq, upmixer, binaural, loudness, gain, \
+                    "Unknown plugin '{unknown}'. Available: eq, upmixer, binaural, loudness, gain, \
                     single-compressor, compressor/mb-compressor, gate, limiter, expander, \
                     mb-expander, xtc, denoiser, pnd, fletcher-munson/fm, convolution/ir, \
                     spectrum/spectrum-analyzer, channel-mute-solo/mute-solo, ab-compare/ab, \
-                    band-split, band-merge, downmix, mono-to-stereo, crossfeed, matrix, lufs",
-                    unknown
+                    band-split, band-merge, downmix, mono-to-stereo, crossfeed, matrix, lufs"
                 ));
             }
         }
@@ -1085,12 +1108,12 @@ pub(super) fn build_rack_mode_plugins(
         let logical_output_channels = output_channel_map.len();
 
         log::info!("\nRack: Channel mapping enabled:");
-        log::info!("  Mapping: {}", mapping_str);
+        log::info!("  Mapping: {mapping_str}");
         log::info!("  Logical input channels: {}", input_channel_map.len());
-        log::info!("  Logical output channels: {}", logical_output_channels);
+        log::info!("  Logical output channels: {logical_output_channels}");
 
         let matrix_plugin =
-            create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
+            create_matrix_plugin_config(&input_channel_map, &output_channel_map, &matrix);
         plugin_configs.push(matrix_plugin);
 
         output_channels = max_hw_ch;
@@ -1099,7 +1122,7 @@ pub(super) fn build_rack_mode_plugins(
     // Honor `--lufs` in rack mode by appending a LoudnessMonitor as the very
     // last analyzer plugin (no-op if the user already added `lufs` to --rack).
     if lufs && !has_lufs {
-        plugin_configs.push(create_loudness_analyzer_plugin_config()?);
+        plugin_configs.push(create_loudness_analyzer_plugin_config());
         has_lufs = true;
         log::info!("Rack: Appended LoudnessMonitor plugin (--lufs)");
     }
@@ -1115,11 +1138,15 @@ pub(super) fn build_rack_mode_plugins(
     Ok((plugin_configs, output_channels, actual_loudness_idx))
 }
 
-/// Build plugin chain using traditional mode (manual PluginConfig building)
+/// Build plugin chain using traditional mode (manual `PluginConfig` building)
+#[expect(
+    clippy::too_many_lines,
+    reason = "The CLI assembles its complete ordered plugin configuration in one dispatch"
+)]
 pub(super) fn build_traditional_mode_plugins(
     audio_info: &sotf_audio::AudioFileInfo,
     filters: &[Biquad],
-    loudness: &Option<LoudnessCompensation>,
+    loudness: Option<&LoudnessCompensation>,
     loudness_auto_gain_params: (bool, f32, f32),
     lufs: bool,
     hwaudio_play: Option<&str>,
@@ -1129,7 +1156,7 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 1. Mono to Stereo (early, before upmixer)
     let output_channels = if plugins.mono_to_stereo.enabled {
-        let plugin = create_mono_to_stereo_plugin_config(&plugins.mono_to_stereo)?;
+        let plugin = create_mono_to_stereo_plugin_config(&plugins.mono_to_stereo);
         plugin_configs.push(plugin);
         log::info!("Enabled mono-to-stereo plugin");
         2 // mono_to_stereo outputs stereo
@@ -1141,8 +1168,7 @@ pub(super) fn build_traditional_mode_plugins(
     let output_channels = if plugins.upmixer.enabled {
         if output_channels != 2 {
             return Err(format!(
-                "Upmixer requires stereo input, got {} channels",
-                output_channels
+                "Upmixer requires stereo input, got {output_channels} channels"
             ));
         }
 
@@ -1164,8 +1190,7 @@ pub(super) fn build_traditional_mode_plugins(
     let output_channels = if plugins.aae.enabled {
         if output_channels != 2 {
             return Err(format!(
-                "AAE requires stereo input, got {} channels",
-                output_channels
+                "AAE requires stereo input, got {output_channels} channels"
             ));
         }
 
@@ -1185,10 +1210,7 @@ pub(super) fn build_traditional_mode_plugins(
         let binaural_plugin =
             create_binaural_decoder_plugin_config(&plugins.binaural, output_channels)?;
         plugin_configs.push(binaural_plugin);
-        log::info!(
-            "Enabled binaural decoder plugin: {}ch -> 2ch",
-            output_channels
-        );
+        log::info!("Enabled binaural decoder plugin: {output_channels}ch -> 2ch");
         2
     } else {
         output_channels
@@ -1196,14 +1218,14 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 4. Loudness compensation
     if let Some(lc) = loudness {
-        let lc_plugin = create_loudness_compensation_plugin_config(lc, loudness_auto_gain_params)?;
+        let lc_plugin = create_loudness_compensation_plugin_config(lc, loudness_auto_gain_params);
         plugin_configs.push(lc_plugin);
         log::debug!("Added loudness compensation plugin");
     }
 
     // 5. Fletcher-Munson
     if plugins.fletcher_munson.enabled {
-        let fm_plugin = create_fletcher_munson_plugin_config(&plugins.fletcher_munson)?;
+        let fm_plugin = create_fletcher_munson_plugin_config(&plugins.fletcher_munson);
         plugin_configs.push(fm_plugin);
         log::info!("Enabled Fletcher-Munson loudness compensation");
     }
@@ -1217,14 +1239,14 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 7. Gain
     if plugins.gain.enabled {
-        let gain_plugin = create_gain_plugin_config(&plugins.gain)?;
+        let gain_plugin = create_gain_plugin_config(&plugins.gain);
         plugin_configs.push(gain_plugin);
         log::info!("Enabled gain plugin ({:.1} dB)", plugins.gain.gain_db);
     }
 
     // 8. Compressor
     if plugins.compressor.enabled {
-        let comp_plugin = create_compressor_plugin_config(&plugins.compressor)?;
+        let comp_plugin = create_compressor_plugin_config(&plugins.compressor);
         plugin_configs.push(comp_plugin);
         log::info!(
             "Enabled compressor plugin (threshold={:.1}dB, ratio={:.1})",
@@ -1235,7 +1257,7 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 9. Gate
     if plugins.gate.enabled {
-        let gate_plugin = create_gate_plugin_config(&plugins.gate)?;
+        let gate_plugin = create_gate_plugin_config(&plugins.gate);
         plugin_configs.push(gate_plugin);
         log::info!(
             "Enabled gate plugin (threshold={:.1}dB)",
@@ -1245,7 +1267,7 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 10. Expander
     if plugins.expander.enabled {
-        let expander_plugin = create_expander_plugin_config(&plugins.expander)?;
+        let expander_plugin = create_expander_plugin_config(&plugins.expander);
         plugin_configs.push(expander_plugin);
         log::info!(
             "Enabled expander plugin (threshold={:.1}dB)",
@@ -1255,7 +1277,7 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 11. Limiter
     if plugins.limiter.enabled {
-        let limiter_plugin = create_limiter_plugin_config(&plugins.limiter)?;
+        let limiter_plugin = create_limiter_plugin_config(&plugins.limiter);
         plugin_configs.push(limiter_plugin);
         log::info!(
             "Enabled limiter plugin (threshold={:.1}dB)",
@@ -1266,49 +1288,49 @@ pub(super) fn build_traditional_mode_plugins(
     // 12. Multiband Compressor
     if plugins.multiband_compressor.enabled {
         let mb_comp_plugin =
-            create_multiband_compressor_plugin_config(&plugins.multiband_compressor)?;
+            create_multiband_compressor_plugin_config(&plugins.multiband_compressor);
         plugin_configs.push(mb_comp_plugin);
         log::info!("Enabled multiband compressor plugin");
     }
 
     // 13. Multiband Expander
     if plugins.multiband_expander.enabled {
-        let mb_exp_plugin = create_multiband_expander_plugin_config(&plugins.multiband_expander)?;
+        let mb_exp_plugin = create_multiband_expander_plugin_config(&plugins.multiband_expander);
         plugin_configs.push(mb_exp_plugin);
         log::info!("Enabled multiband expander plugin");
     }
 
     // 14. Band Split
     if plugins.band_split.enabled {
-        let bs_plugin = create_band_split_plugin_config(&plugins.band_split)?;
+        let bs_plugin = create_band_split_plugin_config(&plugins.band_split);
         plugin_configs.push(bs_plugin);
         log::info!("Enabled band-split plugin");
     }
 
     // 15. Band Merge
     if plugins.band_merge.enabled {
-        let bm_plugin = create_band_merge_plugin_config(&plugins.band_merge)?;
+        let bm_plugin = create_band_merge_plugin_config(&plugins.band_merge);
         plugin_configs.push(bm_plugin);
         log::info!("Enabled band-merge plugin");
     }
 
     // 16. A/B Compare
     if plugins.ab_compare.enabled {
-        let ab_plugin = create_ab_compare_plugin_config(&plugins.ab_compare)?;
+        let ab_plugin = create_ab_compare_plugin_config(&plugins.ab_compare);
         plugin_configs.push(ab_plugin);
         log::info!("Enabled A/B compare plugin");
     }
 
     // 17. XTC
     if plugins.xtc.enabled {
-        let xtc_plugin = create_xtc_plugin_config(&plugins.xtc)?;
+        let xtc_plugin = create_xtc_plugin_config(&plugins.xtc);
         plugin_configs.push(xtc_plugin);
         log::info!("Enabled XTC (crosstalk cancellation) plugin");
     }
 
     // 18. Denoiser
     if plugins.denoiser.enabled {
-        let denoiser_plugin = create_denoiser_plugin_config(&plugins.denoiser)?;
+        let denoiser_plugin = create_denoiser_plugin_config(&plugins.denoiser);
         plugin_configs.push(denoiser_plugin);
         log::info!(
             "Enabled denoiser plugin (reduction={:.1}dB)",
@@ -1318,7 +1340,7 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 19. PND
     if plugins.pnd.enabled {
-        let pnd_plugin = create_pnd_plugin_config(&plugins.pnd)?;
+        let pnd_plugin = create_pnd_plugin_config(&plugins.pnd);
         plugin_configs.push(pnd_plugin);
         log::info!(
             "Enabled PND varispeed plugin (strength={:.2})",
@@ -1346,11 +1368,7 @@ pub(super) fn build_traditional_mode_plugins(
             create_matrix_standalone_plugin_config(&plugins.matrix, output_channels)?;
         let out_ch = plugins.matrix.output_channels.unwrap_or(output_channels);
         plugin_configs.push(matrix_plugin);
-        log::info!(
-            "Enabled matrix plugin ({}ch -> {}ch)",
-            output_channels,
-            out_ch
-        );
+        log::info!("Enabled matrix plugin ({output_channels}ch -> {out_ch}ch)");
         out_ch
     } else {
         output_channels
@@ -1358,9 +1376,9 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 23. Downmix
     let output_channels = if plugins.downmix.enabled {
-        let downmix_plugin = create_downmix_plugin_config(&plugins.downmix, output_channels)?;
+        let downmix_plugin = create_downmix_plugin_config(&plugins.downmix, output_channels);
         plugin_configs.push(downmix_plugin);
-        log::info!("Enabled downmix plugin ({}ch -> 2ch)", output_channels);
+        log::info!("Enabled downmix plugin ({output_channels}ch -> 2ch)");
         2
     } else {
         output_channels
@@ -1382,12 +1400,12 @@ pub(super) fn build_traditional_mode_plugins(
         let logical_output_channels = output_channel_map.len();
 
         log::info!("\nChannel mapping enabled:");
-        log::info!("  Mapping: {}", mapping_str);
+        log::info!("  Mapping: {mapping_str}");
         log::info!("  Logical input channels: {}", input_channel_map.len());
-        log::info!("  Logical output channels: {}", logical_output_channels);
+        log::info!("  Logical output channels: {logical_output_channels}");
 
         let matrix_plugin =
-            create_matrix_plugin_config(input_channel_map, output_channel_map, matrix)?;
+            create_matrix_plugin_config(&input_channel_map, &output_channel_map, &matrix);
         plugin_configs.push(matrix_plugin);
 
         max_hw_ch
@@ -1397,31 +1415,26 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 23. Channel Mute/Solo (analyzer, late)
     if plugins.channel_mute_solo.enabled {
-        let cms_plugin = create_channel_mute_solo_plugin_config()?;
+        let cms_plugin = create_channel_mute_solo_plugin_config();
         plugin_configs.push(cms_plugin);
         log::info!("Enabled channel mute/solo plugin");
     }
 
     // 24. Spectrum Analyzer (analyzer, last)
     if plugins.spectrum_analyzer.enabled {
-        let sa_plugin = create_spectrum_analyzer_plugin_config(&plugins.spectrum_analyzer)?;
+        let sa_plugin = create_spectrum_analyzer_plugin_config(&plugins.spectrum_analyzer);
         plugin_configs.push(sa_plugin);
         log::info!("Enabled spectrum analyzer plugin");
     }
 
     // 25. Loudness monitor (analyzer, last)
-    let loudness_plugin_index = if lufs {
-        let analyzer_plugin = create_loudness_analyzer_plugin_config()?;
+    let loudness_plugin_index = lufs.then(|| {
+        let analyzer_plugin = create_loudness_analyzer_plugin_config();
         let plugin_index = plugin_configs.len();
         plugin_configs.push(analyzer_plugin);
-        log::info!(
-            "Real-time LUFS monitoring enabled (plugin index: {})",
-            plugin_index
-        );
-        Some(plugin_index)
-    } else {
-        None
-    };
+        log::info!("Real-time LUFS monitoring enabled (plugin index: {plugin_index})");
+        plugin_index
+    });
 
     Ok((plugin_configs, output_channels, loudness_plugin_index))
 }

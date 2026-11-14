@@ -3,7 +3,7 @@
 //! Provides a graph-based representation of plugin connections where plugins
 //! can be positioned on a 2D canvas and connected at the channel level.
 //!
-//! This is an alternative to the linear PluginChain, offering more flexibility
+//! This is an alternative to the linear `PluginChain`, offering more flexibility
 //! for complex routing scenarios like splits, merges, and parallel processing.
 
 use serde::{Deserialize, Serialize};
@@ -13,6 +13,7 @@ use sotf_audio::plugins::{
     plugin_output_channels, resize_matrix,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::fmt::Write as _;
 use uuid::Uuid;
 
 // Canvas cards are 160px wide; the default rack leaves a 20px gap.
@@ -71,11 +72,15 @@ impl Default for PluginGraph {
 }
 
 impl PluginGraph {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Validate editable routing against the host's node, channel and DAG contract.
+    ///
+    /// # Errors
+    /// Returns an error for missing nodes or channels, duplicate connections, cycles, or incompatible routing.
     pub fn validate_routing(&self) -> Result<(), String> {
         let mut connections = std::collections::HashSet::new();
         let mut connected_inputs = std::collections::HashSet::new();
@@ -116,7 +121,7 @@ impl PluginGraph {
                         .or_else(|| {
                             self.special_nodes
                                 .get(id)
-                                .map(|node| node.display_name().to_string())
+                                .map(|node| node.display_name().clone())
                         })
                         .unwrap_or_else(|| id.to_string());
                     return Err(format!(
@@ -160,6 +165,9 @@ impl PluginGraph {
     }
 
     /// Add a plugin node at the given position
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn add_plugin_node(
         &mut self,
         plugin_type: &PluginType,
@@ -209,6 +217,9 @@ impl PluginGraph {
     }
 
     /// Add a connection between two ports
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn add_connection(
         &mut self,
         from_node: GraphNodeId,
@@ -218,10 +229,10 @@ impl PluginGraph {
     ) -> Result<Uuid, String> {
         // Validate nodes exist
         if !self.node_exists(from_node) {
-            return Err(format!("Source node {:?} not found", from_node));
+            return Err(format!("Source node {from_node:?} not found"));
         }
         if !self.node_exists(to_node) {
-            return Err(format!("Target node {:?} not found", to_node));
+            return Err(format!("Target node {to_node:?} not found"));
         }
 
         // Check for duplicate connection
@@ -251,6 +262,7 @@ impl PluginGraph {
     }
 
     /// Check if a node exists (either plugin or special)
+    #[must_use]
     pub fn node_exists(&self, node_id: GraphNodeId) -> bool {
         self.nodes.contains_key(&node_id) || self.special_nodes.contains_key(&node_id)
     }
@@ -284,6 +296,9 @@ impl PluginGraph {
     }
 
     /// Get topologically sorted node IDs (for processing order)
+    ///
+    /// # Errors
+    /// Returns an error if the graph contains a cycle.
     pub fn topological_sort(&self) -> Result<Vec<GraphNodeId>, String> {
         let all_nodes: Vec<GraphNodeId> = self
             .nodes
@@ -336,6 +351,7 @@ impl PluginGraph {
     }
 
     /// Get connections originating from a node
+    #[must_use]
     pub fn connections_from(&self, node_id: GraphNodeId) -> Vec<&GraphConnection> {
         self.connections
             .iter()
@@ -344,6 +360,7 @@ impl PluginGraph {
     }
 
     /// Get connections going to a node
+    #[must_use]
     pub fn connections_to(&self, node_id: GraphNodeId) -> Vec<&GraphConnection> {
         self.connections
             .iter()
@@ -352,6 +369,7 @@ impl PluginGraph {
     }
 
     /// Get input channel count for a node
+    #[must_use]
     pub fn node_input_channels(&self, node_id: GraphNodeId) -> usize {
         if let Some(node) = self.nodes.get(&node_id) {
             node.input_channels
@@ -363,6 +381,7 @@ impl PluginGraph {
     }
 
     /// Get output channel count for a node
+    #[must_use]
     pub fn node_output_channels(&self, node_id: GraphNodeId) -> usize {
         if let Some(node) = self.nodes.get(&node_id) {
             node.output_channels
@@ -374,11 +393,15 @@ impl PluginGraph {
     }
 
     /// Check if the graph is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty() && self.special_nodes.is_empty()
     }
 
     /// Get all enabled plugin nodes in topological order
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn enabled_plugins_sorted(&self) -> Result<Vec<&PluginGraphNode>, String> {
         let sorted_ids = self.topological_sort()?;
         Ok(sorted_ids
@@ -393,6 +416,7 @@ impl PluginGraph {
     // =========================================================================
 
     /// Get the Input special node (if it exists)
+    #[must_use]
     pub fn input_node(&self) -> Option<&SpecialNode> {
         self.special_nodes
             .values()
@@ -400,6 +424,7 @@ impl PluginGraph {
     }
 
     /// Get the Output special node (if it exists)
+    #[must_use]
     pub fn output_node(&self) -> Option<&SpecialNode> {
         self.special_nodes
             .values()
@@ -407,11 +432,13 @@ impl PluginGraph {
     }
 
     /// Get the Input node ID (if it exists)
+    #[must_use]
     pub fn input_node_id(&self) -> Option<GraphNodeId> {
         self.input_node().map(|n| n.id)
     }
 
     /// Get the Output node ID (if it exists)
+    #[must_use]
     pub fn output_node_id(&self) -> Option<GraphNodeId> {
         self.output_node().map(|n| n.id)
     }
@@ -434,8 +461,9 @@ impl PluginGraph {
     // LoudnessMonitor Detection
     // =========================================================================
 
-    /// Check if a LoudnessMonitor plugin is connected (directly or transitively) from the Input node
-    /// Uses BFS forward from Input to find any LoudnessMonitor in the signal path
+    /// Check if a `LoudnessMonitor` plugin is connected (directly or transitively) from the Input node
+    /// Uses BFS forward from Input to find any `LoudnessMonitor` in the signal path
+    #[must_use]
     pub fn has_loudness_monitor_at_input(&self) -> bool {
         let Some(input_id) = self.input_node_id() else {
             return false;
@@ -466,8 +494,9 @@ impl PluginGraph {
         false
     }
 
-    /// Check if a LoudnessMonitor plugin is connected (directly or transitively) to the Output node
-    /// Uses BFS backward from Output to find any LoudnessMonitor in the signal path
+    /// Check if a `LoudnessMonitor` plugin is connected (directly or transitively) to the Output node
+    /// Uses BFS backward from Output to find any `LoudnessMonitor` in the signal path
+    #[must_use]
     pub fn has_loudness_monitor_at_output(&self) -> bool {
         let Some(output_id) = self.output_node_id() else {
             return false;
@@ -503,12 +532,14 @@ impl PluginGraph {
     // =========================================================================
 
     /// Get the channel count at the Input node
+    #[must_use]
     pub fn input_channel_count(&self) -> usize {
-        self.input_node().map(|n| n.channels).unwrap_or(2)
+        self.input_node().map_or(2, |n| n.channels)
     }
 
     /// Compute the channel count at the Output node by walking the signal path
-    /// Returns (input_channels, output_channels)
+    /// Returns (`input_channels`, `output_channels`)
+    #[must_use]
     pub fn compute_channel_flow(&self) -> (usize, usize) {
         let input_channels = self.input_channel_count();
         let output_channels = self
@@ -531,7 +562,11 @@ impl PluginGraph {
     // Default Rack
     // =========================================================================
 
-    /// Create the default rack: Input → InputMonitor → ReplayGain → [user zone] → Matrix → OutputMonitor → Output
+    /// Create the default rack: Input → `InputMonitor` → `ReplayGain` → [user zone] → Matrix → `OutputMonitor` → Output
+    #[must_use]
+    ///
+    /// # Panics
+    /// Panics if a required built-in rack plugin has no default settings.
     pub fn with_default_rack() -> Self {
         let mut g = Self::new();
         let spacing = RACK_NODE_PITCH;
@@ -639,6 +674,7 @@ impl PluginGraph {
     /// Returns whether this topology can run in the linear rack host.
     ///
     /// External key buses require the graph host even with one logical node path.
+    #[must_use]
     pub fn is_linear(&self) -> bool {
         self.try_linear_order().is_some()
             && !self
@@ -649,6 +685,7 @@ impl PluginGraph {
 
     /// Returns the ordered node IDs from Input to Output when the graph is linear.
     /// Returns None if the graph is not linear.
+    #[must_use]
     pub fn linear_order(&self) -> Option<Vec<GraphNodeId>> {
         self.try_linear_order()
     }
@@ -703,6 +740,7 @@ impl PluginGraph {
 
     /// Returns plugin nodes in linear order (excluding special nodes).
     /// Returns None if the graph is not linear.
+    #[must_use]
     pub fn plugins_linear(&self) -> Option<Vec<&PluginGraphNode>> {
         self.linear_order().map(|ids| {
             ids.into_iter()
@@ -712,11 +750,13 @@ impl PluginGraph {
     }
 
     /// Find the first plugin node with the given role.
+    #[must_use]
     pub fn node_for_role(&self, role: NodeRole) -> Option<&PluginGraphNode> {
         self.nodes.values().find(|n| n.role == role)
     }
 
     /// Find the node ID for the first plugin with the given role.
+    #[must_use]
     pub fn node_id_for_role(&self, role: NodeRole) -> Option<GraphNodeId> {
         self.node_for_role(role).map(|n| n.id)
     }
@@ -732,6 +772,9 @@ impl PluginGraph {
 
     /// Insert a user plugin before the Matrix node in a linear graph.
     /// Returns the new node's ID, or an error if the graph is not linear.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn add_user_plugin(&mut self, plugin_type: &PluginType) -> Result<GraphNodeId, String> {
         self.apply_linear_transaction(|graph| graph.add_user_plugin_unchecked(plugin_type))
     }
@@ -785,6 +828,9 @@ impl PluginGraph {
     }
 
     /// Remove a user plugin and re-wire its predecessor to its successor.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn remove_user_plugin(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         self.apply_linear_transaction(|graph| graph.remove_user_plugin_unchecked(node_id))
     }
@@ -824,6 +870,9 @@ impl PluginGraph {
     }
 
     /// Remove every non-permanent (user) plugin from the linear chain.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn clear_user_plugins(&mut self) -> Result<(), String> {
         self.apply_linear_transaction(|graph| {
             let user_ids: Vec<GraphNodeId> = graph
@@ -841,11 +890,17 @@ impl PluginGraph {
     }
 
     /// Swap a user plugin with its predecessor in the linear chain.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn move_user_plugin_up(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         self.move_user_plugin(node_id, -1)
     }
 
     /// Swap a user plugin with its successor in the linear chain.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn move_user_plugin_down(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         self.move_user_plugin(node_id, 1)
     }
@@ -868,13 +923,13 @@ impl PluginGraph {
         let pos = order
             .iter()
             .position(|&id| id == node_id)
-            .ok_or("Node not in linear order")? as i32;
-
-        let swap_pos = pos + direction;
-        if swap_pos < 0 || swap_pos as usize >= order.len() {
-            return Err("Cannot move beyond graph boundaries".to_string());
-        }
-        let swap_id = order[swap_pos as usize];
+            .ok_or("Node not in linear order")?;
+        let direction = isize::try_from(direction).map_err(|_error| "Invalid move direction")?;
+        let swap_pos = pos
+            .checked_add_signed(direction)
+            .filter(|&position| position < order.len())
+            .ok_or("Cannot move beyond graph boundaries")?;
+        let swap_id = order[swap_pos];
 
         // The swap target must also be a user plugin
         if let Some(swap_node) = self.nodes.get(&swap_id) {
@@ -887,9 +942,9 @@ impl PluginGraph {
 
         // Rewire: we need the predecessor and successor of the pair
         let (first_pos, second_pos) = if direction < 0 {
-            (swap_pos as usize, pos as usize)
+            (swap_pos, pos)
         } else {
-            (pos as usize, swap_pos as usize)
+            (pos, swap_pos)
         };
 
         if first_pos == 0 || second_pos + 1 >= order.len() {
@@ -926,6 +981,9 @@ impl PluginGraph {
     }
 
     /// Toggle a plugin's enabled state.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn toggle_plugin(&mut self, node_id: GraphNodeId) -> Result<(), String> {
         if self.plugins_linear().is_none() {
             let node = self.nodes.get_mut(&node_id).ok_or("Node not found")?;
@@ -979,7 +1037,7 @@ impl PluginGraph {
             .and_then(|plugins| {
                 plugins
                     .get(conflict.index)
-                    .map(|node| node.plugin.display_name().to_string())
+                    .map(|node| node.plugin.display_name().clone())
             })
             .unwrap_or_else(|| format!("{:?}", conflict.plugin_type));
 
@@ -1005,11 +1063,13 @@ impl PluginGraph {
 
     /// Number of plugin nodes (excluding special nodes).
     /// Equivalent to `PluginChain::len()`.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
 
     /// Alias for `len()`.
+    #[must_use]
     pub fn plugin_count(&self) -> usize {
         self.len()
     }
@@ -1017,14 +1077,17 @@ impl PluginGraph {
     /// Get all plugins in linear order as a Vec of references.
     /// Returns an empty Vec if the graph is not linear.
     /// Use this as a replacement for `PluginChain::plugins()`.
+    #[must_use]
     pub fn plugins(&self) -> Vec<&Plugin> {
         self.plugins_linear()
-            .map(|nodes| nodes.into_iter().map(|n| &n.plugin).collect())
-            .unwrap_or_default()
+            .map_or_default(|nodes| nodes.into_iter().map(|n| &n.plugin).collect())
     }
 
     /// Add a user plugin before the Matrix and return its linear index.
-    /// Convenience for callers that use index-based access (PluginChain compat).
+    /// Convenience for callers that use index-based access (`PluginChain` compat).
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn add_plugin(&mut self, plugin_type: &PluginType) -> Result<usize, String> {
         self.add_user_plugin(plugin_type)?;
         // Return the index of the newly inserted plugin (just before Matrix)
@@ -1032,12 +1095,14 @@ impl PluginGraph {
     }
 
     /// Get plugin by linear index (excluding special nodes).
+    #[must_use]
     pub fn get_plugin(&self, index: usize) -> Option<&Plugin> {
         self.plugins_linear()
             .and_then(|p| p.get(index).map(|n| &n.plugin))
     }
 
     /// Input channel count for a plugin at its linear rack position.
+    #[must_use]
     pub fn plugin_input_channels(&self, index: usize) -> Option<usize> {
         self.plugins_linear()
             .and_then(|plugins| plugins.get(index).map(|node| node.input_channels))
@@ -1059,6 +1124,9 @@ impl PluginGraph {
     /// The replacement is committed only if the plugin remains individually
     /// valid and the enabled linear rack still satisfies every fixed input
     /// channel contract.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn set_plugin_settings_by_index(
         &mut self,
         index: usize,
@@ -1080,6 +1148,7 @@ impl PluginGraph {
     }
 
     /// Check if an index-based plugin can be moved up in the linear chain.
+    #[must_use]
     pub fn can_move_up_by_index(&self, index: usize) -> bool {
         let Some(order) = self.linear_order() else {
             return false;
@@ -1106,6 +1175,7 @@ impl PluginGraph {
     }
 
     /// Check if an index-based plugin can be moved down in the linear chain.
+    #[must_use]
     pub fn can_move_down_by_index(&self, index: usize) -> bool {
         let Some(order) = self.linear_order() else {
             return false;
@@ -1131,6 +1201,9 @@ impl PluginGraph {
     }
 
     /// Toggle a plugin's enabled state by linear index.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn toggle_plugin_by_index(&mut self, index: usize) -> Result<(), String> {
         let node_id = self
             .plugins_linear()
@@ -1140,6 +1213,9 @@ impl PluginGraph {
     }
 
     /// Remove a user plugin by linear index.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn remove_plugin_by_index(&mut self, index: usize) -> Result<(), String> {
         let node_id = self
             .plugins_linear()
@@ -1149,6 +1225,9 @@ impl PluginGraph {
     }
 
     /// Move a plugin up by linear index.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn move_plugin_up_by_index(&mut self, index: usize) -> Result<(), String> {
         let node_id = self
             .plugins_linear()
@@ -1158,6 +1237,9 @@ impl PluginGraph {
     }
 
     /// Move a plugin down by linear index.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn move_plugin_down_by_index(&mut self, index: usize) -> Result<(), String> {
         let node_id = self
             .plugins_linear()
@@ -1168,6 +1250,9 @@ impl PluginGraph {
 
     /// Insert a plugin at a specific linear index. The node is wired into the chain.
     /// Equivalent to `PluginChain::insert_plugin()`.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn insert_plugin(
         &mut self,
         index: usize,
@@ -1219,6 +1304,9 @@ impl PluginGraph {
     /// Insert a plugin represented by concrete settings into a linear graph.
     /// This is required for plugin kinds, such as external plugins, that do not
     /// have a valid generic default.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn insert_plugin_settings(
         &mut self,
         index: usize,
@@ -1264,6 +1352,9 @@ impl PluginGraph {
     /// Move a plugin from one linear index to another (drag-and-drop).
     /// Both positions must be user plugins. Tracks the node by ID so intermediate
     /// swaps don't cause the wrong plugin to be moved.
+    ///
+    /// # Errors
+    /// Returns an error if the target node is missing, routing is invalid, or the graph mutation cannot be applied.
     pub fn move_plugin(&mut self, from: usize, to: usize) -> Result<(), String> {
         if from == to {
             return Ok(());
@@ -1301,6 +1392,7 @@ impl PluginGraph {
     }
 
     /// Whether the graph has an enabled spectrum analyzer.
+    #[must_use]
     pub fn has_enabled_spectrum_analyzer(&self) -> bool {
         self.nodes.values().any(|n| {
             n.plugin.enabled && matches!(n.plugin.plugin_type(), PluginType::SpectrumAnalyzer)
@@ -1309,6 +1401,7 @@ impl PluginGraph {
 
     /// Find channel conflicts for a given input channel count.
     /// Matches the logic of `PluginChain::find_channel_conflicts`.
+    #[must_use]
     pub fn find_channel_conflicts(&self, input_channels: usize) -> Vec<ChannelConflict> {
         let Some(plugins) = self.plugins_linear() else {
             return vec![];
@@ -1359,6 +1452,7 @@ impl PluginGraph {
     }
 
     /// Find the linear index of the first plugin of a given type.
+    #[must_use]
     pub fn find_plugin_index(&self, plugin_type: &PluginType) -> Option<usize> {
         self.plugins_linear()?
             .iter()
@@ -1371,6 +1465,7 @@ impl PluginGraph {
     /// ("Room EQ", "Broadband EQ") without accidentally clobbering each
     /// other — a name-agnostic lookup by `PluginType::EQ` would always
     /// find the first match and overwrite it.
+    #[must_use]
     pub fn find_plugin_index_by_name(&self, name: &str) -> Option<usize> {
         self.plugins_linear()?
             .iter()
@@ -1385,6 +1480,7 @@ impl PluginGraph {
     }
 
     /// Find the linear index of a plugin node by its `GraphNodeId`.
+    #[must_use]
     pub fn linear_index_of_node(&self, node_id: GraphNodeId) -> Option<usize> {
         self.plugins_linear()?.iter().position(|n| n.id == node_id)
     }
@@ -1397,6 +1493,7 @@ impl PluginGraph {
     }
 
     /// Whether any plugin is suspended.
+    #[must_use]
     pub fn has_suspensions(&self) -> bool {
         self.nodes.values().any(|n| n.plugin.suspended)
     }
@@ -1406,11 +1503,13 @@ impl PluginGraph {
     // =========================================================================
 
     /// Output channel count assuming stereo input.
+    #[must_use]
     pub fn output_channels(&self) -> usize {
         self.output_channels_for_input(2)
     }
 
     /// Walk the chain to determine the output channel count for a given input.
+    #[must_use]
     pub fn output_channels_for_input(&self, input_channels: usize) -> usize {
         let Some(plugins) = self.plugins_linear() else {
             return input_channels;
@@ -1426,6 +1525,7 @@ impl PluginGraph {
     }
 
     /// Get the speaker config from the last enabled upmixer/binaural plugin.
+    #[must_use]
     pub fn output_speaker_config(&self) -> Option<String> {
         let plugins = self.plugins_linear()?;
         for node in plugins.iter().rev() {
@@ -1451,13 +1551,14 @@ impl PluginGraph {
                     return Some(speaker_config.clone());
                 }
                 PluginSettings::BinauralDecoder { .. } => return Some("2.0".to_string()),
-                _ => continue,
+                _ => {}
             }
         }
         None
     }
 
     /// Speaker config active at a given linear index.
+    #[must_use]
     pub fn speaker_config_at_index(&self, target_index: usize) -> Option<String> {
         let plugins = self.plugins_linear()?;
         let mut config: Option<String> = None;
@@ -1501,6 +1602,7 @@ impl PluginGraph {
     // =========================================================================
 
     /// Whether the plugin at `index` in linear order is the input monitor.
+    #[must_use]
     pub fn is_input_monitor(&self, index: usize) -> bool {
         self.plugins_linear().is_some_and(|p| {
             p.get(index)
@@ -1509,6 +1611,7 @@ impl PluginGraph {
     }
 
     /// Whether the plugin at `index` in linear order is the output monitor.
+    #[must_use]
     pub fn is_output_monitor(&self, index: usize) -> bool {
         self.plugins_linear().is_some_and(|p| {
             p.get(index)
@@ -1517,6 +1620,7 @@ impl PluginGraph {
     }
 
     /// Index of the insert position for user plugins (before the Matrix).
+    #[must_use]
     pub fn user_plugin_insert_index(&self) -> usize {
         let Some(plugins) = self.plugins_linear() else {
             return 0;
@@ -1531,7 +1635,7 @@ impl PluginGraph {
     // Replay Gain
     // =========================================================================
 
-    /// Set the replay gain on the permanent Gain (ReplayGain) plugin.
+    /// Set the replay gain on the permanent Gain (`ReplayGain`) plugin.
     pub fn set_replay_gain(&mut self, gain_db: Option<f64>) {
         let Some(node) = self.node_for_role_mut(NodeRole::ReplayGain) else {
             return;
@@ -1545,12 +1649,13 @@ impl PluginGraph {
                         _ => 2,
                     },
                     gain_db: db,
-                    smoothing_ms: match &node.plugin.settings {
-                        PluginSettings::Gain { smoothing_ms, .. } => *smoothing_ms,
-                        _ => {
-                            use sotf_plugins::param_specs::{find_by_key, gain};
-                            find_by_key(gain::PARAMS, "smoothing_ms").default_f64()
-                        }
+                    smoothing_ms: if let PluginSettings::Gain { smoothing_ms, .. } =
+                        &node.plugin.settings
+                    {
+                        *smoothing_ms
+                    } else {
+                        use sotf_plugins::param_specs::{find_by_key, gain};
+                        find_by_key(gain::PARAMS, "smoothing_ms").default_f64()
                     },
                 };
             }
@@ -1561,6 +1666,7 @@ impl PluginGraph {
     }
 
     /// Read the current replay gain value.
+    #[must_use]
     pub fn replay_gain_db(&self) -> Option<f64> {
         let node = self.node_for_role(NodeRole::ReplayGain)?;
         if node.plugin.enabled {
@@ -1581,14 +1687,16 @@ impl PluginGraph {
     }
 
     /// Read the current hidden rack auto-gain trim.
+    #[must_use]
     pub fn chain_auto_gain_db(&self) -> Option<f64> {
         self.chain_auto_gain_db
     }
 
-    /// Calculate an AutoGain target, holding during intentional monitor attenuation.
+    /// Calculate an `AutoGain` target, holding during intentional monitor attenuation.
     ///
     /// Returns `None` for non-finite corrections or active mute, solo, or dim
     /// controls. Otherwise the target stays within the Gain plugin's limits.
+    #[must_use]
     pub fn chain_auto_gain_target(&self, residual_db: f64) -> Option<f64> {
         use sotf_plugins::param_specs::{find_by_key, gain};
         // Monitor attenuation is intentional, not processing loss to compensate.
@@ -1597,14 +1705,17 @@ impl PluginGraph {
             if !node.plugin.enabled || node.plugin.suspended {
                 return false;
             }
-            let states = match &node.plugin.settings {
-                PluginSettings::Matrix { channel_states, .. }
-                | PluginSettings::ChannelMuteSolo {
-                    enabled: true,
-                    channel_states,
-                    ..
-                } => channel_states,
-                _ => return false,
+            let (PluginSettings::Matrix {
+                channel_states: states,
+                ..
+            }
+            | PluginSettings::ChannelMuteSolo {
+                enabled: true,
+                channel_states: states,
+                ..
+            }) = &node.plugin.settings
+            else {
+                return false;
             };
             states
                 .iter()
@@ -1636,6 +1747,9 @@ impl PluginGraph {
     // =========================================================================
 
     /// Adapt the matrix plugin to match the file's channel count.
+    ///
+    /// # Panics
+    /// Panics if the plugin ID list and node map are inconsistent.
     pub fn adapt_matrix_to_input(&mut self, file_channels: usize) {
         let file_channels = file_channels.max(1);
         let Some(order) = self.linear_order() else {
@@ -1695,8 +1809,15 @@ impl PluginGraph {
         self.update_channel_dependent_plugins();
     }
 
-    /// Update channel-dependent plugins (EQ, Gain, BinauralDecoder, Matrix, etc.)
+    /// Update channel-dependent plugins (EQ, Gain, `BinauralDecoder`, Matrix, etc.)
     /// after any topology change.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Graph adaptation and preset migration keep related routing invariants in one operation"
+    )]
+    ///
+    /// # Panics
+    /// Panics if the plugin ID list and node map are inconsistent.
     pub fn update_channel_dependent_plugins(&mut self) {
         let Some(order) = self.linear_order() else {
             // Graph editing can temporarily produce a non-linear topology.
@@ -1836,7 +1957,9 @@ impl PluginGraph {
                     || channel_states.len() != *output_channels =>
                 {
                     let mut new_matrix = matrix.clone();
-                    let new_output_channels = if *input_channels != current_channels {
+                    let new_output_channels = if *input_channels == current_channels {
+                        *output_channels
+                    } else {
                         resize_matrix(
                             &mut new_matrix,
                             *input_channels,
@@ -1845,8 +1968,6 @@ impl PluginGraph {
                             current_channels,
                         );
                         current_channels
-                    } else {
-                        *output_channels
                     };
                     let mut new_states = channel_states.clone();
                     new_states.resize(new_output_channels, sotf_plugins::ChannelState::default());
@@ -1859,7 +1980,6 @@ impl PluginGraph {
                 }
                 PluginSettings::Downmix {
                     input_channels,
-                    input_layout: _,
                     center_gain_db,
                     surround_gain_db,
                     height_gain_db,
@@ -1869,6 +1989,7 @@ impl PluginGraph {
                     phase_blend_high_hz,
                     itu_mode,
                     matrix_ltrt,
+                    ..
                 } if *input_channels != current_channels => {
                     updated_settings = Some(PluginSettings::Downmix {
                         input_channels: current_channels,
@@ -2042,21 +2163,30 @@ impl PluginGraph {
         presets_dir: &std::path::Path,
         filename: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
+        #[derive(serde::Serialize)]
+        struct PluginPreset {
+            version: u32,
+            plugins: Vec<Plugin>,
+        }
+        #[derive(serde::Serialize)]
+        struct GraphPreset<'a> {
+            version: u32,
+            graph: &'a PluginGraph,
+        }
         let path = std::path::Path::new(filename);
         let extension = path.extension().and_then(|ext| ext.to_str());
 
         if let Some(ext) = extension {
             if ext != "json" {
                 return Err(format!(
-                    "Only .json files are supported. Please use .json extension instead of .{}",
-                    ext
+                    "Only .json files are supported. Please use .json extension instead of .{ext}"
                 )
                 .into());
             }
         }
 
         let filename = if extension.is_none() {
-            format!("{}.json", filename)
+            format!("{filename}.json")
         } else {
             filename.to_string()
         };
@@ -2069,11 +2199,7 @@ impl PluginGraph {
 
         if !self.is_linear() {
             self.validate_routing()?;
-            #[derive(serde::Serialize)]
-            struct GraphPreset<'a> {
-                version: u32,
-                graph: &'a PluginGraph,
-            }
+
             let json = serde_json::to_string_pretty(&GraphPreset {
                 version: 3,
                 graph: self,
@@ -2085,14 +2211,7 @@ impl PluginGraph {
         // Extract plugins in linear order for serialization
         let plugins: Vec<Plugin> = self
             .plugins_linear()
-            .map(|nodes| nodes.into_iter().map(|n| n.plugin.clone()).collect())
-            .unwrap_or_default();
-
-        #[derive(serde::Serialize)]
-        struct PluginPreset {
-            version: u32,
-            plugins: Vec<Plugin>,
-        }
+            .map_or_default(|nodes| nodes.into_iter().map(|n| n.plugin.clone()).collect());
 
         let preset = PluginPreset {
             version: 2,
@@ -2117,16 +2236,36 @@ impl PluginGraph {
     /// # Errors
     /// Returns an error for filesystem/format failures or invalid graph routing.
     /// The current graph is preserved if loading fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Graph adaptation and preset migration keep related routing invariants in one operation"
+    )]
+    ///
+    /// # Panics
+    /// Panics if a permanent role node is missing during validated preset migration.
     pub fn load_from_file(
         &mut self,
         presets_dir: &std::path::Path,
         filename: &str,
     ) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+        fn default_version() -> u32 {
+            2
+        }
+        #[derive(serde::Deserialize)]
+        #[allow(
+            dead_code,
+            reason = "Diagnostic and compatibility helpers are retained across platform and feature configurations"
+        )]
+        struct PluginPresetRaw {
+            #[serde(default = "default_version")]
+            version: u32,
+            plugins: Vec<serde_json::Value>,
+        }
         let path = std::path::Path::new(filename);
         let final_filename = if path.extension().and_then(|e| e.to_str()) == Some("json") {
             filename.to_string()
         } else {
-            format!("{}.json", filename)
+            format!("{filename}.json")
         };
 
         // Sanitize: use only the file name component to prevent path traversal
@@ -2176,25 +2315,14 @@ impl PluginGraph {
         }
 
         // Parse with lenient per-plugin deserialization
-        #[derive(serde::Deserialize)]
-        #[allow(dead_code)]
-        struct PluginPresetRaw {
-            #[serde(default = "default_version")]
-            version: u32,
-            plugins: Vec<serde_json::Value>,
-        }
-        fn default_version() -> u32 {
-            2
-        }
 
-        let raw: PluginPresetRaw = match serde_json::from_str(&json) {
-            Ok(p) => p,
-            Err(_) => {
-                let plugins: Vec<serde_json::Value> = serde_json::from_str(&json)?;
-                PluginPresetRaw {
-                    version: 0,
-                    plugins,
-                }
+        let raw: PluginPresetRaw = if let Ok(p) = serde_json::from_str(&json) {
+            p
+        } else {
+            let plugins: Vec<serde_json::Value> = serde_json::from_str(&json)?;
+            PluginPresetRaw {
+                version: 0,
+                plugins,
             }
         };
 
@@ -2208,7 +2336,7 @@ impl PluginGraph {
                     Err(error) => {
                         let msg =
                             format!("Plugin {} ('{}') skipped: {}", i, p.display_name(), error);
-                        log::warn!("{}", msg);
+                        log::warn!("{msg}");
                         warnings.push(msg);
                     }
                 },
@@ -2221,8 +2349,8 @@ impl PluginGraph {
                                 .or_else(|| s.as_object().and_then(|o| o.keys().next().cloned()))
                         })
                         .unwrap_or_else(|| "unknown".into());
-                    let msg = format!("Plugin {} ('{}') skipped: {}", i, ptype, e);
-                    log::warn!("{}", msg);
+                    let msg = format!("Plugin {i} ('{ptype}') skipped: {e}");
+                    log::warn!("{msg}");
                     warnings.push(msg);
                 }
             }
@@ -2331,6 +2459,7 @@ impl PluginGraph {
     ///
     /// Linear graphs: `Input → EQ → Comp → Matrix → Output`
     /// Non-linear graphs show branching with column-based layout.
+    #[must_use]
     pub fn to_ascii_diagram(&self) -> Vec<String> {
         let Ok(sorted) = self.topological_sort() else {
             return vec!["(empty graph)".to_string()];
@@ -2389,7 +2518,7 @@ impl PluginGraph {
         }
 
         // Render columns
-        let max_rows = columns.iter().map(|c| c.len()).max().unwrap_or(1);
+        let max_rows = columns.iter().map(std::vec::Vec::len).max().unwrap_or(1);
         let mut lines = Vec::new();
 
         for row in 0..max_rows {
@@ -2411,7 +2540,7 @@ impl PluginGraph {
                 arrow_line.push_str("→ ");
             }
             let count = col.len();
-            arrow_line.push_str(&format!("{:^16}", if count > 1 { "┤" } else { "─" }));
+            let _ = write!(arrow_line, "{:^16}", if count > 1 { "┤" } else { "─" });
         }
         lines.insert(0, arrow_line);
         lines.insert(
@@ -2442,6 +2571,7 @@ impl PluginGraph {
     ///
     /// Order: input monitor (if enabled) → processing plugins → output analyzers.
     /// This matches the ordering produced by `PluginChain::to_plugin_configs`.
+    #[must_use]
     pub fn to_plugin_configs(&self, sample_rate: f64) -> Vec<PluginConfig> {
         let mut input_monitor: Option<PluginConfig> = None;
         let mut processing = Vec::new();
@@ -2497,12 +2627,12 @@ impl PluginGraph {
     /// Per-port channel duplicates in `connections` (a stereo pair shows up
     /// as two `(port 0→0, port 1→1)` entries) collapse into a single
     /// logical edge — `PluginGraphConfig::edges` carries no port info.
+    #[must_use]
     pub fn to_plugin_graph_config(
         &self,
         sample_rate: f64,
     ) -> sotf_audio::engine::PluginGraphConfig {
         use sotf_audio::engine::{PluginGraphConfig, PluginGraphEdgeConfig, PluginGraphNodeConfig};
-        use std::collections::HashSet;
 
         let mut nodes = Vec::new();
         let mut id_map: HashMap<GraphNodeId, usize> = HashMap::new();
@@ -2589,6 +2719,7 @@ impl PluginGraph {
     /// Rack mode uses `to_plugin_configs`; graph mode uses serialized node order.
     ///
     /// Returns None if the node is disabled/suspended or not found.
+    #[must_use]
     pub fn get_engine_index(&self, node_id: GraphNodeId) -> Option<usize> {
         let node = self.nodes.get(&node_id)?;
         if !node.plugin.enabled || node.plugin.suspended {
@@ -2632,7 +2763,7 @@ impl PluginGraph {
         }
 
         // Search: input monitor at index 0, then processing, then analyzers
-        let offset = if input_monitor_id.is_some() { 1 } else { 0 };
+        let offset = usize::from(input_monitor_id.is_some());
 
         if input_monitor_id == Some(node_id) {
             return Some(0);
@@ -2649,6 +2780,7 @@ impl PluginGraph {
     }
 
     /// Get the engine index of the hidden rack auto-gain stage.
+    #[must_use]
     pub fn chain_auto_gain_engine_index(&self) -> Option<usize> {
         self.chain_auto_gain_db?;
 
@@ -2679,6 +2811,7 @@ impl PluginGraph {
     /// Map a linear position index (as shown in the rack) to an engine index.
     ///
     /// The linear position is the index within `plugins_linear()`.
+    #[must_use]
     pub fn get_engine_index_by_linear_position(&self, linear_idx: usize) -> Option<usize> {
         let order = self.linear_order()?;
         // Filter to plugin nodes only (skip special nodes)
@@ -2691,24 +2824,28 @@ impl PluginGraph {
     }
 
     /// Get the engine index of the input monitor.
+    #[must_use]
     pub fn input_monitor_engine_index(&self) -> Option<usize> {
         self.node_id_for_role(NodeRole::InputMonitor)
             .and_then(|id| self.get_engine_index(id))
     }
 
     /// Get the engine index of the output monitor.
+    #[must_use]
     pub fn output_monitor_engine_index(&self) -> Option<usize> {
         self.node_id_for_role(NodeRole::OutputMonitor)
             .and_then(|id| self.get_engine_index(id))
     }
 
     /// Get the engine index of the matrix.
+    #[must_use]
     pub fn matrix_engine_index(&self) -> Option<usize> {
         self.node_id_for_role(NodeRole::Matrix)
             .and_then(|id| self.get_engine_index(id))
     }
 
     /// Get the engine index of the first enabled spectrum analyzer.
+    #[must_use]
     pub fn spectrum_engine_index(&self) -> Option<usize> {
         self.nodes
             .values()
@@ -2719,6 +2856,7 @@ impl PluginGraph {
     }
 
     /// Get the engine index of the first enabled compressor.
+    #[must_use]
     pub fn compressor_engine_index(&self) -> Option<usize> {
         self.nodes
             .values()

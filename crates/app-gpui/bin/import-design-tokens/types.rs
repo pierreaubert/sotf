@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 #[derive(Debug, Clone, Parser)]
 pub(super) struct Args {
-    /// Import and validate a generic gpui-toolkit DesignSystem token document.
+    /// Import and validate a generic gpui-toolkit `DesignSystem` token document.
     #[arg(long)]
     pub(super) toolkit: bool,
 

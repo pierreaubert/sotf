@@ -4,7 +4,7 @@ use crate::app::i18n::SpeakerGraphTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, px};
 use gpui_ui_kit::{
     Accordion, AccordionItem, Card, HStack, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
@@ -14,6 +14,10 @@ impl PlayerView {
     // Step 3: Review
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_spinorama_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -116,8 +120,7 @@ impl PlayerView {
                                             "Estimated In-Room Response".to_string()
                                         } else {
                                             target
-                                                .map(|target| target.api_name())
-                                                .unwrap_or(value)
+                                                .map_or(value, |target| target.api_name())
                                                 .to_string()
                                         }
                                     } else {
@@ -211,19 +214,17 @@ impl PlayerView {
                                             .spacing(StackSpacing::Md)
                                             .child(
                                                 Text::new(format!(
-                                                    "Loss Before: {:.4}",
-                                                    initial_loss
+                                                    "Loss Before: {initial_loss:.4}"
                                                 ))
                                                 .color(theme_for_graphs.text_primary),
                                             )
                                             .child(
-                                                Text::new(format!("Loss After: {:.4}", final_loss))
+                                                Text::new(format!("Loss After: {final_loss:.4}"))
                                                     .color(theme_for_graphs.text_primary),
                                             )
                                             .child(
                                                 Text::new(format!(
-                                                    "Improvement: {:.4}",
-                                                    loss_improvement
+                                                    "Improvement: {loss_improvement:.4}"
                                                 ))
                                                 .color(if loss_improvement > 0.0 {
                                                     theme_for_graphs.success
@@ -241,8 +242,7 @@ impl PlayerView {
                                                     .when_some(initial_score, |hstack, score| {
                                                         hstack.child(
                                                             Text::new(format!(
-                                                                "Score Before: {:.2}",
-                                                                score
+                                                                "Score Before: {score:.2}"
                                                             ))
                                                             .color(theme_for_graphs.text_primary),
                                                         )
@@ -250,8 +250,7 @@ impl PlayerView {
                                                     .when_some(final_score, |hstack, score| {
                                                         hstack.child(
                                                             Text::new(format!(
-                                                                "Score After: {:.2}",
-                                                                score
+                                                                "Score After: {score:.2}"
                                                             ))
                                                             .color(theme_for_graphs.text_primary),
                                                         )
@@ -261,8 +260,7 @@ impl PlayerView {
                                                         |hstack, improvement| {
                                                             hstack.child(
                                                                 Text::new(format!(
-                                                                    "Improvement: {:+.2}",
-                                                                    improvement
+                                                                    "Improvement: {improvement:+.2}"
                                                                 ))
                                                                 .color(if improvement > 0.0 {
                                                                     theme_for_graphs.success
@@ -372,13 +370,13 @@ impl PlayerView {
                                                     div()
                                                         .text_size(d.text_xs)
                                                         .text_color(theme.text_primary)
-                                                        .child(format!("{:.0} Hz", freq)),
+                                                        .child(format!("{freq:.0} Hz")),
                                                 )
                                                 .child(
                                                     div()
                                                         .text_size(d.text_xs)
                                                         .text_color(theme.text_muted)
-                                                        .child(format!("Q {:.2}", q)),
+                                                        .child(format!("Q {q:.2}")),
                                                 )
                                                 .child(
                                                     div()
@@ -388,7 +386,7 @@ impl PlayerView {
                                                         } else {
                                                             theme.error
                                                         })
-                                                        .child(format!("{:+.1} dB", gain)),
+                                                        .child(format!("{gain:+.1} dB")),
                                                 ),
                                         )
                                 })),

@@ -1,7 +1,10 @@
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::i18n::HeadphoneEasyTranslations;
 use crate::ui::PlayerView;
-use gpui::*;
+#[cfg(feature = "dev-api")]
+use gpui::Result;
+
+use gpui::Context;
 use sotf_audio_player::autoeq::apply_headphone_easy_chain;
 use sotf_audio_player::{EQFilter, PluginSettings, PluginType};
 
@@ -10,6 +13,10 @@ impl PlayerView {
     // Action Handlers
     // ========================================================================
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(crate) fn browse_headphone_eq_measurement(&mut self, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -135,6 +142,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn start_headphone_eq_optimization(&mut self, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         if state
@@ -233,16 +244,17 @@ impl PlayerView {
                 .model
                 .error_message = None;
             cx.notify();
-            state
-                .app
-                .measurement_state
-                .headphone_eq_state
-                .cancel_requested
-                .clone()
+            std::sync::Arc::clone(
+                &state
+                    .app
+                    .measurement_state
+                    .headphone_eq_state
+                    .cancel_requested,
+            )
         });
 
         let state_entity = self.state.clone();
-        let cancel_for_task = cancel_flag.clone();
+        let cancel_for_task = std::sync::Arc::clone(&cancel_flag);
 
         cx.spawn(async move |_, cx| {
             // Run optimization in a blocking task
@@ -265,20 +277,20 @@ impl PlayerView {
                         sotf_audio_player::autoeq::parse_peq_model(&config.peq_model);
                     params.population = config.population;
                     params.recombination = config.de_cr;
-                    params.strategy = config.strategy.clone();
+                    params.strategy.clone_from(&config.strategy);
                     params.tolerance = config.tolerance;
                     params.atolerance = config.atolerance;
                     params.bo_initial_samples = config.bo_initial_samples;
                     params.bo_batch_size = config.bo_batch_size;
                     params.bo_posterior_std_threshold = config.bo_posterior_std_threshold;
-                    params.bo_acquisition = config.bo_acquisition.clone();
+                    params.bo_acquisition.clone_from(&config.bo_acquisition);
                     params.bo_ehvi = config.bo_ehvi;
                     params.refine = config.refine;
-                    params.local_algo = config.local_algo.clone();
+                    params.local_algo.clone_from(&config.local_algo);
                     params.smooth = config.smooth;
                     params.smooth_n = config.smooth_n;
 
-                    let cancel_for_cb = cancel_for_task.clone();
+                    let cancel_for_cb = std::sync::Arc::clone(&cancel_for_task);
                     sotf_audio_player::autoeq::headphone::run_headphone_optimization_with_callback(
                         &measurement_path,
                         &target_preset,
@@ -400,13 +412,12 @@ impl PlayerView {
                             .app
                             .measurement_state
                             .headphone_eq_state
-                            .status_message = format!("Optimization failed: {}", e);
+                            .status_message = format!("Optimization failed: {e}");
                         // Toast in case the user is no longer looking at the
                         // optimisation step's inline banner.
                         state.app.ui_state.toast_message =
                             Some(crate::app::types::ToastMessage::error(format!(
-                                "Optimization failed: {}",
-                                e
+                                "Optimization failed: {e}"
                             )));
                     }
                 }
@@ -683,6 +694,10 @@ impl PlayerView {
         });
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn save_headphone_eq_result(&mut self, cx: &mut Context<Self>) {
         if !self.check_headphone_result_freshness(cx) {
             return;
@@ -769,7 +784,7 @@ impl PlayerView {
 
                         state_entity.update(&mut cx.clone(), |state, cx| {
                             match write_res {
-                                Ok(_) => {
+                                Ok(()) => {
                                     state
                                         .app
                                         .measurement_state
@@ -789,8 +804,7 @@ impl PlayerView {
                                 Err(e) => {
                                     state.app.ui_state.toast_message =
                                         Some(crate::app::types::ToastMessage::error(format!(
-                                            "Failed to save: {}",
-                                            e
+                                            "Failed to save: {e}"
                                         )));
                                 }
                             }
@@ -908,6 +922,10 @@ impl PlayerView {
     // Headphone API Download (spinorama.org)
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn fetch_headphone_list(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching headphone list from API...");
         let request_id = self.state.update(cx, |state, _cx| {
@@ -995,7 +1013,7 @@ impl PlayerView {
                             });
                         }
                         Err(e) => {
-                            log::error!("Failed to fetch headphones: {}", e);
+                            log::error!("Failed to fetch headphones: {e}");
                             state_entity.update(cx, |state, cx| {
                                 let headphone_eq =
                                     &mut state.app.measurement_state.headphone_eq_state;
@@ -1003,7 +1021,7 @@ impl PlayerView {
                                     return;
                                 }
                                 headphone_eq.loading_headphones = false;
-                                let msg = format!("Failed to fetch headphones: {}", e);
+                                let msg = format!("Failed to fetch headphones: {e}");
                                 headphone_eq.model.error_message = Some(msg.clone());
                                 state.app.ui_state.toast_message =
                                     Some(crate::app::types::ToastMessage::error(msg));
@@ -1020,8 +1038,12 @@ impl PlayerView {
 
     /// Select a headphone and auto-download its measurement.
     /// Chains: versions → auto-select first → measurements → auto-select first → download curve → save CSV.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn select_headphone(&mut self, headphone: &str, cx: &mut Context<Self>) {
-        log::info!("Selected headphone: {}", headphone);
+        log::info!("Selected headphone: {headphone}");
         let headphone_name = headphone.to_string();
 
         let request_id = self.state.update(cx, |state, _cx| {
@@ -1206,7 +1228,7 @@ impl PlayerView {
                             });
                         }
                         Err(e) => {
-                            log::error!("Headphone download failed: {}", e);
+                            log::error!("Headphone download failed: {e}");
                             state_entity.update(cx, |state, cx| {
                                 if state
                                     .app
@@ -1222,7 +1244,7 @@ impl PlayerView {
                                     .measurement_state
                                     .headphone_eq_state
                                     .loading_download = false;
-                                let msg = format!("Headphone download failed: {}", e);
+                                let msg = format!("Headphone download failed: {e}");
                                 state
                                     .app
                                     .measurement_state

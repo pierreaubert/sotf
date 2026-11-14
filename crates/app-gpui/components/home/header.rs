@@ -7,7 +7,7 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{ClickEvent, MouseButton, MouseUpEvent, div, rems};
 use gpui_ui_kit::{HStack, LoadingDots, Menu, MenuItem, StackSpacing, menu_bar_button};
 
 /// Platform-appropriate modifier prefix for menu shortcut display.
@@ -124,19 +124,27 @@ impl PlayerView {
             })
     }
 
-    /// Render a single menu button using menu_bar_button from ui_kit
+    /// Render a single menu button using `menu_bar_button` from `ui_kit`
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_menu_button(
         &self,
         label: &'static str,
         menu_id: ActiveMenu,
         active_menu: ActiveMenu,
-        _theme: Theme,
+        theme: Theme,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let is_open = active_menu == menu_id;
 
-        let menu_theme = _theme.to_menu_theme();
-        menu_bar_button(format!("menu-{}", label), label, is_open, &menu_theme).on_mouse_up(
+        let menu_theme = theme.to_menu_theme();
+        menu_bar_button(format!("menu-{label}"), label, is_open, &menu_theme).on_mouse_up(
             MouseButton::Left,
             cx.listener(move |view, _: &MouseUpEvent, _window, cx| {
                 view.state.update(cx, |state, _cx| {
@@ -152,6 +160,10 @@ impl PlayerView {
     }
 
     /// Render File menu dropdown
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_file_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         // Create a weak reference to self for the callback
         let state = self.state.clone();
@@ -193,6 +205,10 @@ impl PlayerView {
     }
 
     /// Render View menu dropdown
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_show_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let app_state = self.state.read(cx);
         let translations = app_state.app.ui_state.translations.clone();
@@ -245,6 +261,10 @@ impl PlayerView {
     }
 
     /// Render Help menu dropdown
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_help_dropdown(&self, theme: Theme, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.clone();
         let app_state = self.state.read(cx);

@@ -1,4 +1,4 @@
-/// Parameter indices derived from param_specs::upmixer::PARAMS at compile time.
+/// Parameter indices derived from `param_specs::upmixer::PARAMS` at compile time.
 /// If a key is renamed or removed, compilation fails.
 pub(super) mod param_idx {
 

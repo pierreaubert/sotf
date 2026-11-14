@@ -1,4 +1,4 @@
-use sotf_services::*;
+use sotf_services::ServiceError;
 
 /// Tidal API base URL.
 pub(super) const API_BASE: &str = "https://api.tidal.com/v1";
@@ -25,11 +25,10 @@ pub(super) async fn read_bounded_json<T: serde::de::DeserializeOwned>(
     resp: reqwest::Response,
 ) -> Result<T, ServiceError> {
     if let Some(len) = resp.content_length()
-        && (len as usize) > MAX_JSON_BODY_BYTES
+        && len > MAX_JSON_BODY_BYTES as u64
     {
         return Err(ServiceError::NetworkError(format!(
-            "Response body too large: {} bytes (max {})",
-            len, MAX_JSON_BODY_BYTES
+            "Response body too large: {len} bytes (max {MAX_JSON_BODY_BYTES})"
         )));
     }
 
@@ -40,8 +39,7 @@ pub(super) async fn read_bounded_json<T: serde::de::DeserializeOwned>(
 
     if body.len() > MAX_JSON_BODY_BYTES {
         return Err(ServiceError::NetworkError(format!(
-            "Response body exceeded {} bytes",
-            MAX_JSON_BODY_BYTES
+            "Response body exceeded {MAX_JSON_BODY_BYTES} bytes"
         )));
     }
 

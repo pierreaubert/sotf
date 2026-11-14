@@ -4,7 +4,7 @@ use crate::components::icons::{Icon, IconName};
 use crate::components::{design::Ds, settings_tab_label};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, SharedString, div, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Input, InputSize, Select, SelectOption, TabItem, TabVariant,
     Tabs, Text,
@@ -55,6 +55,10 @@ impl PlayerView {
         app.set_screen(screen, "PreferencesDone");
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_settings_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);

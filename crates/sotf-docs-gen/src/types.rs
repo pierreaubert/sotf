@@ -6,7 +6,7 @@ pub(super) struct PluginEntry {
     pub(super) name: &'static str,
     pub(super) description: &'static str,
     pub(super) params: &'static [ParamSpec],
-    /// Some plugins have a separate GLOBAL_PARAMS for multiband/EQ config.
+    /// Some plugins have a separate `GLOBAL_PARAMS` for multiband/EQ config.
     pub(super) global_params: Option<&'static [ParamSpec]>,
     /// Per-band/filter template params (EQ, multiband compressor/expander).
     pub(super) band_template: Option<&'static [ParamSpec]>,

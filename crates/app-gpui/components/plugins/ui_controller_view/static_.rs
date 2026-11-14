@@ -2,7 +2,7 @@
 use super::consts::BUTTON_SIZE;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Rgba, div, px};
 
 /// Mark an unassigned rotary hardware control with a noninteractive slider.
 pub(super) fn static_slider(theme: &Theme, accent: Rgba, scale: f32) -> impl IntoElement {

@@ -25,7 +25,7 @@
             .variant(ButtonVariant::Ghost)
             .size(ButtonSize::Xs);
         if let Some(ref h) = on_detail_level_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             let next = match detail_level {
                 DetailLevel::Simple => "intermediate",
                 DetailLevel::Intermediate => "expert",

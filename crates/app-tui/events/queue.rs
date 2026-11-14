@@ -150,7 +150,7 @@ fn add_selection_to_active_playlist(app: &mut App) -> Option<PlayerCommand> {
                 .add_album_to_playlist(database, playlist_index, &album)
             {
                 Ok(()) => {
-                    app.ui.status_message = Some(format!("Added '{}' to playlist", album.title))
+                    app.ui.status_message = Some(format!("Added '{}' to playlist", album.title));
                 }
                 Err(error) => app.ui.status_message = Some(format!("Error: {error}")),
             }

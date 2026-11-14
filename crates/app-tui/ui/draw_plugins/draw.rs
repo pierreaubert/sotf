@@ -1,4 +1,10 @@
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, Borders, Cell, Clear, Constraint, Direction, Frame, InputMode, Layout,
+    Line, List, ListItem, ListState, MatrixEditMode, Modifier, Paragraph, PluginSettings,
+    PluginType, Rect, Row, Screen, Span, Style, Table, Wrap, autocomplete_dropdown_height,
+    detect_matrix_preset, draw_help_box, draw_help_box_with_text, get_channel_label,
+    linear_to_db_string, render_autocomplete_dropdown,
+};
 use super::misc::format_channel_config;
 use super::types::ParamDisplayEntry;
 use super::types::get_plugin_parameters;
@@ -48,6 +54,8 @@ pub(crate) fn draw_plugins_screen(f: &mut Frame, area: Rect, app: &App) {
 }
 
 pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::StatefulWidget;
+
     // Non-linear topology: `plugins()` (linear-only) returns empty, so the
     // user would see a misleading "0 plugins" rack. Show a banner instead
     // — same affordance as the GPUI "Open Graph View" card. The TUI has no
@@ -141,11 +149,12 @@ pub(crate) fn draw_plugin_list(f: &mut Frame, area: Rect, app: &App) {
         state.select(Some(app.plugin_rack.selected_index));
     }
 
-    use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
 }
 
 pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::StatefulWidget;
+
     let is_selecting = app.input_mode == InputMode::AddPlugin;
 
     // Walk the shared category list. For each category emit a non-selectable
@@ -203,10 +212,18 @@ pub(crate) fn draw_available_plugins(f: &mut Frame, area: Rect, app: &App) {
         state.select(Some(row));
     }
 
-    use ratatui::widgets::StatefulWidget;
     StatefulWidget::render(list, area, f.buffer_mut(), &mut state);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
     if let Some(plugin) = app.get_editing_plugin() {
         // Check if we're editing a Matrix plugin - use specialized editor
@@ -217,8 +234,8 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 
         // Create a centered modal (60% width, 80% height)
         let area = f.area();
-        let modal_width = (area.width as f32 * 0.6) as u16;
-        let modal_height = (area.height as f32 * 0.8) as u16;
+        let modal_width = (f32::from(area.width) * 0.6) as u16;
+        let modal_height = (f32::from(area.height) * 0.8) as u16;
         let modal_x = (area.width - modal_width) / 2;
         let modal_y = (area.height - modal_height) / 2;
 
@@ -290,7 +307,7 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
                     // Render as a separator line: ── Title ──────
                     let prefix = "\u{2500}\u{2500} ";
                     let suffix_char = '\u{2500}';
-                    let label = format!("{}{} ", prefix, title);
+                    let label = format!("{prefix}{title} ");
                     let remaining = inner_width.saturating_sub(label.len());
                     let separator_line = format!(
                         "{}{}",
@@ -319,8 +336,8 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
                     let padded_name = format!("{:>width$}", name, width = max_label_width + 1);
 
                     lines.push(Line::from(vec![
-                        Span::styled(format!("{} ", padded_name), style),
-                        Span::styled(value.to_string(), style.fg(app.theme.title_color)),
+                        Span::styled(format!("{padded_name} "), style),
+                        Span::styled(value.clone(), style.fg(app.theme.title_color)),
                     ]));
                     param_index += 1;
                 }
@@ -346,6 +363,11 @@ pub(crate) fn draw_plugin_editor_modal(f: &mut Frame, app: &App) {
 }
 
 /// Specialized matrix editor modal with visual grid display
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
     let Some(plugin) = app.get_editing_plugin() else {
         return;
@@ -363,8 +385,8 @@ pub(crate) fn draw_matrix_editor_modal(f: &mut Frame, app: &App) {
 
     // Create a centered modal (70% width, 85% height)
     let area = f.area();
-    let modal_width = (area.width as f32 * 0.7).min(80.0) as u16;
-    let modal_height = (area.height as f32 * 0.85).min(35.0) as u16;
+    let modal_width = (f32::from(area.width) * 0.7).min(80.0) as u16;
+    let modal_height = (f32::from(area.height) * 0.85).min(35.0) as u16;
     let modal_x = (area.width - modal_width) / 2;
     let modal_y = (area.height - modal_height) / 2;
 
@@ -468,7 +490,7 @@ pub(crate) fn draw_matrix_header(
     lines.push(Line::from(vec![
         Span::styled(crate::tui_text!(app, "  Input Channels:  "), base_style),
         Span::styled(
-            format!("[{}]", input_channels),
+            format!("[{input_channels}]"),
             input_style.fg(app.theme.accent_primary),
         ),
         Span::styled(
@@ -489,7 +511,7 @@ pub(crate) fn draw_matrix_header(
     lines.push(Line::from(vec![
         Span::styled(crate::tui_text!(app, "  Output Channels: "), base_style),
         Span::styled(
-            format!("[{}]", output_channels),
+            format!("[{output_channels}]"),
             output_style.fg(app.theme.accent_primary),
         ),
         Span::styled(
@@ -510,7 +532,7 @@ pub(crate) fn draw_matrix_header(
     lines.push(Line::from(vec![
         Span::styled(crate::tui_text!(app, "  Preset:          "), base_style),
         Span::styled(
-            format!("[{}]", preset_name),
+            format!("[{preset_name}]"),
             preset_style.fg(app.theme.title_color),
         ),
     ]));
@@ -611,11 +633,20 @@ pub(crate) fn draw_matrix_grid(
     f.render_widget(table, area);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.7) as u16;
+    let dialog_width = (f32::from(area.width) * 0.7) as u16;
     let ac_height = autocomplete_dropdown_height(app);
-    let base_height = (area.height as f32 * 0.6) as u16;
+    let base_height = (f32::from(area.height) * 0.6) as u16;
     let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
@@ -787,11 +818,20 @@ pub(crate) fn draw_save_plugins_dialog(f: &mut Frame, app: &App) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.7) as u16;
+    let dialog_width = (f32::from(area.width) * 0.7) as u16;
     let ac_height = autocomplete_dropdown_height(app);
-    let base_height = (area.height as f32 * 0.6) as u16;
+    let base_height = (f32::from(area.height) * 0.6) as u16;
     let dialog_height = base_height + ac_height;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height.saturating_sub(dialog_height)) / 2;
@@ -935,9 +975,14 @@ pub(crate) fn draw_load_plugins_dialog(f: &mut Frame, app: &App) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_width = (f32::from(area.width) * 0.6) as u16;
     let ac_height = autocomplete_dropdown_height(app);
     let base_height: u16 = 10;
     let dialog_height = base_height + ac_height;
@@ -1010,9 +1055,14 @@ pub(crate) fn draw_load_apo_file_dialog(f: &mut Frame, app: &App) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_load_sofa_file_dialog(f: &mut Frame, app: &App) {
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_width = (f32::from(area.width) * 0.6) as u16;
     let ac_height = autocomplete_dropdown_height(app);
     let base_height: u16 = 8;
     let dialog_height = base_height + ac_height;

@@ -48,7 +48,7 @@ pub(super) fn flatten_json(
                 let key = if prefix.is_empty() {
                     k.clone()
                 } else {
-                    format!("{}.{}", prefix, k)
+                    format!("{prefix}.{k}")
                 };
                 flatten_json(v, key, pairs);
             }
@@ -57,7 +57,7 @@ pub(super) fn flatten_json(
             // Skip large arrays (measurement data, etc.)
             if arr.len() <= 8 {
                 for (i, v) in arr.iter().enumerate() {
-                    let key = format!("{}[{}]", prefix, i);
+                    let key = format!("{prefix}[{i}]");
                     flatten_json(v, key, pairs);
                 }
             }

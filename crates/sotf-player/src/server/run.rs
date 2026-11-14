@@ -95,6 +95,13 @@ pub(super) async fn run_sotf_api_server(
 /// Loads the music library from the database, ensures the SOTF API is enabled,
 /// starts enabled servers (SOTF API, MPD, DLNA), and blocks until a shutdown
 /// signal (SIGINT/SIGTERM) is received.
+///
+/// # Errors
+/// Returns an error if runtime initialization or server startup fails.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Server startup retains ownership of listeners, tasks, and shutdown coordination"
+)]
 pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let mut config = crate::config::load_server_config()?;
     if ensure_sotf_api_connection_config(&mut config) {
@@ -107,7 +114,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                 );
             }
             Err(err) => {
-                log::warn!("[server] Failed to persist SOTF API defaults: {}", err);
+                log::warn!("[server] Failed to persist SOTF API defaults: {err}");
                 eprintln!("Warning: could not save SOTF API defaults: {err}");
             }
         }
@@ -122,8 +129,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let mut library = MusicLibrary::with_database()?;
     library.load_from_database()?;
     let album_count = library.albums.len();
-    log::info!("[server] Library loaded: {} albums", album_count);
-    eprintln!("Library loaded: {} albums", album_count);
+    log::info!("[server] Library loaded: {album_count} albums");
+    eprintln!("Library loaded: {album_count} albums");
 
     let player = Player::new();
     let event_broadcaster = crate::sotf_server_event::new_event_broadcaster(64);
@@ -152,7 +159,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(ServerState {
         player: Mutex::new(player),
         library: Mutex::new(library),
-        media_source_index: Mutex::new(Default::default()),
+        media_source_index: Mutex::new(super::media_index::MediaSourceIndex::default()),
         queue: Mutex::new(Queue::new()),
         playlist_version: std::sync::atomic::AtomicU32::new(1),
         library_version: std::sync::atomic::AtomicU64::new(1),
@@ -222,8 +229,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
 
             handles.push(tokio::spawn(async move {
                 if let Err(e) = server.run(cancel).await {
-                    log::error!("[server] MPD server error: {}", e);
-                    eprintln!("MPD server error: {}", e);
+                    log::error!("[server] MPD server error: {e}");
+                    eprintln!("MPD server error: {e}");
                 }
             }));
         }
@@ -252,8 +259,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                     server.run(&bind_address, local_ip, cancel).await
                 };
                 if let Err(e) = result {
-                    log::error!("[server] DLNA server error: {}", e);
-                    eprintln!("DLNA server error: {}", e);
+                    log::error!("[server] DLNA server error: {e}");
+                    eprintln!("DLNA server error: {e}");
                 }
             }));
         }
@@ -267,7 +274,7 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(api_listener) = match TcpListener::bind(&api_bind_addr).await {
                 Ok(listener) => Some(listener),
                 Err(e) => {
-                    log::error!("[server] SOTF API bind error: {}", e);
+                    log::error!("[server] SOTF API bind error: {e}");
                     eprintln!("SOTF API bind error on {api_bind_addr}: {e}");
                     let _ = shutdown_tx.send(true);
                     None
@@ -309,8 +316,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .await
                     {
-                        log::error!("[server] SOTF API server error: {}", e);
-                        eprintln!("SOTF API server error: {}", e);
+                        log::error!("[server] SOTF API server error: {e}");
+                        eprintln!("SOTF API server error: {e}");
                     }
                     let _ = api_discovery_tx_on_exit.send(true);
                 }));
@@ -331,8 +338,8 @@ pub fn run_server_mode() -> Result<(), Box<dyn std::error::Error>> {
                     )
                     .await
                     {
-                        log::warn!("[server] SOTF API discovery error: {}", e);
-                        eprintln!("SOTF API discovery warning: {}", e);
+                        log::warn!("[server] SOTF API discovery error: {e}");
+                        eprintln!("SOTF API discovery warning: {e}");
                     }
                 }));
             }

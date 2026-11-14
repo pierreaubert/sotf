@@ -6,6 +6,7 @@ use super::language::Language;
 const EXPANSION_NUMERATOR: usize = 14;
 const EXPANSION_DENOMINATOR: usize = 10;
 
+#[must_use]
 pub fn pseudo_expand(source: &str) -> String {
     if source.is_empty() {
         return String::new();
@@ -61,6 +62,7 @@ pub fn pseudo_static(source: &'static str) -> &'static str {
     value
 }
 
+#[must_use]
 pub fn pseudo_owned(language: Language, value: String) -> String {
     if language.is_pseudo() {
         pseudo_expand(&value)
@@ -69,6 +71,7 @@ pub fn pseudo_owned(language: Language, value: String) -> String {
     }
 }
 
+#[must_use]
 pub fn pseudo_borrowed(language: Language, value: &'static str) -> &'static str {
     if language.is_pseudo() {
         pseudo_static(value)

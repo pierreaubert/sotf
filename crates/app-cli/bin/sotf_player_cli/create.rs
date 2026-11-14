@@ -92,7 +92,7 @@ pub(super) fn create_upmixer_plugin_config(args: &UpmixerArgs) -> Result<PluginC
 pub(super) fn create_loudness_compensation_plugin_config(
     lc: &LoudnessCompensation,
     auto_gain_params: (bool, f32, f32),
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
 
     let (auto_gain_enabled, auto_gain_max_db, auto_gain_smoothing_ms) = auto_gain_params;
@@ -106,10 +106,10 @@ pub(super) fn create_loudness_compensation_plugin_config(
         "auto_gain_smoothing_ms": auto_gain_smoothing_ms,
     });
 
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "loudness_compensation".to_string(),
         parameters,
-    })
+    }
 }
 
 pub(super) fn create_aae_plugin_config(args: &AaeArgs) -> Result<PluginConfig, String> {
@@ -157,7 +157,7 @@ pub(super) fn create_binaural_decoder_plugin_config(
         .ok_or("Binaural decoder requires --sofa-file to be specified")?;
 
     if !sofa_path.exists() {
-        return Err(format!("SOFA file does not exist: {:?}", sofa_path));
+        return Err(format!("SOFA file does not exist: {}", sofa_path.display()));
     }
 
     let parameters = json!({
@@ -174,30 +174,28 @@ pub(super) fn create_binaural_decoder_plugin_config(
     })
 }
 
-pub(super) fn create_loudness_analyzer_plugin_config() -> Result<PluginConfig, String> {
+pub(super) fn create_loudness_analyzer_plugin_config() -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "loudness_monitor".to_string(),
         parameters: json!({}),
-    })
+    }
 }
 
-pub(super) fn create_gain_plugin_config(args: &GainArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_gain_plugin_config(args: &GainArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "gain".to_string(),
         parameters: json!({
             "gain_db": args.gain_db,
             "smoothing_ms": args.smoothing_ms,
         }),
-    })
+    }
 }
 
-pub(super) fn create_compressor_plugin_config(
-    args: &CompressorArgs,
-) -> Result<PluginConfig, String> {
+pub(super) fn create_compressor_plugin_config(args: &CompressorArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "compressor".to_string(),
         parameters: json!({
             "threshold_db": args.threshold_db,
@@ -215,12 +213,12 @@ pub(super) fn create_compressor_plugin_config(
             "program_dependent_release": args.program_dependent_release,
             "measured_auto_makeup": args.measured_auto_makeup,
         }),
-    })
+    }
 }
 
-pub(super) fn create_gate_plugin_config(args: &GateArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_gate_plugin_config(args: &GateArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "gate".to_string(),
         parameters: json!({
             "threshold_db": args.threshold_db,
@@ -236,12 +234,12 @@ pub(super) fn create_gate_plugin_config(args: &GateArgs) -> Result<PluginConfig,
             "knee_db": args.knee_db,
             "lookahead_ms": args.lookahead_ms,
         }),
-    })
+    }
 }
 
-pub(super) fn create_limiter_plugin_config(args: &LimiterArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_limiter_plugin_config(args: &LimiterArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "limiter".to_string(),
         parameters: json!({
             "threshold_db": args.threshold_db,
@@ -252,12 +250,12 @@ pub(super) fn create_limiter_plugin_config(args: &LimiterArgs) -> Result<PluginC
             "true_peak": args.true_peak,
             "dual_release": args.dual_release,
         }),
-    })
+    }
 }
 
-pub(super) fn create_expander_plugin_config(args: &ExpanderArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_expander_plugin_config(args: &ExpanderArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "expander".to_string(),
         parameters: json!({
             "threshold_db": args.threshold_db,
@@ -275,14 +273,14 @@ pub(super) fn create_expander_plugin_config(args: &ExpanderArgs) -> Result<Plugi
             "detection_mode": args.detection_mode,
             "measured_auto_makeup": args.measured_auto_makeup,
         }),
-    })
+    }
 }
 
 pub(super) fn create_multiband_compressor_plugin_config(
     args: &MultibandCompressorArgs,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "multiband_compressor".to_string(),
         parameters: json!({
             "num_bands": args.num_bands,
@@ -299,14 +297,14 @@ pub(super) fn create_multiband_compressor_plugin_config(
             "mix": args.mix,
             "link_channels": !args.unlink_channels,
         }),
-    })
+    }
 }
 
 pub(super) fn create_multiband_expander_plugin_config(
     args: &MultibandExpanderArgs,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "multiband_expander".to_string(),
         parameters: json!({
             "num_bands": args.num_bands,
@@ -326,12 +324,12 @@ pub(super) fn create_multiband_expander_plugin_config(
             "mix": args.mix,
             "link_channels": !args.unlink_channels,
         }),
-    })
+    }
 }
 
-pub(super) fn create_xtc_plugin_config(args: &XtcArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_xtc_plugin_config(args: &XtcArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "xtc".to_string(),
         parameters: json!({
             "distance_m": args.distance_m,
@@ -362,12 +360,12 @@ pub(super) fn create_xtc_plugin_config(args: &XtcArgs) -> Result<PluginConfig, S
             "auto_gain_smoothing_ms": args.auto_gain_smoothing_ms,
             "pinna_model_enabled": args.pinna_model,
         }),
-    })
+    }
 }
 
-pub(super) fn create_denoiser_plugin_config(args: &DenoiserArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_denoiser_plugin_config(args: &DenoiserArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "denoiser".to_string(),
         parameters: json!({
             "reduction_db": args.reduction_db,
@@ -394,34 +392,34 @@ pub(super) fn create_denoiser_plugin_config(args: &DenoiserArgs) -> Result<Plugi
             "use_captured_profile": args.use_captured_profile,
             "clear_profile": args.clear_profile,
         }),
-    })
+    }
 }
 
-pub(super) fn create_pnd_plugin_config(args: &PndArgs) -> Result<PluginConfig, String> {
+pub(super) fn create_pnd_plugin_config(args: &PndArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "pnd".to_string(),
         parameters: json!({
             "correction_strength": args.correction_strength,
             "analysis_window_ms": args.analysis_window_ms,
             "drift_smoothing": args.drift_smoothing,
         }),
-    })
+    }
 }
 
 pub(super) fn create_fletcher_munson_plugin_config(
     args: &FletcherMunsonArgs,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
     // Fletcher-Munson merged into LoudnessCompensation Auto mode
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "loudness_compensation".to_string(),
         parameters: json!({
             "mode": 2,
             "playback_volume_db": 0.0,
-            "reference_level_db": 83.0 + args.reference_level_db as f64,
+            "reference_level_db": 83.0 + f64::from(args.reference_level_db),
         }),
-    })
+    }
 }
 
 pub(super) fn create_convolution_plugin_config(
@@ -436,8 +434,8 @@ pub(super) fn create_convolution_plugin_config(
 
     if !ir_path.exists() {
         return Err(format!(
-            "Impulse response file does not exist: {:?}",
-            ir_path
+            "Impulse response file does not exist: {}",
+            ir_path.display()
         ));
     }
 
@@ -453,9 +451,9 @@ pub(super) fn create_convolution_plugin_config(
 
 pub(super) fn create_spectrum_analyzer_plugin_config(
     args: &SpectrumAnalyzerArgs,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "spectrum_analyzer".to_string(),
         parameters: json!({
             "num_bins": args.num_bins,
@@ -463,63 +461,57 @@ pub(super) fn create_spectrum_analyzer_plugin_config(
             "max_freq": args.max_freq,
             "smoothing": args.smoothing,
         }),
-    })
+    }
 }
 
-pub(super) fn create_channel_mute_solo_plugin_config() -> Result<PluginConfig, String> {
+pub(super) fn create_channel_mute_solo_plugin_config() -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "channel_mute_solo".to_string(),
         parameters: json!({
             "enabled": true,
         }),
-    })
+    }
 }
 
-pub(super) fn create_ab_compare_plugin_config(
-    args: &ABCompareArgs,
-) -> Result<PluginConfig, String> {
+pub(super) fn create_ab_compare_plugin_config(args: &ABCompareArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "ab_compare".to_string(),
         parameters: json!({
             "auto_gain_enabled": args.auto_gain,
             "bypass": args.bypass,
         }),
-    })
+    }
 }
 
-pub(super) fn create_band_split_plugin_config(
-    args: &BandSplitArgs,
-) -> Result<PluginConfig, String> {
+pub(super) fn create_band_split_plugin_config(args: &BandSplitArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "band_split".to_string(),
         parameters: json!({
             "frequency": args.frequency,
             "type": args.crossover_type,
         }),
-    })
+    }
 }
 
-pub(super) fn create_band_merge_plugin_config(
-    args: &BandMergeArgs,
-) -> Result<PluginConfig, String> {
+pub(super) fn create_band_merge_plugin_config(args: &BandMergeArgs) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "band_merge".to_string(),
         parameters: json!({
             "bands": args.bands,
         }),
-    })
+    }
 }
 
 pub(super) fn create_downmix_plugin_config(
     args: &DownmixArgs,
     input_channels: usize,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "downmix".to_string(),
         parameters: json!({
             "input_channels": input_channels,
@@ -532,14 +524,14 @@ pub(super) fn create_downmix_plugin_config(
             "phase_blend_high_hz": args.phase_blend_high_hz,
             "itu_mode": args.itu_mode,
         }),
-    })
+    }
 }
 
 pub(super) fn create_mono_to_stereo_plugin_config(
     args: &MonoToStereoArgs,
-) -> Result<PluginConfig, String> {
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "mono_to_stereo".to_string(),
         parameters: json!({
             "stereo_width": args.stereo_width,
@@ -548,7 +540,7 @@ pub(super) fn create_mono_to_stereo_plugin_config(
             "decor_high_hz": args.decor_high_hz,
             "freq_dependent": args.enable_comp_eq,
         }),
-    })
+    }
 }
 
 pub(super) fn create_crossfeed_plugin_config(args: &CrossfeedArgs) -> Result<PluginConfig, String> {
@@ -620,8 +612,7 @@ pub(super) fn create_matrix_standalone_plugin_config(
         let actual_rows = matrix.len() / input_channels;
         if actual_rows != expected_rows {
             return Err(format!(
-                "Matrix has {} rows but expected {} (output channels)",
-                actual_rows, expected_rows
+                "Matrix has {actual_rows} rows but expected {expected_rows} (output channels)"
             ));
         }
         matrix
@@ -644,7 +635,7 @@ pub(super) fn create_matrix_standalone_plugin_config(
     })
 }
 
-/// Convert Biquad filters to PluginConfig for EQ plugin
+/// Convert Biquad filters to `PluginConfig` for EQ plugin
 pub(super) fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig, String> {
     use serde_json::json;
 
@@ -678,10 +669,10 @@ pub(super) fn create_eq_plugin_config(filters: &[Biquad]) -> Result<PluginConfig
 }
 
 pub(super) fn create_matrix_plugin_config(
-    input_channel_map: Vec<usize>,
-    output_channel_map: Vec<usize>,
-    matrix: Vec<f32>,
-) -> Result<PluginConfig, String> {
+    input_channel_map: &[usize],
+    output_channel_map: &[usize],
+    matrix: &[f32],
+) -> sotf_audio::PluginConfig {
     use serde_json::json;
 
     let parameters = json!({
@@ -690,8 +681,8 @@ pub(super) fn create_matrix_plugin_config(
         "matrix": matrix,
     });
 
-    Ok(PluginConfig {
+    PluginConfig {
         plugin_type: "matrix".to_string(),
         parameters,
-    })
+    }
 }

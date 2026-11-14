@@ -10,9 +10,9 @@ use super::types::StringCallback;
 use super::types::ToggleCallback;
 use super::types::UsizeCallback;
 use crate::i18n::Language;
-use gpui::*;
+use gpui::{App, ElementId, IntoElement, Window};
 
-/// A reusable form for AutoEQ optimization parameters.
+/// A reusable form for `AutoEQ` optimization parameters.
 ///
 /// Renders three sections:
 /// 1. Goals & Configuration - system type, targets, and EQ mode
@@ -37,6 +37,10 @@ pub(crate) struct FormMeta {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub(crate) struct FormVisibility {
     pub(crate) show_goals: bool,
     pub(crate) show_eq_design: bool,
@@ -61,6 +65,10 @@ pub(crate) struct FormVisibility {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct EqDesignCallbacks {
     pub(crate) on_opt_mode_change: Option<StringCallback>,
     pub(crate) on_opt_mode_toggle: Option<ToggleCallback>,
@@ -82,6 +90,10 @@ pub(crate) struct EqDesignCallbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct OptimizationCallbacks {
     pub(crate) on_algo_change: Option<StringCallback>,
     pub(crate) on_algo_toggle: Option<ToggleCallback>,
@@ -111,6 +123,10 @@ pub(crate) struct OptimizationCallbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct GoalsCallbacks {
     pub(crate) on_loss_type_change: Option<StringCallback>,
     pub(crate) on_loss_type_toggle: Option<ToggleCallback>,
@@ -122,6 +138,10 @@ pub(crate) struct GoalsCallbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct RoomCorrectionCallbacks {
     pub(crate) on_use_target_tilt_change: Option<BoolCallback>,
     pub(crate) on_tilt_type_change: Option<StringCallback>,
@@ -156,6 +176,10 @@ pub(crate) struct RoomCorrectionCallbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct V2Callbacks {
     pub(crate) on_allow_delay_change: Option<BoolCallback>,
     pub(crate) on_seed_enabled_change: Option<BoolCallback>,
@@ -172,6 +196,10 @@ pub(crate) struct V2Callbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct MultiMeasurementCallbacks {
     pub(crate) on_use_multi_measurement_change: Option<BoolCallback>,
     pub(crate) on_multi_measurement_strategy_change: Option<StringCallback>,
@@ -182,6 +210,10 @@ pub(crate) struct MultiMeasurementCallbacks {
 }
 
 #[derive(Default)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub(crate) struct FormLifecycleCallbacks {
     pub(crate) on_block_focus: Option<StringCallback>,
     pub(crate) on_stage_change:
@@ -207,7 +239,11 @@ pub struct AutoEqForm {
 }
 
 impl AutoEqForm {
-    /// Create a new AutoEQ form
+    /// Create a new `AutoEQ` form
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn new(id: impl Into<ElementId>) -> Self {
         Self {
             meta: FormMeta {
@@ -366,132 +402,154 @@ impl AutoEqForm {
     }
 
     /// Set the configuration values
+    #[must_use]
     pub fn config(mut self, config: AutoEqConfig) -> Self {
         self.meta.config = config;
         self
     }
 
     /// Set UI state
+    #[must_use]
     pub fn ui_state(mut self, ui_state: AutoEqFormUiState) -> Self {
         self.meta.ui_state = ui_state;
         self
     }
 
     /// Set disabled state
+    #[must_use]
     pub fn disabled(mut self, disabled: bool) -> Self {
         self.meta.disabled = disabled;
         self
     }
 
     /// Show/hide Goals section
+    #[must_use]
     pub fn show_goals(mut self, show: bool) -> Self {
         self.visibility.show_goals = show;
         self
     }
 
     /// Show/hide EQ Design section
+    #[must_use]
     pub fn show_eq_design(mut self, show: bool) -> Self {
         self.visibility.show_eq_design = show;
         self
     }
 
     /// Show/hide Optimization Tuning section
+    #[must_use]
     pub fn show_optimization_tuning(mut self, show: bool) -> Self {
         self.visibility.show_optimization_tuning = show;
         self
     }
 
     /// Set theme
+    #[must_use]
     pub fn theme(mut self, theme: AutoEqFormTheme) -> Self {
         self.meta.theme = Some(theme);
         self
     }
 
-    /// Set allowed optimization modes (e.g., vec!["iir".to_string(), "fir".to_string()])
+    /// Set allowed optimization modes (e.g., vec!["`iir".to_string()`, "`fir".to_string()`])
+    #[must_use]
     pub fn allowed_opt_modes(mut self, modes: Vec<String>) -> Self {
         self.meta.allowed_opt_modes = Some(modes);
         self
     }
 
     /// Set the optimization type (Speaker or Headphone)
+    #[must_use]
     pub fn optimization_type(mut self, opt_type: OptimizationType) -> Self {
         self.meta.optimization_type = opt_type;
         self
     }
 
     /// Set available spinorama curves for speaker mode
+    #[must_use]
     pub fn available_spinorama_curves(mut self, curves: Vec<String>) -> Self {
         self.meta.available_spinorama_curves = curves;
         self
     }
 
     /// Hide DE-specific parameters (strategy, mutation F, crossover CR)
+    #[must_use]
     pub fn hide_de_params(mut self, hide: bool) -> Self {
         self.visibility.hide_de_params = hide;
         self
     }
 
     /// Hide smoothing toggle and window size
+    #[must_use]
     pub fn hide_smoothing(mut self, hide: bool) -> Self {
         self.visibility.hide_smoothing = hide;
         self
     }
 
     /// Hide spacing weight and min spacing octaves
+    #[must_use]
     pub fn hide_spacing(mut self, hide: bool) -> Self {
         self.visibility.hide_spacing = hide;
         self
     }
 
     /// Hide tolerance and absolute tolerance
+    #[must_use]
     pub fn hide_tolerance(mut self, hide: bool) -> Self {
         self.visibility.hide_tolerance = hide;
         self
     }
 
     /// Hide sample rate input
+    #[must_use]
     pub fn hide_sample_rate(mut self, hide: bool) -> Self {
         self.visibility.hide_sample_rate = hide;
         self
     }
 
     /// Hide phase alignment in Advanced System Optimization section
+    #[must_use]
     pub fn hide_phase_alignment(mut self, hide: bool) -> Self {
         self.visibility.hide_phase_alignment = hide;
         self
     }
 
     /// Hide multi-seat in Advanced System Optimization section
+    #[must_use]
     pub fn hide_multi_seat(mut self, hide: bool) -> Self {
         self.visibility.hide_multi_seat = hide;
         self
     }
 
     /// Hide the "Scenario A" subtitle text
+    #[must_use]
     pub fn hide_scenario_a_text(mut self, hide: bool) -> Self {
         self.visibility.hide_scenario_a_text = hide;
         self
     }
 
     /// Hide room-specific sections (Advanced Room Correction, System Optimization, Advanced Tuning)
+    #[must_use]
     pub fn hide_room_sections(mut self, hide: bool) -> Self {
         self.visibility.hide_room_sections = hide;
         self
     }
 
     /// Set available width for responsive layout
+    #[must_use]
     pub fn available_width(mut self, width: f32) -> Self {
         self.meta.available_width = width;
         self
     }
 
     /// Set the first-party UI language used by all form sections.
+    #[must_use]
     pub fn language(mut self, language: Language) -> Self {
         self.meta.language = language;
         self
     }
 
-    /// Set the layout mode (Default or RoomEq)
+    /// Set the layout mode (Default or `RoomEq`)
+    #[must_use]
     pub fn layout_mode(mut self, mode: AutoEqLayoutMode) -> Self {
         self.meta.layout_mode = mode;
         self
@@ -499,6 +557,7 @@ impl AutoEqForm {
     // EQ Design callbacks
 
     /// Set optim mode change handler
+    #[must_use]
     pub fn on_opt_mode_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -508,6 +567,7 @@ impl AutoEqForm {
     }
 
     /// Set optim mode dropdown toggle handler
+    #[must_use]
     pub fn on_opt_mode_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -517,6 +577,7 @@ impl AutoEqForm {
     }
 
     /// Set FIR taps change handler
+    #[must_use]
     pub fn on_fir_taps_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -526,6 +587,7 @@ impl AutoEqForm {
     }
 
     /// Set FIR phase change handler
+    #[must_use]
     pub fn on_fir_phase_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -535,6 +597,7 @@ impl AutoEqForm {
     }
 
     /// Set FIR phase dropdown toggle handler
+    #[must_use]
     pub fn on_fir_phase_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -544,6 +607,7 @@ impl AutoEqForm {
     }
 
     /// Set number of filters change handler
+    #[must_use]
     pub fn on_num_filters_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -553,6 +617,7 @@ impl AutoEqForm {
     }
 
     /// Set sample rate change handler
+    #[must_use]
     pub fn on_sample_rate_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -562,6 +627,7 @@ impl AutoEqForm {
     }
 
     /// Set min dB change handler
+    #[must_use]
     pub fn on_min_db_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -571,6 +637,7 @@ impl AutoEqForm {
     }
 
     /// Set max dB change handler
+    #[must_use]
     pub fn on_max_db_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -580,6 +647,7 @@ impl AutoEqForm {
     }
 
     /// Set min Q change handler
+    #[must_use]
     pub fn on_min_q_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -589,6 +657,7 @@ impl AutoEqForm {
     }
 
     /// Set max Q change handler
+    #[must_use]
     pub fn on_max_q_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -598,6 +667,7 @@ impl AutoEqForm {
     }
 
     /// Set min frequency change handler
+    #[must_use]
     pub fn on_min_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -607,6 +677,7 @@ impl AutoEqForm {
     }
 
     /// Set max frequency change handler
+    #[must_use]
     pub fn on_max_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -616,6 +687,7 @@ impl AutoEqForm {
     }
 
     /// Set PEQ model change handler
+    #[must_use]
     pub fn on_peq_model_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -625,6 +697,7 @@ impl AutoEqForm {
     }
 
     /// Set PEQ model dropdown toggle handler
+    #[must_use]
     pub fn on_peq_model_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -634,6 +707,7 @@ impl AutoEqForm {
     }
 
     /// Set spacing weight change handler
+    #[must_use]
     pub fn on_spacing_weight_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -643,6 +717,7 @@ impl AutoEqForm {
     }
 
     /// Set min spacing octaves change handler
+    #[must_use]
     pub fn on_min_spacing_oct_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -654,6 +729,7 @@ impl AutoEqForm {
     // Optimization callbacks
 
     /// Set algorithm change handler
+    #[must_use]
     pub fn on_algo_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -663,6 +739,7 @@ impl AutoEqForm {
     }
 
     /// Set algorithm dropdown toggle handler
+    #[must_use]
     pub fn on_algo_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -672,6 +749,7 @@ impl AutoEqForm {
     }
 
     /// Set population change handler
+    #[must_use]
     pub fn on_population_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -681,6 +759,7 @@ impl AutoEqForm {
     }
 
     /// Set maxeval change handler
+    #[must_use]
     pub fn on_maxeval_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -690,6 +769,7 @@ impl AutoEqForm {
     }
 
     /// Set relative tolerance change handler
+    #[must_use]
     pub fn on_tolerance_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -699,6 +779,7 @@ impl AutoEqForm {
     }
 
     /// Set absolute tolerance change handler
+    #[must_use]
     pub fn on_atolerance_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -708,6 +789,7 @@ impl AutoEqForm {
     }
 
     /// Set BO initial sample count change handler
+    #[must_use]
     pub fn on_bo_initial_samples_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -717,6 +799,7 @@ impl AutoEqForm {
     }
 
     /// Set BO batch size change handler
+    #[must_use]
     pub fn on_bo_batch_size_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -726,6 +809,7 @@ impl AutoEqForm {
     }
 
     /// Set BO posterior std handoff threshold change handler
+    #[must_use]
     pub fn on_bo_posterior_std_threshold_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -735,6 +819,7 @@ impl AutoEqForm {
     }
 
     /// Set BO acquisition change handler
+    #[must_use]
     pub fn on_bo_acquisition_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -744,6 +829,7 @@ impl AutoEqForm {
     }
 
     /// Set BO acquisition dropdown toggle handler
+    #[must_use]
     pub fn on_bo_acquisition_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -753,6 +839,7 @@ impl AutoEqForm {
     }
 
     /// Set BO qEHVI toggle handler
+    #[must_use]
     pub fn on_bo_ehvi_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -762,6 +849,7 @@ impl AutoEqForm {
     }
 
     /// Set DE mutation factor (F) change handler
+    #[must_use]
     pub fn on_de_f_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -771,6 +859,7 @@ impl AutoEqForm {
     }
 
     /// Set DE crossover rate (CR) change handler
+    #[must_use]
     pub fn on_de_cr_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -780,6 +869,7 @@ impl AutoEqForm {
     }
 
     /// Set DE strategy change handler
+    #[must_use]
     pub fn on_strategy_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -789,6 +879,7 @@ impl AutoEqForm {
     }
 
     /// Set DE strategy dropdown toggle handler
+    #[must_use]
     pub fn on_strategy_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -798,6 +889,7 @@ impl AutoEqForm {
     }
 
     /// Set adaptive weight F change handler (DE adaptive strategies only)
+    #[must_use]
     pub fn on_adaptive_weight_f_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -807,6 +899,7 @@ impl AutoEqForm {
     }
 
     /// Set adaptive weight CR change handler (DE adaptive strategies only)
+    #[must_use]
     pub fn on_adaptive_weight_cr_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -816,6 +909,7 @@ impl AutoEqForm {
     }
 
     /// Set local refinement toggle handler
+    #[must_use]
     pub fn on_refine_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -825,6 +919,7 @@ impl AutoEqForm {
     }
 
     /// Set local algorithm change handler
+    #[must_use]
     pub fn on_local_algo_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -834,6 +929,7 @@ impl AutoEqForm {
     }
 
     /// Set local algorithm dropdown toggle handler
+    #[must_use]
     pub fn on_local_algo_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -843,6 +939,7 @@ impl AutoEqForm {
     }
 
     /// Set smoothing toggle handler
+    #[must_use]
     pub fn on_smooth_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -852,6 +949,7 @@ impl AutoEqForm {
     }
 
     /// Set smoothing window size change handler
+    #[must_use]
     pub fn on_smooth_n_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -861,6 +959,7 @@ impl AutoEqForm {
     }
 
     /// Set psychoacoustic toggle handler
+    #[must_use]
     pub fn on_psychoacoustic_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -870,6 +969,7 @@ impl AutoEqForm {
     }
 
     /// Set asymmetric loss toggle handler
+    #[must_use]
     pub fn on_asymmetric_loss_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -881,6 +981,7 @@ impl AutoEqForm {
     // Goals callbacks
 
     /// Set loss type change handler
+    #[must_use]
     pub fn on_loss_type_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -890,6 +991,7 @@ impl AutoEqForm {
     }
 
     /// Set loss type dropdown toggle handler
+    #[must_use]
     pub fn on_loss_type_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -899,6 +1001,7 @@ impl AutoEqForm {
     }
 
     /// Set target curve change handler
+    #[must_use]
     pub fn on_target_curve_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -908,6 +1011,7 @@ impl AutoEqForm {
     }
 
     /// Set target curve dropdown toggle handler
+    #[must_use]
     pub fn on_target_curve_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -917,6 +1021,7 @@ impl AutoEqForm {
     }
 
     /// Set edit custom target curve handler (opens the custom target modal)
+    #[must_use]
     pub fn on_edit_custom_target(
         mut self,
         handler: impl Fn(&mut Window, &mut App) + 'static,
@@ -926,6 +1031,7 @@ impl AutoEqForm {
     }
 
     /// Set system type change handler
+    #[must_use]
     pub fn on_system_type_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -935,6 +1041,7 @@ impl AutoEqForm {
     }
 
     /// Set system type dropdown toggle handler
+    #[must_use]
     pub fn on_system_type_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -945,6 +1052,7 @@ impl AutoEqForm {
 
     // Advanced Room Correction (Scenario B) callbacks
 
+    #[must_use]
     pub fn on_use_target_tilt_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -953,6 +1061,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_type_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -961,6 +1070,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_type_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -969,6 +1079,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_slope_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -977,6 +1088,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_reference_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -985,6 +1097,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_bass_shelf_db_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -993,6 +1106,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_tilt_bass_shelf_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1001,6 +1115,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_use_excursion_protection_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1009,6 +1124,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_auto_detect_f3_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1017,6 +1133,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_manual_f3_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1025,6 +1142,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_filter_order_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -1033,6 +1151,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_filter_type_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1041,6 +1160,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_filter_type_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1049,6 +1169,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_excursion_margin_octaves_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1057,6 +1178,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_use_schroeder_split_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1065,6 +1187,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_schroeder_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1073,6 +1196,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_schroeder_low_max_q_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1081,6 +1205,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_schroeder_low_allow_boost_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1089,6 +1214,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_schroeder_high_max_q_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1097,6 +1223,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_schroeder_high_shelving_only_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1107,6 +1234,7 @@ impl AutoEqForm {
 
     // Advanced System Optimization (Scenario A) callbacks
 
+    #[must_use]
     pub fn on_use_phase_alignment_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1115,6 +1243,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_phase_min_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1123,6 +1252,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_phase_max_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1131,6 +1261,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_phase_optimize_polarity_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1139,6 +1270,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_phase_max_delay_ms_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1147,6 +1279,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_use_multi_seat_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1155,6 +1288,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_seat_strategy_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1163,6 +1297,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_seat_strategy_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1171,6 +1306,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_seat_primary_seat_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -1179,6 +1315,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_seat_max_deviation_db_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1189,6 +1326,7 @@ impl AutoEqForm {
 
     // v2 callbacks
 
+    #[must_use]
     pub fn on_allow_delay_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1197,6 +1335,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_seed_enabled_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1205,6 +1344,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_seed_change(
         mut self,
         handler: impl Fn(usize, &mut Window, &mut App) + 'static,
@@ -1213,6 +1353,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_vog_enabled_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1221,6 +1362,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_vog_reference_channel_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1229,6 +1371,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_vog_reference_channel_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1237,6 +1380,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_broadband_target_matching_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1245,6 +1389,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_mixed_crossover_freq_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1253,6 +1398,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_mixed_crossover_type_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1261,6 +1407,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_mixed_crossover_type_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1269,6 +1416,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_mixed_fir_band_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1277,6 +1425,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_mixed_fir_band_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1287,46 +1436,55 @@ impl AutoEqForm {
 
     // Multi-measurement callbacks
 
+    #[must_use]
     pub fn hide_multi_measurement(mut self, hide: bool) -> Self {
         self.visibility.hide_multi_measurement = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_capability_section(mut self, hide: bool) -> Self {
         self.visibility.hide_capability_section = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_target_distance_section(mut self, hide: bool) -> Self {
         self.visibility.hide_target_distance_section = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_optimization_goal_section(mut self, hide: bool) -> Self {
         self.visibility.hide_optimization_goal_section = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_bass_management(mut self, hide: bool) -> Self {
         self.visibility.hide_bass_management = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_asymmetric_loss(mut self, hide: bool) -> Self {
         self.visibility.hide_asymmetric_loss = hide;
         self
     }
 
+    #[must_use]
     pub fn hide_broadband_matching(mut self, hide: bool) -> Self {
         self.visibility.hide_broadband_matching = hide;
         self
     }
 
+    #[must_use]
     pub fn loss_type_options(mut self, options: &'static [(&'static str, &'static str)]) -> Self {
         self.visibility.loss_type_options_override = Some(options);
         self
     }
 
+    #[must_use]
     pub fn on_use_multi_measurement_change(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1335,6 +1493,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_measurement_strategy_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1343,6 +1502,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_measurement_strategy_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1351,6 +1511,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_measurement_variance_lambda_change(
         mut self,
         handler: impl Fn(f64, &mut Window, &mut App) + 'static,
@@ -1360,6 +1521,7 @@ impl AutoEqForm {
         self
     }
 
+    #[must_use]
     pub fn on_multi_measurement_weight_change(
         mut self,
         handler: impl Fn(usize, f64, &mut Window, &mut App) + 'static,
@@ -1370,6 +1532,7 @@ impl AutoEqForm {
 
     /// Set a callback fired when the user hovers over a parameter block.
     /// The callback receives the block id (e.g., `"goals"`, `"eq-design"`).
+    #[must_use]
     pub fn on_block_focus(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1379,6 +1542,7 @@ impl AutoEqForm {
     }
 
     /// Select a configuration decision without changing parameter values.
+    #[must_use]
     pub fn on_stage_change(
         mut self,
         handler: impl Fn(super::super::AutoEqStage, &mut Window, &mut App) + 'static,
@@ -1388,6 +1552,7 @@ impl AutoEqForm {
     }
 
     /// Set detail level change handler (called with "simple", "intermediate", or "expert").
+    #[must_use]
     pub fn on_detail_level_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1397,6 +1562,7 @@ impl AutoEqForm {
     }
 
     /// Set preset change handler (called with preset id like "balanced", "custom")
+    #[must_use]
     pub fn on_preset_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1406,6 +1572,7 @@ impl AutoEqForm {
     }
 
     /// Set preset dropdown toggle handler
+    #[must_use]
     pub fn on_preset_toggle(
         mut self,
         handler: impl Fn(bool, &mut Window, &mut App) + 'static,
@@ -1415,6 +1582,7 @@ impl AutoEqForm {
     }
 
     /// Set handler for target distance preset changes (near/mid/far/custom)
+    #[must_use]
     pub fn on_target_distance_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
@@ -1423,12 +1591,23 @@ impl AutoEqForm {
         self
     }
 
-    /// Set handler for optimization goal preset changes (match_target/natural/psychoacoustic)
+    /// Set handler for optimization goal preset changes (`match_target/natural/psychoacoustic`)
+    #[must_use]
     pub fn on_optimization_goal_change(
         mut self,
         handler: impl Fn(&str, &mut Window, &mut App) + 'static,
     ) -> Self {
         self.lifecycle.on_optimization_goal_change = Some(Box::new(handler));
         self
+    }
+}
+
+impl std::fmt::Debug for AutoEqForm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AutoEqForm")
+            .field("id", &self.meta.id)
+            .field("disabled", &self.meta.disabled)
+            .field("available_width", &self.meta.available_width)
+            .finish_non_exhaustive()
     }
 }

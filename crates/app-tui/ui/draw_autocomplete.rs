@@ -1,9 +1,13 @@
-use super::*;
+use super::{App, Block, Borders, Frame, List, ListItem, Modifier, Rect, Style};
 
 const MAX_VISIBLE_SUGGESTIONS: usize = 8;
 
 /// Calculate the height needed for the autocomplete dropdown.
 /// Returns 0 if menu is not active or no suggestions.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn autocomplete_dropdown_height(app: &App) -> u16 {
     if !app.autocomplete.menu_active || app.autocomplete.suggestions.is_empty() {
         return 0;

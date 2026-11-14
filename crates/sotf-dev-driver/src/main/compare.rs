@@ -30,9 +30,9 @@ impl Compare {
             (ExpectedValue::Array(expected), Value::Array(actual), ComparisonOp::Ne) => {
                 actual != expected
             }
-            (ExpectedValue::Null, Value::Null, ComparisonOp::Eq) => true,
             (ExpectedValue::Null, Value::Null, ComparisonOp::Ne) => false,
-            (ExpectedValue::Null, _, ComparisonOp::Ne) => true,
+            (ExpectedValue::Null, Value::Null, ComparisonOp::Eq)
+            | (ExpectedValue::Null, _, ComparisonOp::Ne) => true,
             _ => false,
         }
     }

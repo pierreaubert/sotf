@@ -45,7 +45,7 @@ enum WorkerEvent {
     Processed(Result<CaptureReview, String>),
 }
 
-/// Owns one background operation and the evidence available for RoomEQ import.
+/// Owns one background operation and the evidence available for `RoomEQ` import.
 #[derive(Debug, Default)]
 pub struct CaptureWorkflow {
     pub stage: CaptureStage,
@@ -62,11 +62,13 @@ pub struct CaptureWorkflow {
 
 impl CaptureWorkflow {
     /// Indicates whether an operation owns the workflow.
+    #[must_use]
     pub fn is_busy(&self) -> bool {
         self.receiver.is_some()
     }
 
     /// Indicates whether a validated plan is available for explicit recording.
+    #[must_use]
     pub fn can_record(&self) -> bool {
         !self.is_busy() && self.plan.is_some()
     }
@@ -92,11 +94,13 @@ impl CaptureWorkflow {
     }
 
     /// Exposes processed channels without manufacturing evidence from raw takes.
+    #[must_use]
     pub fn import_channels(&self) -> Option<Vec<ChannelMeasurement>> {
         self.can_import().then(|| self.channels.clone())
     }
 
     /// Checks import availability without cloning response arrays during rendering.
+    #[must_use]
     pub fn can_import(&self) -> bool {
         !self.is_busy() && self.recording_manifest.is_some() && !self.channels.is_empty()
     }

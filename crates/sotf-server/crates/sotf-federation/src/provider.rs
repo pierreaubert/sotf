@@ -7,10 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 use sotf_audio::decoder::AudioSource;
-use std::future::Future;
 use std::pin::Pin;
 
-/// Boxed future returned by async LibraryProvider methods (object-safe).
+/// Boxed future returned by async `LibraryProvider` methods (object-safe).
 pub type ProviderFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// Unique identifier for a library source instance.
@@ -55,6 +54,10 @@ impl std::fmt::Display for SourceType {
 
 /// Capabilities that vary per provider.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Provider capabilities are independent protocol features"
+)]
 pub struct ProviderCapabilities {
     /// Can this source be written to (e.g., edit metadata, delete tracks)?
     pub writable: bool,
@@ -165,7 +168,7 @@ pub trait LibraryProvider: Send + Sync {
     /// Subscribe to real-time change events. Returns `None` if not supported.
     fn subscribe_events(&self) -> Option<tokio::sync::broadcast::Receiver<LibraryEvent>>;
 
-    /// Resolve a track's AudioSource for playback.
+    /// Resolve a track's `AudioSource` for playback.
     /// Some providers may need to generate a fresh URL (e.g., signed URLs expire).
     fn resolve_source(
         &self,

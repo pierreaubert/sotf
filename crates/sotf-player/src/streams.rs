@@ -19,6 +19,10 @@ pub struct SavedStream {
 }
 
 impl SavedStream {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
     pub fn new(
         name: impl Into<String>,
         url: impl Into<String>,
@@ -35,6 +39,10 @@ impl SavedStream {
         Ok(stream)
     }
 
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
     pub fn validate(&self) -> Result<(), StreamValidationError> {
         if self.name.trim().is_empty() {
             return Err(StreamValidationError::MissingName);
@@ -42,6 +50,7 @@ impl SavedStream {
         validate_stream_url(&self.url)
     }
 
+    #[must_use]
     pub fn audio_source(&self) -> AudioSource {
         if let Some((service, track_id)) = parse_service_stream_reference(&self.url).ok().flatten()
         {
@@ -63,6 +72,10 @@ pub struct SavedStreamStore {
 }
 
 impl SavedStreamStore {
+    /// Load from path.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
     pub fn load_from_path(path: impl Into<PathBuf>) -> Result<Self, StreamStoreError> {
         let path = path.into();
         if !path.exists() {
@@ -73,6 +86,10 @@ impl SavedStreamStore {
         serde_json::from_str(&json).map_err(StreamStoreError::Json)
     }
 
+    /// Save to path.
+    ///
+    /// # Errors
+    /// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
     pub fn save_to_path(&self, path: impl Into<PathBuf>) -> Result<(), StreamStoreError> {
         let path = path.into();
         if let Some(parent) = path.parent() {
@@ -145,20 +162,31 @@ impl std::fmt::Display for StreamStoreError {
 
 impl std::error::Error for StreamStoreError {}
 
+#[must_use]
 pub fn get_saved_streams_path() -> Option<PathBuf> {
     crate::config::get_app_config_dir().map(|dir| dir.join(STREAMS_FILE_NAME))
 }
 
+/// Load saved streams.
+///
+/// # Errors
+/// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
 pub fn load_saved_streams() -> Result<SavedStreamStore, StreamStoreError> {
     let path = get_saved_streams_path().ok_or(StreamStoreError::MissingConfigDir)?;
     SavedStreamStore::load_from_path(path)
 }
 
+///
+/// # Errors
+/// Returns an error if stream settings are invalid or the saved stream store cannot be read or written.
 pub fn save_saved_streams(store: &SavedStreamStore) -> Result<(), StreamStoreError> {
     let path = get_saved_streams_path().ok_or(StreamStoreError::MissingConfigDir)?;
     store.save_to_path(path)
 }
 
+///
+/// # Errors
+/// Returns an error for malformed URLs, unsupported schemes, or public unencrypted HTTP addresses.
 pub fn validate_stream_url(url: &str) -> Result<(), StreamValidationError> {
     if parse_service_stream_reference(url)?.is_some() {
         return Ok(());
@@ -174,6 +202,10 @@ pub fn validate_stream_url(url: &str) -> Result<(), StreamValidationError> {
     }
 }
 
+/// Parse service stream reference.
+///
+/// # Errors
+/// Returns an error if the service stream reference has an invalid service or track identifier.
 pub fn parse_service_stream_reference(
     reference: &str,
 ) -> Result<Option<(ServiceId, String)>, StreamValidationError> {
@@ -182,11 +214,8 @@ pub fn parse_service_stream_reference(
         return Ok(None);
     }
 
-    let parsed = match Url::parse(reference) {
-        Ok(parsed) => parsed,
-        Err(_) => {
-            return Ok(None);
-        }
+    let Ok(parsed) = Url::parse(reference) else {
+        return Ok(None);
     };
 
     match parsed.scheme() {
@@ -206,14 +235,13 @@ pub fn parse_service_stream_reference(
 fn parse_service_web_track_url(
     url: &Url,
 ) -> Result<Option<(ServiceId, String)>, StreamValidationError> {
-    let Some(host) = url.host_str().map(|host| host.to_ascii_lowercase()) else {
+    let Some(host) = url.host_str().map(str::to_ascii_lowercase) else {
         return Ok(None);
     };
 
     let segments = url
         .path_segments()
-        .map(|segments| segments.collect::<Vec<_>>())
-        .unwrap_or_default();
+        .map_or_default(std::iter::Iterator::collect::<Vec<_>>);
 
     if host == "open.spotify.com" || host.ends_with(".open.spotify.com") {
         if segments.first() == Some(&"track") {
@@ -253,8 +281,7 @@ fn parse_service_track_id(
 
     if track_id.is_empty() {
         return Err(StreamValidationError::InvalidServiceReference(format!(
-            "{} track id is required",
-            service,
+            "{service} track id is required",
         )));
     }
     if !track_id
@@ -262,14 +289,14 @@ fn parse_service_track_id(
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
     {
         return Err(StreamValidationError::InvalidServiceReference(format!(
-            "{} track id contains unsupported characters",
-            service,
+            "{service} track id contains unsupported characters",
         )));
     }
 
     Ok(track_id.to_string())
 }
 
+#[must_use]
 pub fn is_local_http_url(url: &Url) -> bool {
     if url.scheme() != "http" {
         return false;
@@ -281,7 +308,10 @@ pub fn is_local_http_url(url: &Url) -> bool {
     if matches!(host.as_str(), "localhost" | "localhost.localdomain") {
         return true;
     }
-    if host.ends_with(".local") || host.ends_with(".lan") {
+    if host
+        .rsplit_once('.')
+        .is_some_and(|(_, suffix)| matches!(suffix, "local" | "lan"))
+    {
         return true;
     }
     if let Ok(addr) = host.parse::<IpAddr>() {

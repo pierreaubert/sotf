@@ -23,6 +23,7 @@ impl PreferencesCategory {
         Self::Advanced,
     ];
 
+    #[must_use]
     pub fn for_tab(tab: SettingsTab) -> Self {
         match tab {
             SettingsTab::AudioDevice => Self::Audio,
@@ -35,6 +36,7 @@ impl PreferencesCategory {
         }
     }
 
+    #[must_use]
     pub fn tabs(self) -> &'static [SettingsTab] {
         match self {
             Self::Audio => &[SettingsTab::AudioDevice],
@@ -47,6 +49,7 @@ impl PreferencesCategory {
         }
     }
 
+    #[must_use]
     pub fn visible_tabs(self, is_ios: bool) -> Vec<SettingsTab> {
         let visible = SettingsTab::visible_tabs_for_ios(is_ios);
         self.tabs()
@@ -56,6 +59,7 @@ impl PreferencesCategory {
             .collect()
     }
 
+    #[must_use]
     pub fn keywords(tab: SettingsTab) -> &'static str {
         match tab {
             SettingsTab::AudioDevice => {
@@ -85,6 +89,7 @@ impl PreferencesCategory {
         }
     }
 
+    #[must_use]
     pub fn matches(tab: SettingsTab, query: &str, translated_label: &str) -> bool {
         let haystack = format!("{} {}", Self::keywords(tab), translated_label).to_lowercase();
         query
@@ -167,30 +172,32 @@ impl PreferencesSetting {
         Self::SystemwideBuffer,
     ];
 
+    #[must_use]
     pub fn tab(self) -> SettingsTab {
         match self {
-            Self::TextSize | Self::MinimumFont | Self::MaximumFont => SettingsTab::Theme,
-            Self::ScanWorkers => SettingsTab::Library,
-            Self::CpuLimit => SettingsTab::Misc,
-            Self::ReduceMotion => SettingsTab::Theme,
+            Self::ScanWorkers | Self::MusicFolders | Self::AudioAnalysis => SettingsTab::Library,
+            Self::CpuLimit | Self::PluginDiscovery => SettingsTab::Misc,
             Self::Language => SettingsTab::Language,
-            Self::ThemeMode => SettingsTab::Theme,
-            Self::PluginDiscovery => SettingsTab::Misc,
+            Self::TextSize
+            | Self::MinimumFont
+            | Self::MaximumFont
+            | Self::ReduceMotion
+            | Self::ThemeMode => SettingsTab::Theme,
             Self::MetadataSearch => SettingsTab::Metadata,
             Self::FeatureAvailability => SettingsTab::ReleaseChannel,
-            Self::OutputDevice => SettingsTab::AudioDevice,
-            Self::ReplayGain => SettingsTab::AudioDevice,
-            Self::MusicFolders | Self::AudioAnalysis => SettingsTab::Library,
-            Self::Shortcuts => SettingsTab::Keybindings,
-            Self::RemoteSources | Self::RemotePlayers => SettingsTab::Federation,
-            Self::SharingServers => SettingsTab::Servers,
-            Self::AudioSource
+            Self::OutputDevice
+            | Self::ReplayGain
+            | Self::AudioSource
             | Self::SystemwideSampleRate
             | Self::SystemwideChannels
             | Self::SystemwideBuffer => SettingsTab::AudioDevice,
+            Self::Shortcuts => SettingsTab::Keybindings,
+            Self::RemoteSources | Self::RemotePlayers => SettingsTab::Federation,
+            Self::SharingServers => SettingsTab::Servers,
         }
     }
 
+    #[must_use]
     pub fn is_systemwide_format(self) -> bool {
         matches!(
             self,
@@ -198,6 +205,7 @@ impl PreferencesSetting {
         )
     }
 
+    #[must_use]
     pub fn is_available(self) -> bool {
         if self == Self::AudioSource || self.is_systemwide_format() {
             return cfg!(all(target_os = "macos", feature = "hal"));
@@ -210,6 +218,7 @@ impl PreferencesSetting {
             ))
     }
 
+    #[must_use]
     pub fn label(self, language: crate::app::i18n::Language) -> &'static str {
         match self {
             Self::SystemwideSampleRate => {
@@ -289,6 +298,7 @@ impl PreferencesSetting {
         }
     }
 
+    #[must_use]
     pub fn matches(self, query: &str, language: crate::app::i18n::Language) -> bool {
         let keywords = match self {
             Self::SystemwideSampleRate => {

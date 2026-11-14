@@ -16,6 +16,7 @@ pub enum PluginThemeId {
 
 impl PluginThemeId {
     /// All theme presets in display order.
+    #[must_use]
     pub fn all() -> &'static [PluginThemeId] {
         &[
             PluginThemeId::Graphite,
@@ -25,6 +26,7 @@ impl PluginThemeId {
     }
 
     /// Human-readable name for UI display.
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             PluginThemeId::Graphite => "Graphite",
@@ -34,6 +36,7 @@ impl PluginThemeId {
     }
 
     /// Cycle to the next preset (used by the rack header keyboard shortcut).
+    #[must_use]
     pub fn next(&self) -> PluginThemeId {
         match self {
             PluginThemeId::Graphite => PluginThemeId::StudioCream,
@@ -43,6 +46,7 @@ impl PluginThemeId {
     }
 
     /// Build the owned `PluginTheme` for this preset.
+    #[must_use]
     pub fn theme(&self) -> PluginTheme {
         match self {
             PluginThemeId::Graphite => super::super::graphite::theme(),

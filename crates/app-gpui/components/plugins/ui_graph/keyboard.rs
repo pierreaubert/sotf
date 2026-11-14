@@ -4,7 +4,7 @@ use crate::components::design::Ds;
 use crate::i18n::PluginGraphTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::{Context, IntoElement, KeyDownEvent, Keystroke, Window, div};
+use gpui::{KeyDownEvent, Keystroke, Window, div};
 use gpui_ui_kit::{StackSpacing, Text, TextSize, TextWeight, VStack};
 use sotf_audio_player::{GraphNodeId, NodePosition, PluginGraph, PluginType};
 
@@ -45,7 +45,7 @@ fn node_label(graph: &PluginGraph, node_id: GraphNodeId) -> Option<String> {
             graph
                 .special_nodes
                 .get(&node_id)
-                .map(|node| node.display_name().to_string())
+                .map(|node| node.display_name().clone())
         })
 }
 
@@ -100,6 +100,14 @@ impl PlayerView {
         debug_assert!(handled);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn handle_plugin_graph_keyboard(
         &self,
         event: &KeyDownEvent,
@@ -131,14 +139,16 @@ impl PlayerView {
                     );
                     let next_index = current
                         .and_then(|id| order.iter().position(|candidate| *candidate == id))
-                        .map(|index| {
-                            if reverse {
-                                index.checked_sub(1).unwrap_or(order.len() - 1)
-                            } else {
-                                (index + 1) % order.len()
-                            }
-                        })
-                        .unwrap_or_else(|| if reverse { order.len() - 1 } else { 0 });
+                        .map_or_else(
+                            || if reverse { order.len() - 1 } else { 0 },
+                            |index| {
+                                if reverse {
+                                    index.checked_sub(1).unwrap_or(order.len() - 1)
+                                } else {
+                                    (index + 1) % order.len()
+                                }
+                            },
+                        );
                     state
                         .app
                         .plugin_state
@@ -805,8 +815,7 @@ impl PlayerView {
         let all = PluginType::all();
         let palette_label = all
             .get(state.app.plugin_state.graph_state.keyboard_palette_index % all.len().max(1))
-            .map(|plugin| plugin.name())
-            .unwrap_or(text.none_selected);
+            .map_or(text.none_selected, sotf_audio_player::PluginType::name);
         let source_label = state
             .app
             .plugin_state

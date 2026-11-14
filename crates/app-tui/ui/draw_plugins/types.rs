@@ -1,4 +1,4 @@
-use super::super::*;
+use super::super::PluginSettings;
 
 /// Entry in the plugin parameter display list.
 /// Can be a selectable parameter or a non-selectable section separator.
@@ -28,7 +28,7 @@ pub(super) fn get_plugin_parameters(
         // Add separator if group changes
         if !desc.group.is_empty() && desc.group != last_group {
             entries.push(Separator(desc.group.clone()));
-            last_group = desc.group.clone();
+            last_group.clone_from(&desc.group);
         }
 
         let value = settings.get_value_as_string(i);

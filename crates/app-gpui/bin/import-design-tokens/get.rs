@@ -3,6 +3,11 @@ use anyhow::{Context, Result, anyhow};
 use serde_json::Value;
 
 /// Read a color token value from a JSON path like `color.base.background`
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Normalized design colors are deliberately rounded to eight-bit RGBA components"
+)]
 pub(super) fn get_color(theme_obj: &Value, path: &str) -> Result<String> {
     let mut current = theme_obj;
     for part in path.split('.') {
@@ -37,7 +42,7 @@ pub(super) fn get_band_colors(theme_obj: &Value) -> Result<Vec<String>> {
         .as_object()
         .ok_or_else(|| anyhow!("color.band should be an object"))?;
     let mut entries: Vec<(usize, String)> = Vec::with_capacity(map.len());
-    for (k, _) in map.iter() {
+    for (k, _) in map {
         let idx: usize = k
             .parse()
             .with_context(|| format!("band index '{k}' is not numeric"))?;

@@ -85,6 +85,10 @@ fn shrink_payloads(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exhaustive payload variants are kept together for minimization"
+)]
 fn payload_candidates(payload: &super::model::ActionPayload) -> Vec<super::model::ActionPayload> {
     use super::model::ActionPayload;
 

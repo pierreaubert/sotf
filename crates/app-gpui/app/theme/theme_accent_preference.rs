@@ -17,6 +17,7 @@ pub enum ThemeAccentPreference {
 }
 
 impl ThemeAccentPreference {
+    #[must_use]
     pub fn all() -> &'static [ThemeAccentPreference] {
         &[
             ThemeAccentPreference::Theme,
@@ -29,6 +30,7 @@ impl ThemeAccentPreference {
         ]
     }
 
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             ThemeAccentPreference::Theme => "Default",
@@ -41,6 +43,7 @@ impl ThemeAccentPreference {
         }
     }
 
+    #[must_use]
     pub fn value(self) -> &'static str {
         match self {
             ThemeAccentPreference::Theme => "theme",
@@ -53,6 +56,7 @@ impl ThemeAccentPreference {
         }
     }
 
+    #[must_use]
     pub fn from_value(value: &SharedString) -> Option<Self> {
         match value.as_ref() {
             "theme" => Some(Self::Theme),
@@ -66,34 +70,35 @@ impl ThemeAccentPreference {
         }
     }
 
+    #[must_use]
     pub fn seed_and_source(self) -> Option<(ThemeColor, AccentSource)> {
         match self {
             ThemeAccentPreference::Theme => None,
             // Fallback seed for platforms where GPUI does not expose native accent color yet.
             ThemeAccentPreference::System => {
-                Some((ThemeColor::from_hex(0x0a84ff), AccentSource::System))
+                Some((ThemeColor::from_hex(0x000a_84ff), AccentSource::System))
             }
             ThemeAccentPreference::Ocean => {
-                Some((ThemeColor::from_hex(0x0072b2), AccentSource::User))
+                Some((ThemeColor::from_hex(0x0000_72b2), AccentSource::User))
             }
             ThemeAccentPreference::Mint => {
-                Some((ThemeColor::from_hex(0x009e73), AccentSource::User))
+                Some((ThemeColor::from_hex(0x0000_9e73), AccentSource::User))
             }
             ThemeAccentPreference::Amber => {
-                Some((ThemeColor::from_hex(0xe69f00), AccentSource::User))
+                Some((ThemeColor::from_hex(0x00e6_9f00), AccentSource::User))
             }
             ThemeAccentPreference::Rose => {
-                Some((ThemeColor::from_hex(0xcc79a7), AccentSource::User))
+                Some((ThemeColor::from_hex(0x00cc_79a7), AccentSource::User))
             }
             ThemeAccentPreference::Violet => {
-                Some((ThemeColor::from_hex(0x7e57c2), AccentSource::User))
+                Some((ThemeColor::from_hex(0x007e_57c2), AccentSource::User))
             }
         }
     }
 
+    #[must_use]
     pub fn preview_color(self, fallback: Rgba) -> Rgba {
         self.seed_and_source()
-            .map(|(seed, _)| seed.to_rgba())
-            .unwrap_or(fallback)
+            .map_or(fallback, |(seed, _)| seed.to_rgba())
     }
 }

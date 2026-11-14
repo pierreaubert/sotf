@@ -67,6 +67,7 @@ pub struct DevApiTestHandle {
 }
 
 impl DevApiTestHandle {
+    #[must_use]
     pub fn endpoint(&self) -> SocketAddr {
         self.endpoint
     }
@@ -140,6 +141,10 @@ fn start_server_with_run_id(
     Ok((server, task))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
 fn capabilities(cx: &App) -> Capabilities {
     let mut capabilities = Capabilities::new("desktop-gpui", "sotf-desktop");
     capabilities.build_version = env!("CARGO_PKG_VERSION").into();
@@ -388,4 +393,12 @@ pub(super) fn parse_simple_crossover(value: &str) -> Result<SimpleCrossoverChoic
 
 pub(super) fn parse_json_payload(body: &[u8]) -> Result<serde_json::Value> {
     serde_json::from_slice(body).map_err(|e| anyhow!("invalid JSON: {e}"))
+}
+
+impl std::fmt::Debug for DevApiTestHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DevApiTestHandle")
+            .field("endpoint", &self.endpoint)
+            .finish_non_exhaustive()
+    }
 }

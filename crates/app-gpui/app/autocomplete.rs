@@ -39,8 +39,7 @@ impl App {
             // User is typing a partial name
             let prefix = path
                 .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+                .map_or_default(|s| s.to_string_lossy().to_string());
             (parent.to_path_buf(), prefix)
         } else {
             // Fallback to current directory
@@ -137,8 +136,7 @@ impl App {
                 let parent = path.parent().unwrap_or(std::path::Path::new("."));
                 let prefix = path
                     .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|n| n.to_string_lossy().to_string());
                 (parent.to_path_buf(), prefix)
             };
 
@@ -273,8 +271,7 @@ impl App {
         } else if let Some(parent) = path.parent() {
             let prefix = path
                 .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+                .map_or_default(|s| s.to_string_lossy().to_string());
             (parent.to_path_buf(), prefix)
         } else {
             (std::path::PathBuf::from("."), expanded_input.clone())
@@ -299,8 +296,9 @@ impl App {
                             let has_valid_ext = entry_path
                                 .extension()
                                 .and_then(|e| e.to_str())
-                                .map(|e| exts.iter().any(|ext| e.eq_ignore_ascii_case(ext)))
-                                .unwrap_or(false);
+                                .is_some_and(|e| {
+                                    exts.iter().any(|ext| e.eq_ignore_ascii_case(ext))
+                                });
                             if !has_valid_ext {
                                 continue;
                             }

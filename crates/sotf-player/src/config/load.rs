@@ -1,3 +1,4 @@
+const LATEST_VERSION: u32 = 1;
 use super::app_config::AppConfig;
 use super::app_config::migrate_app_config;
 use super::get::get_metadata_services_config_path;
@@ -10,6 +11,9 @@ use super::get::get_tui_state_path;
 use super::save::save_app_config;
 
 /// Load microphone presets from disk
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_microphone_presets()
 -> Result<crate::recording_types::MicrophonePresetsConfig, Box<dyn std::error::Error>> {
     if let Some(path) = get_microphone_presets_path() {
@@ -27,6 +31,9 @@ pub fn load_microphone_presets()
 
 /// Load external plugin sandbox grants from disk.
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_plugin_sandbox_grants()
 -> Result<sotf_plugins::PluginSandboxGrantStore, Box<dyn std::error::Error>> {
     if let Some(path) = get_plugin_sandbox_grants_path() {
@@ -62,6 +69,9 @@ pub fn load_server_config()
 }
 
 /// Load metadata provider configuration from disk.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_metadata_services_config()
 -> Result<crate::metadata::MetadataServicesConfig, Box<dyn std::error::Error>> {
     if let Some(path) = get_metadata_services_config_path() {
@@ -81,6 +91,9 @@ pub fn load_metadata_services_config()
 ///
 /// Bearer tokens are intentionally not stored in this file. Use the
 /// credential store keyed by `SotfRemoteServer::token_secret_key`.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_remote_server_store()
 -> Result<crate::sotf_remote::SotfRemoteServerStore, Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_servers_path() {
@@ -98,6 +111,9 @@ pub fn load_remote_server_store()
 /// Load a bearer token from the internal native remote token store.
 ///
 /// This fallback is used on platforms without a system credential store.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_remote_server_token(key: &str) -> Result<Option<String>, Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_server_tokens_path() {
         if path.exists() {
@@ -111,6 +127,9 @@ pub fn load_remote_server_token(key: &str) -> Result<Option<String>, Box<dyn std
 }
 
 /// Load TUI app configuration from disk, applying migrations if needed
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the saved configuration cannot be read or decoded.
 pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
     if let Some(path) = get_tui_state_path() {
         if path.exists() {
@@ -121,14 +140,11 @@ pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
             let mut config: AppConfig = serde_json::from_str(&json)?;
 
             // Check if migration is needed
-            const LATEST_VERSION: u32 = 1;
             let original_version = config.version;
 
             if config.version < LATEST_VERSION {
                 log::info!(
-                    "Migrating AppConfig from version {} to {}",
-                    original_version,
-                    LATEST_VERSION
+                    "Migrating AppConfig from version {original_version} to {LATEST_VERSION}"
                 );
 
                 // Apply migrations
@@ -138,9 +154,7 @@ pub fn load_app_config() -> Result<AppConfig, Box<dyn std::error::Error>> {
                 save_app_config(&config)?;
 
                 log::info!(
-                    "Successfully migrated AppConfig from version {} to {}",
-                    original_version,
-                    LATEST_VERSION
+                    "Successfully migrated AppConfig from version {original_version} to {LATEST_VERSION}"
                 );
             }
 

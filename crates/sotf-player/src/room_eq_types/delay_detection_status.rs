@@ -27,6 +27,11 @@ impl DelayDetectionStatus {
     /// Returns `None` when the status is not `Running` or the estimated
     /// duration is zero. Callers should render a fallback (e.g. an
     /// indeterminate spinner) in that case.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Probe progress is an approximate elapsed-time ratio"
+    )]
     pub fn progress(&self, estimated_total_ms: u64, now_ms: u64) -> Option<f32> {
         match self {
             Self::Running { started_at_ms } if estimated_total_ms > 0 => {

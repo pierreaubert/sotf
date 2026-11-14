@@ -4,8 +4,8 @@ use std::fs::{self};
 use std::path::{Path, PathBuf};
 
 pub(super) fn copy_audio_fixtures(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst).with_context(|| format!("creating {dst:?}"))?;
-    for entry in fs::read_dir(src).with_context(|| format!("reading {src:?}"))? {
+    fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
+    for entry in fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
         let entry = entry?;
         if !entry.file_type()?.is_file() {
             continue;
@@ -21,7 +21,7 @@ pub(super) fn copy_audio_fixtures(src: &Path, dst: &Path) -> Result<()> {
             continue;
         }
         fs::copy(&path, dst.join(entry.file_name()))
-            .with_context(|| format!("copying fixture {:?}", path))?;
+            .with_context(|| format!("copying fixture {}", path.display()))?;
     }
     Ok(())
 }
@@ -132,8 +132,8 @@ mod tests {
 }
 
 pub(super) fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst).with_context(|| format!("creating {dst:?}"))?;
-    for entry in fs::read_dir(src).with_context(|| format!("reading {src:?}"))? {
+    fs::create_dir_all(dst).with_context(|| format!("creating {}", dst.display()))?;
+    for entry in fs::read_dir(src).with_context(|| format!("reading {}", src.display()))? {
         let entry = entry?;
         let path = entry.path();
         let dst_path = dst.join(entry.file_name());

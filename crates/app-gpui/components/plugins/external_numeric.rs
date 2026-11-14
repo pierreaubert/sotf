@@ -13,6 +13,10 @@ pub(super) struct NumericControl {
 
 impl NumericControl {
     /// Validate native readback without clamping it into a fabricated value.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub fn from_native(
         value: &ParameterValue,
         min: Option<&ParameterValue>,
@@ -54,15 +58,11 @@ impl NumericControl {
         // A slider needs two native endpoints. Type limits only constrain exact
         // input conversion; they do not invent a useful native slider range.
         // Large integers cannot be represented exactly by the f32 slider.
-        let slider_range = if min.is_some()
+        let slider_range = (min.is_some()
             && max.is_some()
             && lower < upper
-            && (!integer || (lower >= -16_777_216.0 && upper <= 16_777_216.0))
-        {
-            Some((lower as f32, upper as f32))
-        } else {
-            None
-        };
+            && (!integer || (lower >= -16_777_216.0 && upper <= 16_777_216.0)))
+            .then_some((lower as f32, upper as f32));
         Ok(Self {
             current,
             min: lower,
@@ -73,6 +73,10 @@ impl NumericControl {
     }
 
     /// Convert exact input only when representable and inside the native limits.
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub fn encode(self, value: f64) -> Option<ParameterValue> {
         if !value.is_finite() || value < self.min || value > self.max {
             return None;

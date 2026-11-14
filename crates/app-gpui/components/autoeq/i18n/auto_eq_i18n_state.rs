@@ -1,9 +1,10 @@
 use super::auto_eq_translations::AutoEqTranslations;
 use super::types::DocKey;
-use gpui::*;
+use gpui::Global;
 use gpui_ui_kit::i18n::Language;
 
-/// Global state for AutoEQ i18n
+/// Global state for `AutoEQ` i18n
+#[derive(Debug)]
 pub struct AutoEqI18nState {
     pub language: Language,
     pub translations: AutoEqTranslations,
@@ -12,6 +13,7 @@ pub struct AutoEqI18nState {
 impl Global for AutoEqI18nState {}
 
 impl AutoEqI18nState {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             language: Language::default(),
@@ -19,6 +21,7 @@ impl AutoEqI18nState {
         }
     }
 
+    #[must_use]
     pub fn t(&self, key: DocKey) -> &'static str {
         self.translations.get(self.language, key)
     }

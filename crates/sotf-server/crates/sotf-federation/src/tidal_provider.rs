@@ -17,15 +17,15 @@ use std::sync::{Arc, Mutex};
 /// Connection configuration for a Tidal federation source.
 #[derive(Clone)]
 pub struct TidalProviderConfig {
-    /// OAuth2 access token.
+    /// `OAuth2` access token.
     pub access_token: String,
-    /// OAuth2 refresh token (Tidal rotates these; the service keeps the new one).
+    /// `OAuth2` refresh token (Tidal rotates these; the service keeps the new one).
     pub refresh_token: String,
-    /// Tidal application client ID (empty = built-in default / TIDAL_CLIENT_ID env).
+    /// Tidal application client ID (empty = built-in default / `TIDAL_CLIENT_ID` env).
     pub client_id: String,
     /// ISO country code used as fallback until the session reports its own.
     pub country_code: String,
-    /// Quality label ("LOW", "HIGH", "LOSSLESS", "HI_RES_LOSSLESS", ...).
+    /// Quality label ("LOW", "HIGH", "LOSSLESS", "`HI_RES_LOSSLESS`", ...).
     pub quality: String,
 }
 
@@ -81,6 +81,9 @@ impl TidalProvider {
     /// access token); otherwise the stored access token is validated directly.
     /// Both failing is a construction error — surfaced by the caller as a
     /// scan error.
+    ///
+    /// # Errors
+    /// Returns an error if authentication or the blocking service task fails.
     pub async fn new(
         source_id: SourceId,
         config: TidalProviderConfig,
@@ -91,6 +94,9 @@ impl TidalProvider {
     /// Like [`Self::new`], but invokes `token_persister` with the rotated
     /// access/refresh tokens after a successful refresh-token exchange (see
     /// [`TidalTokenPersister`]).
+    ///
+    /// # Errors
+    /// Returns an error if authentication or the blocking service task fails.
     pub async fn new_with_token_persister(
         source_id: SourceId,
         config: TidalProviderConfig,
@@ -183,6 +189,7 @@ impl TidalProvider {
 
     /// Test seam: inject a pre-authenticated service (e.g. pointed at a mock
     /// server via `with_api_base` / `with_auth_base`).
+    #[must_use]
     pub fn with_service(source_id: SourceId, service: TidalService) -> Self {
         Self {
             source_id,
@@ -201,7 +208,7 @@ impl LibraryProvider for TidalProvider {
         &self.source_id
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Tidal"
     }
 
@@ -262,7 +269,10 @@ impl LibraryProvider for TidalProvider {
             })
             .await
             .map_err(|e| ProviderError::Other(format!("Tidal favorites task failed: {e}")))??;
-            *self.art_urls.lock().unwrap_or_else(|e| e.into_inner()) = art;
+            *self
+                .art_urls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = art;
             Ok(albums)
         })
     }
@@ -300,7 +310,7 @@ impl LibraryProvider for TidalProvider {
         let url = self
             .art_urls
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(album_external_id)
             .cloned();
         let http = self.http.clone();
@@ -315,6 +325,14 @@ impl LibraryProvider for TidalProvider {
     fn is_available(&self) -> ProviderFuture<'_, bool> {
         let service = Arc::clone(&self.service);
         Box::pin(async move { service.is_authenticated() })
+    }
+}
+
+impl std::fmt::Debug for TidalProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TidalProvider")
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
     }
 }
 

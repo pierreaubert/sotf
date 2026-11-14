@@ -21,8 +21,14 @@ use crate::components::plugins::theme::plugin_theme_id_for_app_theme;
 use crate::i18n::PluginGraphTranslations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
+#[cfg(feature = "dev-api")]
+use gpui::{Bounds, point, size};
+
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, AppContext, DragMoveEvent, FontWeight, MouseButton, MouseUpEvent, SharedString,
+    Window, canvas, div, px, rems,
+};
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowNodeData};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, SplitPane,
@@ -33,7 +39,11 @@ use sotf_audio_player::PluginSettings;
 const INSPECTOR_DIVIDER_WIDTH: f32 = 10.0;
 
 impl PlayerView {
-    /// Ensure the WorkflowCanvas entity exists, creating it if needed
+    /// Ensure the `WorkflowCanvas` entity exists, creating it if needed
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn ensure_workflow_canvas(&self, cx: &mut Context<Self>) {
         self.state
             .update(cx, |state, _| state.app.plugin_state.begin_routing_draft());
@@ -55,16 +65,14 @@ impl PlayerView {
                     .audio_device_state
                     .output_devices
                     .get(state.app.audio_device_state.selected_output_device_index)
-                    .map(|d| d.name.clone())
-                    .unwrap_or_else(|| "Default Output".to_string());
+                    .map_or_else(|| "Default Output".to_string(), |d| d.name.clone());
                 let output_channels = state
                     .app
                     .audio_device_state
                     .output_devices
                     .get(state.app.audio_device_state.selected_output_device_index)
                     .and_then(|d| d.default_config.as_ref())
-                    .map(|c| c.channels as usize)
-                    .unwrap_or(2);
+                    .map_or(2, |c| c.channels as usize);
                 (
                     Some(state.app.plugin_state.routing_controller().graph.clone()),
                     output_device_name,
@@ -76,7 +84,7 @@ impl PlayerView {
             let graph_text = PluginGraphTranslations::for_language(language);
 
             let workflow_graph =
-                build_workflow_graph(&plugin_graph, &output_device_name, output_channels);
+                build_workflow_graph(plugin_graph.as_ref(), &output_device_name, output_channels);
 
             // Create the WorkflowCanvas entity
             let canvas = cx.new(|cx| WorkflowCanvas::with_graph(workflow_graph, cx));
@@ -205,11 +213,7 @@ impl PlayerView {
                         .get("node_type")
                         .and_then(|v| v.as_str())
                         == Some(NODE_TYPE_PLUGIN);
-                    if is_plugin {
-                        Some(plugin_node_menu_items(graph_text))
-                    } else {
-                        None
-                    }
+                    is_plugin.then(|| plugin_node_menu_items(graph_text))
                 });
                 canvas.set_on_node_menu_select(move |menu_id, node_id, _window, cx| {
                     let Some(canvas) = canvas_for_menu.upgrade() else {
@@ -305,6 +309,14 @@ impl PlayerView {
     }
 
     /// Render the plugin graph screen with workflow canvas
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_plugin_graph_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         // Ensure the canvas entity exists
         self.ensure_workflow_canvas(cx);
@@ -341,11 +353,10 @@ impl PlayerView {
                 .graph_state
                 .workflow_canvas
                 .as_ref()
-                .map(|canvas| {
+                .map_or((0, 0), |canvas| {
                     let stats = canvas.read(cx).stats();
                     (stats.0, stats.1)
-                })
-                .unwrap_or((0, 0));
+                });
             let pc = state.app.plugin_state.routing_controller().graph.len();
             (
                 state.app.ui_state.theme.clone(),
@@ -436,7 +447,7 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .when(compact && inspector_open, |el| el.flex_col())
+                    .when(compact && inspector_open, gpui::Styled::flex_col)
                     .flex_1()
                     .min_h(rems(24.0))
                     .flex_shrink_0()
@@ -470,7 +481,7 @@ impl PlayerView {
                             .on_drop(cx.listener(|view, data: &PaletteDragData, window, cx| {
                                 view.handle_palette_drop(data, window, cx);
                             }))
-                            .when_some(workflow_canvas, |el, canvas| el.child(canvas));
+                            .when_some(workflow_canvas, gpui::ParentElement::child);
                         #[cfg(feature = "dev-api")]
                         let canvas_area = {
                             use crate::app::dev_api::DevTrackExt;
@@ -545,18 +556,17 @@ impl PlayerView {
             .workflow_canvas
             .clone();
         if let Some(canvas) = canvas {
-            let drop_position = self
-                .graph_canvas_drop_position
-                .take()
-                .map(|(x, y)| canvas.read(cx).viewport().screen_to_canvas(x, y))
-                .unwrap_or_else(|| {
+            let drop_position = self.graph_canvas_drop_position.take().map_or_else(
+                || {
                     // A drop normally records its pointer location through
                     // `on_drag_move`. Keep a deterministic center fallback
                     // for synthetic drops and platforms that omit a final
                     // drag-move event.
                     let viewport = canvas.read(cx).viewport();
                     viewport.screen_to_canvas(viewport.size.0 / 2.0, viewport.size.1 / 2.0)
-                });
+                },
+                |(x, y)| canvas.read(cx).viewport().screen_to_canvas(x, y),
+            );
             let drop_x = drop_position.x;
             let drop_y = drop_position.y;
 
@@ -654,7 +664,7 @@ impl PlayerView {
                         graph
                             .special_nodes
                             .get(&id)
-                            .map(|node| node.display_name().to_string())
+                            .map(|node| node.display_name().clone())
                     })
                     .unwrap_or_else(|| "—".into())
             };
@@ -712,6 +722,10 @@ impl PlayerView {
         root.into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_routing_draft_actions(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -820,6 +834,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_graph_header(
         &self,
         node_count: usize,
@@ -928,7 +946,7 @@ impl PlayerView {
                             .text_color(theme.text_muted)
                             .child(
                                 runtime_text
-                                    .translate(&format!("#{} plugins", plugin_count))
+                                    .translate(&format!("#{plugin_count} plugins"))
                                     .into_owned(),
                             ),
                     )
@@ -938,7 +956,7 @@ impl PlayerView {
                             .text_color(theme.text_muted)
                             .child(
                                 runtime_text
-                                    .translate(&format!("#{} links", connection_count))
+                                    .translate(&format!("#{connection_count} links"))
                                     .into_owned(),
                             ),
                     )
@@ -1007,7 +1025,7 @@ impl PlayerView {
                             .text_color(theme.text_muted)
                             .child(
                                 runtime_text
-                                    .translate(&format!("{} nodes", node_count))
+                                    .translate(&format!("{node_count} nodes"))
                                     .into_owned(),
                             ),
                     )
@@ -1115,7 +1133,7 @@ impl PlayerView {
                                 text_on_accent: theme.text_on_accent,
                             };
                             div()
-                                .id(SharedString::from(format!("palette-{:?}", plugin_type)))
+                                .id(SharedString::from(format!("palette-{plugin_type:?}")))
                                 .px(d.pad_y)
                                 .py(d.pad_y_half)
                                 .rounded(d.r_md)
@@ -1138,6 +1156,10 @@ impl PlayerView {
 
 impl PlayerView {
     /// Render the plugin node editor modal
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_plugin_node_modal(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -1188,16 +1210,15 @@ impl PlayerView {
             .as_ref()
             .and_then(|id_str| sotf_audio_player::GraphNodeId::parse_str(id_str).ok());
 
-        let (plugin_settings, plugin_enabled, plugin_linear_idx) = graph_node_uuid
-            .map(|uuid| {
+        let (plugin_settings, plugin_enabled, plugin_linear_idx) =
+            graph_node_uuid.map_or((None, None, None), |uuid| {
                 let graph = &state.app.plugin_state.routing_controller().graph;
                 let plugin = graph.nodes.get(&uuid).map(|node| &node.plugin);
                 let settings = plugin.map(|plugin| plugin.settings.clone());
                 let enabled = plugin.map(|plugin| plugin.enabled);
                 let linear_idx = graph.linear_index_of_node(uuid);
                 (settings, enabled, linear_idx)
-            })
-            .unwrap_or((None, None, None));
+            });
 
         // For non-linear graphs, linear_idx is None but the node still exists.
         // Enable editing whenever the plugin exists in the graph — the
@@ -1235,9 +1256,9 @@ impl PlayerView {
         } else if node_type == NODE_TYPE_PLAYER {
             "Player".to_string()
         } else if node_type == NODE_TYPE_OUTPUT_DEVICE {
-            format!("Output: {}", node_name)
+            format!("Output: {node_name}")
         } else if node_type == NODE_TYPE_INPUT_DEVICE {
-            format!("Input: {}", node_name)
+            format!("Input: {node_name}")
         } else {
             node_name.clone()
         };
@@ -1308,10 +1329,10 @@ impl PlayerView {
                                             state.app.plugin_state.graph_state.inspector_width =
                                                 Some(width);
                                             cx.notify();
-                                        })
+                                        });
                                     });
                                 },
-                                |bounds, _, window, _| {
+                                |bounds, (), window, _| {
                                     #[cfg(feature = "dev-api")]
                                     crate::app::dev_api::registry::record_with_state(
                                         window.window_handle().window_id().as_u64(),
@@ -1323,7 +1344,7 @@ impl PlayerView {
                                             ),
                                             size(px(INSPECTOR_DIVIDER_WIDTH), bounds.size.height),
                                         ),
-                                        Default::default(),
+                                        crate::app::dev_api::DevElementState::default(),
                                     );
                                     #[cfg(not(feature = "dev-api"))]
                                     let _ = (bounds, window);
@@ -1684,6 +1705,10 @@ impl PlayerView {
     /// `PluginGraph` even if a linear index isn't available (non-linear graph).
     /// Editing is enabled when either is true — the `editing_graph_node_uuid`
     /// context handles dispatching parameter changes via node ID.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_plugin_node_content(
         &self,
         node_type: &str,

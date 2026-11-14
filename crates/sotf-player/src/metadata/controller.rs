@@ -7,16 +7,21 @@ use crate::library::{Album, MusicLibrary, Track};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+#[derive(Debug)]
 pub struct MetadataController;
 
 impl MetadataController {
+    /// Preview edit.
+    ///
+    /// # Errors
+    /// Returns an error for invalid metadata edits, unsupported tag writes, or failed file and database operations.
     pub fn preview_edit(
         library: &MusicLibrary,
         target: MetadataTarget,
-        patch: MetadataPatch,
+        changes: MetadataPatch,
     ) -> Result<MetadataEditPreview, MetadataError> {
-        let patch = patch.sanitized();
-        if patch.is_empty() {
+        let changes = changes.sanitized();
+        if changes.is_empty() {
             return Err(MetadataError::EmptyPatch);
         }
 
@@ -76,13 +81,17 @@ impl MetadataController {
         })
     }
 
+    /// Apply edit.
+    ///
+    /// # Errors
+    /// Returns an error for invalid metadata edits, unsupported tag writes, or failed file and database operations.
     pub fn apply_edit(
         library: &mut MusicLibrary,
         target: MetadataTarget,
-        patch: MetadataPatch,
+        changes: MetadataPatch,
     ) -> Result<MetadataEditPreview, MetadataError> {
-        let patch = patch.sanitized();
-        let preview = Self::preview_edit(library, target.clone(), patch.clone())?;
+        let changes = changes.sanitized();
+        let preview = Self::preview_edit(library, target.clone(), changes.clone())?;
         if !preview.can_apply() {
             let paths = preview
                 .unsupported_writes
@@ -95,7 +104,7 @@ impl MetadataController {
 
         for file in &preview.affected_files {
             backup_file(&file.path, &file.backup_path)?;
-            TagWriter::write_patch(&file.path, &patch)?;
+            TagWriter::write_patch(&file.path, &changes)?;
         }
 
         if let Some(sidecar_path) = &preview.sidecar_path {
@@ -103,18 +112,18 @@ impl MetadataController {
                 backup_file(sidecar_path, backup_path)?;
             }
             let mut sidecar = AlbumMetadataSidecar::read(sidecar_path)?;
-            sidecar.apply_patch(&patch);
+            sidecar.apply_patch(&changes);
             sidecar.write(sidecar_path)?;
         }
 
-        apply_to_memory(library, &target, &patch)?;
+        apply_to_memory(library, &target, &changes)?;
 
         let db = library
             .get_database_mut()
             .ok_or(MetadataError::DatabaseUnavailable)?;
         match target {
-            MetadataTarget::AlbumId(album_id) => db.update_album_metadata(album_id, &patch)?,
-            MetadataTarget::TrackPath(path) => db.update_track_metadata(&path, &patch)?,
+            MetadataTarget::AlbumId(album_id) => db.update_album_metadata(album_id, &changes)?,
+            MetadataTarget::TrackPath(path) => db.update_track_metadata(&path, &changes)?,
         }
         if let Err(err) = db.sync_fts_index() {
             log::warn!("Failed to sync FTS index after metadata edit: {err}");
@@ -124,6 +133,10 @@ impl MetadataController {
         Ok(preview)
     }
 
+    /// Import musicbrainz candidate.
+    ///
+    /// # Errors
+    /// Returns an error for invalid metadata edits, unsupported tag writes, or failed file and database operations.
     pub fn import_musicbrainz_candidate(
         library: &mut MusicLibrary,
         target: MetadataTarget,
@@ -161,33 +174,33 @@ fn album_dir(album: &Album) -> Option<PathBuf> {
     album
         .tracks
         .iter()
-        .find_map(|track| track.path.parent().map(|path| path.to_path_buf()))
+        .find_map(|track| track.path.parent().map(std::path::Path::to_path_buf))
 }
 
 fn apply_to_memory(
     library: &mut MusicLibrary,
     target: &MetadataTarget,
-    patch: &MetadataPatch,
+    changes: &MetadataPatch,
 ) -> Result<(), MetadataError> {
     match target {
         MetadataTarget::AlbumId(album_id) => {
             let album = find_album_mut(library, *album_id)
                 .ok_or(MetadataError::AlbumNotFound(*album_id))?;
-            apply_album_patch(album, patch);
+            apply_album_patch(album, changes);
         }
         MetadataTarget::TrackPath(path) => {
             let mut found = false;
             for album in &mut library.albums {
                 for track in &mut album.tracks {
                     if track.path == *path {
-                        apply_track_patch(track, patch);
-                        if let Some(title) = &patch.album_title {
-                            album.title = title.clone();
+                        apply_track_patch(track, changes);
+                        if let Some(title) = &changes.album_title {
+                            album.title.clone_from(title);
                         }
-                        if let Some(year) = patch.year {
+                        if let Some(year) = changes.year {
                             album.year = Some(year);
                         }
-                        if let Some(edition) = &patch.edition {
+                        if let Some(edition) = &changes.edition {
                             track.edition = Some(edition.clone());
                         }
                         found = true;
@@ -202,56 +215,56 @@ fn apply_to_memory(
     Ok(())
 }
 
-fn apply_album_patch(album: &mut Album, patch: &MetadataPatch) {
-    if let Some(title) = &patch.album_title {
-        album.title = title.clone();
+fn apply_album_patch(album: &mut Album, changes: &MetadataPatch) {
+    if let Some(title) = &changes.album_title {
+        album.title.clone_from(title);
     }
-    if let Some(year) = patch.year {
+    if let Some(year) = changes.year {
         album.year = Some(year);
     }
-    if let Some(edition) = &patch.edition {
+    if let Some(edition) = &changes.edition {
         album.edition = Some(edition.clone());
     }
     for track in &mut album.tracks {
-        apply_track_patch(track, patch);
+        apply_track_patch(track, changes);
     }
 }
 
-fn apply_track_patch(track: &mut Track, patch: &MetadataPatch) {
-    if let Some(value) = &patch.title {
+fn apply_track_patch(track: &mut Track, changes: &MetadataPatch) {
+    if let Some(value) = &changes.title {
         track.title = Some(value.clone());
     }
-    if let Some(value) = &patch.artist {
+    if let Some(value) = &changes.artist {
         track.artist = Some(value.clone());
     }
-    if let Some(value) = &patch.album_artist {
+    if let Some(value) = &changes.album_artist {
         track.album_artist = Some(value.clone());
     }
-    if let Some(value) = &patch.genre {
+    if let Some(value) = &changes.genre {
         track.genre = Some(value.clone());
     }
-    if let Some(value) = &patch.composer {
+    if let Some(value) = &changes.composer {
         track.composer = Some(value.clone());
     }
-    if let Some(value) = patch.disc_number {
+    if let Some(value) = changes.disc_number {
         track.disc_number = Some(value);
     }
-    if let Some(value) = patch.track_number {
+    if let Some(value) = changes.track_number {
         track.track_number = Some(value);
     }
-    if let Some(value) = &patch.conductor {
+    if let Some(value) = &changes.conductor {
         track.conductor = Some(value.clone());
     }
-    if let Some(value) = &patch.performer {
+    if let Some(value) = &changes.performer {
         track.performer = Some(value.clone());
     }
-    if let Some(value) = &patch.isrc {
+    if let Some(value) = &changes.isrc {
         track.isrc = Some(value.clone());
     }
-    if let Some(value) = &patch.ensemble {
+    if let Some(value) = &changes.ensemble {
         track.ensemble = Some(value.clone());
     }
-    if let Some(value) = &patch.edition {
+    if let Some(value) = &changes.edition {
         track.edition = Some(value.clone());
     }
 }
@@ -301,7 +314,7 @@ mod tests {
 
     #[test]
     fn metadata_candidate_converts_to_patch() {
-        let patch = MetadataImportCandidate {
+        let changes = MetadataImportCandidate {
             provider_id: "musicbrainz".to_string(),
             provider_entity_id: "recording-id".to_string(),
             title: Some("Track".to_string()),
@@ -316,15 +329,15 @@ mod tests {
         }
         .into_patch();
 
-        assert_eq!(patch.title.as_deref(), Some("Track"));
-        assert_eq!(patch.album_title.as_deref(), Some("Album"));
-        assert_eq!(patch.year, Some(2024));
-        assert_eq!(patch.track_number, Some(3));
+        assert_eq!(changes.title.as_deref(), Some("Track"));
+        assert_eq!(changes.album_title.as_deref(), Some("Album"));
+        assert_eq!(changes.year, Some(2024));
+        assert_eq!(changes.track_number, Some(3));
     }
 
     #[test]
     fn metadata_patch_sanitized_trims_text_and_drops_blank_values() {
-        let patch = MetadataPatch {
+        let changes = MetadataPatch {
             title: Some("  Track  ".to_string()),
             artist: Some("   ".to_string()),
             album_title: Some(" Album ".to_string()),
@@ -333,9 +346,9 @@ mod tests {
         }
         .sanitized();
 
-        assert_eq!(patch.title.as_deref(), Some("Track"));
-        assert_eq!(patch.artist, None);
-        assert_eq!(patch.album_title.as_deref(), Some("Album"));
-        assert_eq!(patch.genre.as_deref(), Some("Jazz"));
+        assert_eq!(changes.title.as_deref(), Some("Track"));
+        assert_eq!(changes.artist, None);
+        assert_eq!(changes.album_title.as_deref(), Some("Album"));
+        assert_eq!(changes.genre.as_deref(), Some("Jazz"));
     }
 }

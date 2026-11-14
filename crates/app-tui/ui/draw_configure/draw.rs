@@ -1,5 +1,15 @@
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, BorderType, Borders, Cell, Clear, Constraint, Direction, Frame,
+    InputMode, Layout, Line, List, ListItem, ListState, Modifier, Paragraph, Rect, Row, Span,
+    Style, Table, Wrap, autocomplete_dropdown_height, below_title_bar, draw_directory_manager,
+    draw_federation_screen, draw_headphone_eq_screen, draw_help_box_with_text, draw_room_eq_screen,
+    draw_servers_screen, draw_spinorama_eq_screen, render_autocomplete_dropdown,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let chunks = Layout::default()
@@ -148,9 +158,14 @@ pub(crate) fn draw_devices_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(cast_list, chunks[2]);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::ConfigureSubScreen;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -220,7 +235,7 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
             };
             let line = Line::from(vec![
                 Span::styled(
-                    format!(" [{}] ", key),
+                    format!(" [{key}] "),
                     if is_selected {
                         style.add_modifier(Modifier::BOLD)
                     } else {
@@ -273,8 +288,9 @@ pub(crate) fn draw_configure_screen(f: &mut Frame, area: Rect, app: &App) {
 
 /// Draw the full-screen configure modal (covers everything below the 3-row title bar).
 pub(crate) fn draw_configure_modal(f: &mut Frame, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::ConfigureSubScreen;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let area = below_title_bar(f);
 
@@ -341,8 +357,7 @@ fn draw_metadata_services_screen(f: &mut Frame, area: Rect, app: &App) {
         .username
         .as_deref()
         .filter(|name| !name.trim().is_empty())
-        .map(str::to_owned)
-        .unwrap_or_else(|| i18n.dynamic("Anonymous".to_string()));
+        .map_or_else(|| i18n.dynamic("Anonymous".to_string()), str::to_owned);
     let auth_status = if provider.has_stored_credentials {
         i18n.dynamic("Credentials saved".to_string())
     } else {
@@ -383,22 +398,34 @@ fn draw_metadata_services_screen(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(paragraph, area);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
+    use ratatui::widgets::Tabs;
+
+    use sotf_audio_player::recording_helpers::{
+        position_guidance, take_quality_cell, take_verdict_text,
+    };
+
+    use sotf_audio_player::recording_types::{
+        ChannelRecording, ChannelRecordingState, RecordingSignalType, RecordingStep,
+    };
+
+    use super::super::keybinding_catalog::{TuiKeyContext, workflow_focus_hints};
+
     if app.recording.multi_capture.active {
         super::capture::draw_capture(f, area, app);
         return;
     }
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
-    use ratatui::widgets::Tabs;
-    use sotf_audio_player::recording_helpers::{
-        position_guidance, take_quality_cell, take_verdict_text,
-    };
-    use sotf_audio_player::recording_types::{
-        ChannelRecording, ChannelRecordingState, RecordingSignalType, RecordingStep,
-    };
 
     let s = &app.recording;
-    use super::super::keybinding_catalog::{TuiKeyContext, workflow_focus_hints};
 
     // Layout: step tabs on top, content below
     let outer = Layout::default()
@@ -511,6 +538,8 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 
     match s.model.step {
         RecordingStep::Config => {
+            use crate::app::RecordingField;
+
             // When editing a path field, reserve space for the autocomplete
             // dropdown at the bottom of the content area. Without this carve-
             // out the dropdown was placed *below* the already full-height
@@ -553,7 +582,6 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
             // non-selectable section header (`idx = None`) or one logical
             // field (`idx = Some(i)` where `i` matches `selected_field`'s
             // value via `recording_field_at`).
-            use crate::app::RecordingField;
             let n_channels = s.model.recording_config.num_channels.max(1);
             let mic_cal_label = |ch: usize| {
                 if n_channels > 1 {
@@ -568,7 +596,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 s.model
                     .mic_calibration_paths
                     .get(ch)
-                    .and_then(|o| o.clone())
+                    .and_then(std::clone::Clone::clone)
                     .filter(|p| !p.is_empty())
                     .unwrap_or_else(|| "<none>".to_string())
             };
@@ -578,8 +606,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     .recording_config
                     .channel_mappings
                     .get(ch)
-                    .map(|c| (c + 1).to_string())
-                    .unwrap_or_else(|| "1".to_string())
+                    .map_or_else(|| "1".to_string(), |c| (c + 1).to_string())
             };
 
             // Use owned strings throughout so the dynamic per-channel rows
@@ -628,15 +655,17 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 format!("{duration_value:.1}"),
             ));
             let effective_playback = crate::app::recording_acquisition_config(&s.model)
-                .map(|config| {
-                    format!(
-                        "{:.2}s · {} frames @ {} Hz",
-                        config.playback_duration_secs,
-                        config.playback_frames,
-                        config.sample_rate_hz
-                    )
-                })
-                .unwrap_or_else(|error| format!("unavailable: {error}"));
+                .map_or_else(
+                    |error| format!("unavailable: {error}"),
+                    |config| {
+                        format!(
+                            "{:.2}s · {} frames @ {} Hz",
+                            config.playback_duration_secs,
+                            config.playback_frames,
+                            config.sample_rate_hz
+                        )
+                    },
+                );
             rows.push((
                 None,
                 "Effective playback (incl. padding)".to_string(),
@@ -688,8 +717,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 s.model
                     .recording_config
                     .ctc_loopback_input_channel
-                    .map(|ch| (ch + 1).to_string())
-                    .unwrap_or_else(|| "<none>".to_string()),
+                    .map_or_else(|| "<none>".to_string(), |ch| (ch + 1).to_string()),
             ));
             rows.push((
                 Some(12),
@@ -739,11 +767,11 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                             .model
                             .mic_calibration_paths
                             .get(ch)
-                            .and_then(|o| o.clone())
+                            .and_then(std::clone::Clone::clone)
                             .unwrap_or_default(),
                         _ => value.clone(),
                     };
-                    format!("{}▏", path_val)
+                    format!("{path_val}▏")
                 } else {
                     value.clone()
                 };
@@ -803,7 +831,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                         mapping
                             .interface_channels
                             .iter()
-                            .map(|c| c.to_string())
+                            .map(std::string::ToString::to_string)
                             .collect::<Vec<_>>()
                             .join(",")
                     )),
@@ -1004,8 +1032,7 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                     let pts = ch
                         .result
                         .as_ref()
-                        .map(|r| format!("{}", r.frequencies.len()))
-                        .unwrap_or_else(|| "-".to_string());
+                        .map_or_else(|| "-".to_string(), |r| format!("{}", r.frequencies.len()));
                     let style = if i == s.selected_channel_view {
                         Style::default()
                             .fg(app.theme.accent_primary)
@@ -1053,16 +1080,14 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
                 ];
                 if let Some(ref thd) = result.thd_percent {
                     let avg_thd = thd.iter().copied().sum::<f32>() / thd.len().max(1) as f32;
-                    details.push(Line::from(
-                        i18n.dynamic(format!(" Avg THD: {:.2}%", avg_thd)),
-                    ));
+                    details.push(Line::from(i18n.dynamic(format!(" Avg THD: {avg_thd:.2}%"))));
                 }
                 if let Some(ref rt60) = result.rt60_ms {
                     let positive: Vec<f32> = rt60.iter().copied().filter(|v| *v > 0.0).collect();
                     if !positive.is_empty() {
                         let avg_rt60 = positive.iter().sum::<f32>() / positive.len() as f32;
                         details.push(Line::from(
-                            i18n.dynamic(format!(" Avg RT60: {:.0} ms", avg_rt60)),
+                            i18n.dynamic(format!(" Avg RT60: {avg_rt60:.0} ms")),
                         ));
                     }
                 }
@@ -1120,9 +1145,18 @@ pub(crate) fn draw_recording_screen(f: &mut Frame, area: Rect, app: &App) {
 ///   4      Unit toggle (Metric / Imperial)
 ///   5      Setup description
 ///   6..    Per-channel speaker entries (one index per playback mapping)
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::recording_types::{ChannelRecordingState, RoomDimensionUnit};
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.recording;
     let speaker_channel_count = s.model.playback_config.channel_mappings.len();
@@ -1156,7 +1190,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         if is_editing_field(idx) {
             format!("> {}_", s.edit_buffer)
         } else if value.is_empty() {
-            format!("<{}>", placeholder)
+            format!("<{placeholder}>")
         } else {
             value
         }
@@ -1206,7 +1240,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         field_text(
             idx,
             if v > 0.0 {
-                format!("{:.2}", v)
+                format!("{v:.2}")
             } else {
                 String::new()
             },
@@ -1236,7 +1270,7 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
         .to_string(),
     );
     f.render_widget(
-        Paragraph::new(format!(" {}", unit_marker)).style(focused(4)),
+        Paragraph::new(format!(" {unit_marker}")).style(focused(4)),
         cells[3],
     );
 
@@ -1411,10 +1445,20 @@ fn draw_recording_saving_step(f: &mut Frame, content: Rect, app: &App) {
 ///   - channel list is seeded from `channel_recordings` (Capture step
 ///     already ran) rather than loaded measurements.
 ///   - on success, also shows the persisted WAV path under "Results".
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::recording_types::ProbeCaptureStatus;
+
     use sotf_audio_player::room_eq_types::estimate_probe_sequence_ms;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.recording;
     let pc = &s.model.probe_capture;
@@ -1444,7 +1488,7 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
         if is_editing(idx) {
             format!("> {}_", s.edit_buffer)
         } else if val.is_empty() {
-            format!("<{}>", placeholder)
+            format!("<{placeholder}>")
         } else {
             val
         }
@@ -1506,8 +1550,7 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
         estimate_probe_sequence_ms(channel_count, pc.probe_duration_ms, pc.silence_duration_ms);
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0);
+        .map_or(0, |d| d.as_millis() as u64);
     let (status_text, status_color) = match &pc.status {
         ProbeCaptureStatus::Idle => (
             "Idle — press `r` to capture tone-burst delays".to_string(),
@@ -1517,18 +1560,17 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
             let pct = pc
                 .status
                 .progress(estimated_total, now_ms)
-                .map(|p| format!("{:.0}%", p * 100.0))
-                .unwrap_or_else(|| "…".to_string());
-            (format!("Running... {}", pct), app.theme.accent_primary)
+                .map_or_else(|| "…".to_string(), |p| format!("{:.0}%", p * 100.0));
+            (format!("Running... {pct}"), app.theme.accent_primary)
         }
         ProbeCaptureStatus::Complete => {
-            let n = pc.results.as_ref().map(|r| r.channels.len()).unwrap_or(0);
+            let n = pc.results.as_ref().map_or(0, |r| r.channels.len());
             (
-                format!("Complete — detected {} channel(s)", n),
+                format!("Complete — detected {n} channel(s)"),
                 app.theme.accent_success,
             )
         }
-        ProbeCaptureStatus::Failed(msg) => (format!("Failed: {}", msg), app.theme.accent_error),
+        ProbeCaptureStatus::Failed(msg) => (format!("Failed: {msg}"), app.theme.accent_error),
     };
     let status = Paragraph::new(i18n.dynamic(status_text))
         .style(Style::default().fg(status_color))
@@ -1559,7 +1601,7 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
                     Cell::from(format!("{:.2}", ch.arrival_ms)),
                     Cell::from(format!("{:+.1}", ch.gain_db)),
                     Cell::from(format!("{:+.1}", ch.snr_db)).style(Style::default().fg(snr_color)),
-                    Cell::from(format!("{:.2}", align)),
+                    Cell::from(format!("{align:.2}")),
                 ])
             })
             .collect();
@@ -1624,9 +1666,14 @@ fn draw_recording_probe_step(f: &mut Frame, content: Rect, app: &App) {
 /// summary, status banner, per-channel results table when present.
 /// Optional in the wizard flow: skip with Tab if the system can't
 /// reproduce sub-bass.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::recording_types::BassAnchorCaptureStatus;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.recording;
     let bac = &s.model.bass_anchor_capture;
@@ -1649,7 +1696,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
         .recording_config
         .ctc_loopback_input_channel
     {
-        Some(ch) => i18n.dynamic(format!(" • loopback ref ch {}", ch)),
+        Some(ch) => i18n.dynamic(format!(" • loopback ref ch {ch}")),
         None => String::new(),
     };
     let explainer = vec![
@@ -1689,7 +1736,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
     // --- Status banner -------------------------------------------------
     let (status_text, status_color) = match &bac.status {
         BassAnchorCaptureStatus::Idle => (
-            format!("Idle — optional step ({:.0} ms / channel).", tone_ms),
+            format!("Idle — optional step ({tone_ms:.0} ms / channel)."),
             app.theme.fg_secondary,
         ),
         BassAnchorCaptureStatus::Running { .. } => (
@@ -1699,7 +1746,7 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
         BassAnchorCaptureStatus::Complete => (
             format!(
                 "Complete — {} channel(s) analysed",
-                bac.results.as_ref().map(|r| r.channels.len()).unwrap_or(0)
+                bac.results.as_ref().map_or(0, |r| r.channels.len())
             ),
             app.theme.accent_success,
         ),
@@ -1794,9 +1841,14 @@ fn draw_recording_bass_anchor_step(f: &mut Frame, content: Rect, app: &App) {
 ///   - Form fields for tone parameters (freq / amp / duration / output ch / input ch).
 ///   - Run/Cancel pseudo-button row.
 ///   - Engine result + meter-reading input + derived `spl_offset_db`.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.recording;
     let cal = &s.model.spl_calibration_capture;
@@ -1825,7 +1877,7 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
         if is_editing(idx) {
             format!("> {}_", s.edit_buffer)
         } else if val.is_empty() {
-            format!("<{}>", placeholder)
+            format!("<{placeholder}>")
         } else {
             val
         }
@@ -1857,7 +1909,7 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
     );
 
     let reported_str = match cal.reported_db_spl {
-        Some(v) => format!("{:.1}", v),
+        Some(v) => format!("{v:.1}"),
         None => String::new(),
     };
 
@@ -1965,7 +2017,7 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
         )));
         match cal.reported_db_spl {
             Some(v) => detail_lines.push(Line::from(Span::styled(
-                i18n.dynamic(format!(" Reported dBSPL: {:.1}", v)),
+                i18n.dynamic(format!(" Reported dBSPL: {v:.1}")),
                 Style::default().fg(app.theme.fg_primary),
             ))),
             None => detail_lines.push(Line::from(Span::styled(
@@ -2025,8 +2077,16 @@ fn draw_recording_spl_calibration_step(f: &mut Frame, content: Rect, app: &App) 
 #[cfg(test)]
 mod localization_render_tests {
     use super::*;
+    use crate::ui::{
+        draw_channel_conflict_modal, draw_error_modal, draw_file_explorer_modal,
+        draw_freq_response_chart, draw_help_modal, draw_library_screen, draw_load_apo_file_dialog,
+        draw_load_plugins_dialog, draw_load_sofa_file_dialog, draw_loading_screen,
+        draw_maintenance_progress_dialog, draw_meters_column, draw_playlists_screen,
+        draw_plugins_screen, draw_queue_screen, draw_replay_gain_progress_dialog,
+        draw_save_plugins_dialog, draw_scan_progress_dialog, draw_status_bar,
+    };
     use crate::{
-        app::{FederationMode, HeadphoneEqStep, InputMode, PlaylistMode, SpinoramaStep},
+        app::{FederationMode, HeadphoneEqStep, PlaylistMode, Screen, SpinoramaStep},
         i18n::Language,
         theme::Theme,
     };

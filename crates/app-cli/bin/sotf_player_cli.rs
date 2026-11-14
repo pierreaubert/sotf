@@ -33,6 +33,10 @@ use parse::parse_loudness_compensation;
 use types::Cli;
 use types::Commands;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The command dispatcher handles every top-level CLI command"
+)]
 fn main() {
     let cli = Cli::parse();
     error_output::set_show_urls(cli.show_urls);
@@ -52,8 +56,7 @@ fn main() {
         }
         Err(e) => {
             eprintln!(
-                "Warning: could not open log file {:?}: {}; falling back to stderr.",
-                log_path, e
+                "Warning: could not open log file {log_path:?}: {e}; falling back to stderr."
             );
             builder.target(env_logger::Target::Stderr);
         }
@@ -68,33 +71,35 @@ fn main() {
     {
         let e = redact_secrets(&e.to_string());
         eprintln!("\nPre-flight check failed:\n");
-        eprintln!("{}\n", e);
-        log::error!("Pre-flight check failed: {}", e);
+        eprintln!("{e}\n");
+        log::error!("Pre-flight check failed: {e}");
         std::process::exit(1);
     }
 
     match cli.command {
         Commands::Devices => {
             if let Err(e) = list_devices() {
-                let e = redact_secrets(&e.to_string());
-                log::error!("Error: {}", e);
-                eprintln!("Error: {}", e);
+                let e = redact_secrets(&e.clone());
+                log::error!("Error: {e}");
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
         }
         Commands::ReplayGain { file } => match sotf_audio::replaygain::analyze_file(&file) {
             Ok(info) => {
                 let msg = format!(
-                    "ReplayGain analysis:\n  File: {:?}\n  Gain: {:+.2} dB\n  Peak: {:.6}",
-                    file, info.gain, info.peak
+                    "ReplayGain analysis:\n  File: {}\n  Gain: {:+.2} dB\n  Peak: {:.6}",
+                    file.display(),
+                    info.gain,
+                    info.peak
                 );
-                log::info!("{}", msg);
-                println!("{}", msg);
+                log::info!("{msg}");
+                println!("{msg}");
             }
             Err(e) => {
                 let e = redact_secrets(&e.to_string());
-                log::error!("Error: {}", e);
-                eprintln!("Error: {}", e);
+                log::error!("Error: {e}");
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
         },
@@ -105,7 +110,7 @@ fn main() {
             hwaudio_play,
             duration,
             start_time,
-            _buffer_chunks,
+            _buffer_chunks: buffer_chunks,
             lufs,
             loudness_compensation,
             loudness_auto_gain,
@@ -114,10 +119,10 @@ fn main() {
             rack,
             plugins,
         } => {
-            if _buffer_chunks.is_some() {
+            if buffer_chunks.is_some() {
                 let msg = "Warning: --buffer-chunks is deprecated and currently has no effect.";
-                log::warn!("{}", msg);
-                eprintln!("{}", msg);
+                log::warn!("{msg}");
+                eprintln!("{msg}");
             }
 
             // Filter specs are parsed inside `play_stream`, after the audio
@@ -126,41 +131,41 @@ fn main() {
             // Parse loudness compensation
             let loudness: Option<LoudnessCompensation> = match loudness_compensation {
                 Some(ref vals) => parse_loudness_compensation(vals).unwrap_or_else(|e| {
-                    let e = redact_secrets(&e.to_string());
-                    log::error!("Error in --loudness-compensation: {}", e);
-                    eprintln!("Error in --loudness-compensation: {}", e);
+                    let e = redact_secrets(&e.clone());
+                    log::error!("Error in --loudness-compensation: {e}");
+                    eprintln!("Error in --loudness-compensation: {e}");
                     std::process::exit(1);
                 }),
                 None => None,
             };
 
             if let Err(e) = play_stream(
-                file,
+                &file,
                 device,
-                filters,
+                &filters,
                 duration,
                 start_time,
-                hwaudio_play,
+                hwaudio_play.as_deref(),
                 lufs,
-                loudness,
+                loudness.as_ref(),
                 loudness_auto_gain,
                 loudness_auto_gain_max_db,
                 loudness_auto_gain_smoothing_ms,
-                rack,
+                &rack,
                 &plugins,
             ) {
-                let e = redact_secrets(&e.to_string());
-                log::error!("Error: {}", e);
-                eprintln!("Error: {}", e);
+                let e = redact_secrets(&e.clone());
+                log::error!("Error: {e}");
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
         }
         Commands::Status { db } => {
             if let Some(db_path) = db {
                 if let Err(e) = run_status_command(&db_path) {
-                    let e = redact_secrets(&e.to_string());
-                    log::error!("Error: {}", e);
-                    eprintln!("Error: {}", e);
+                    let e = redact_secrets(&e.clone());
+                    log::error!("Error: {e}");
+                    eprintln!("Error: {e}");
                     std::process::exit(1);
                 }
             } else {
@@ -168,16 +173,16 @@ fn main() {
                 // (not just the log) and exit non-zero so scripts can detect
                 // the missing argument instead of mistaking silence for health.
                 let msg = "Status requires --db <PATH> (no running manager query yet implemented)";
-                log::error!("{}", msg);
-                println!("{}", msg);
+                log::error!("{msg}");
+                println!("{msg}");
                 std::process::exit(2);
             }
         }
         Commands::Library { db, action } => {
             if let Err(e) = run_library_command(&db, &action) {
-                let e = redact_secrets(&e.to_string());
-                log::error!("Error: {}", e);
-                eprintln!("Error: {}", e);
+                let e = redact_secrets(&e.clone());
+                log::error!("Error: {e}");
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
         }
@@ -187,8 +192,8 @@ fn main() {
         } => {
             if let Err(e) = run_diagnostics_command(output, why_no_audio) {
                 let e = redact_secrets(&e.to_string());
-                log::error!("Error: {}", e);
-                eprintln!("Error: {}", e);
+                log::error!("Error: {e}");
+                eprintln!("Error: {e}");
                 std::process::exit(1);
             }
         }

@@ -4,7 +4,7 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, SharedString, div, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Select,
     SelectOption, SelectSize, Text,
@@ -15,6 +15,10 @@ use sotf_audio_player::controllers::LibraryResultOrder;
 use crate::app::dev_api::DevTrackExt;
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_library_toolbar(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let app = &state.app;
@@ -81,7 +85,7 @@ impl PlayerView {
                 .on_highlight(move |index, _, cx| {
                     let _ = highlight.update(cx, |view, cx| {
                         view.state.update(cx, |state, _| {
-                            state.app.library_state.sort_highlighted_index = index
+                            state.app.library_state.sort_highlighted_index = index;
                         });
                         cx.notify();
                     });
@@ -199,7 +203,7 @@ impl PlayerView {
             .on_click_event(move |_, _, cx| {
                 tool_state.update(cx, |state, _| match id {
                     "filter" => {
-                        state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open
+                        state.app.ui_state.filter_menu_open = !state.app.ui_state.filter_menu_open;
                     }
                     "favorites" => state.app.toggle_favorites_filter(),
                     _ => {}
@@ -232,8 +236,7 @@ impl PlayerView {
                 app.remote
                     .current_album_page
                     .as_ref()
-                    .map(|page| page.total)
-                    .unwrap_or(0),
+                    .map_or(0, |page| page.total),
                 t.library_albums,
             )
         } else if app.library_state.sort_order == LibrarySortOrder::Tracks {

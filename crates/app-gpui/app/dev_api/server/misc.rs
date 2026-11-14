@@ -21,31 +21,28 @@ pub(super) fn room_eq_export_summary_for_path(path: &Path) -> Result<serde_json:
     let channel_count = json
         .get("channels")
         .and_then(|v| v.as_object())
-        .map(|channels| channels.len())
-        .unwrap_or(0);
+        .map_or(0, serde_json::Map::len);
     let global_plugin_count = json
         .get("global_plugins")
         .and_then(|v| v.as_array())
-        .map(|plugins| plugins.len())
-        .unwrap_or(0);
+        .map_or(0, std::vec::Vec::len);
     let channel_plugins: Vec<&serde_json::Value> = json
         .get("channels")
         .and_then(|v| v.as_object())
-        .map(|channels| {
+        .map_or_default(|channels| {
             channels
                 .values()
                 .filter_map(|channel| channel.get("plugins").and_then(|v| v.as_array()))
                 .flat_map(|plugins| plugins.iter())
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let channel_plugin_count = channel_plugins.len();
     let filter_count = channel_plugins
         .iter()
         .filter_map(|plugin| plugin.get("parameters"))
         .filter_map(|params| params.get("filters"))
         .filter_map(|filters| filters.as_array())
-        .map(|filters| filters.len())
+        .map(std::vec::Vec::len)
         .sum::<usize>();
 
     Ok(serde_json::json!({

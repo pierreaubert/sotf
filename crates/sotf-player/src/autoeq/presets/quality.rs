@@ -2,6 +2,12 @@ use super::misc::lerp_exp;
 
 /// Map a quality level (0.0 = fast, 1.0 = maximum) to population and maxeval.
 /// Used by the Intermediate mode quality slider.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Quality interpolation deliberately rounds bounded optimizer population and evaluation budgets"
+)]
 pub fn quality_to_optimizer_params(quality: f32) -> (usize, usize) {
     let quality = quality.clamp(0.0, 1.0);
     // Exponential interpolation for perceptually linear slider
@@ -11,6 +17,7 @@ pub fn quality_to_optimizer_params(quality: f32) -> (usize, usize) {
 }
 
 /// User-facing label for a quality level.
+#[must_use]
 pub fn quality_label(quality: f32) -> &'static str {
     if quality < 0.2 {
         "Fast (seconds)"

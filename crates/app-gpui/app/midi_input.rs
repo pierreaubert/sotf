@@ -31,7 +31,7 @@ pub struct MidiInputService {
     _manager: MidiManager,
     /// Decoded MIDI messages from the active input port.
     rx: Receiver<MidiMessage>,
-    /// Stable id of the matched controller (e.g. "xone_k2").
+    /// Stable id of the matched controller (e.g. "`xone_k2`").
     controller_id: &'static str,
     /// Cached `ControllerLayout` so the engine can be configured without
     /// re-running detection logic.
@@ -41,23 +41,27 @@ pub struct MidiInputService {
 }
 
 impl MidiInputService {
-    /// Resolved controller layout id ("xone_k2" or "lcxl").
+    /// Resolved controller layout id ("`xone_k2`" or "lcxl").
+    #[must_use]
     pub fn controller_id(&self) -> &'static str {
         self.controller_id
     }
 
     /// Layout to install on the mapping engine.
+    #[must_use]
     pub fn layout(&self) -> ControllerLayout {
         self.layout.clone()
     }
 
     /// Device name as reported by the OS — useful for breadcrumbs.
+    #[must_use]
     pub fn device_name(&self) -> &str {
         &self.device_name
     }
 
     /// Drain all currently-buffered MIDI messages. Returns immediately when
     /// the channel is empty; never blocks the caller.
+    #[must_use]
     pub fn drain(&self) -> Vec<MidiMessage> {
         let mut out = Vec::new();
         while let Ok(msg) = self.rx.try_recv() {
@@ -71,6 +75,7 @@ impl MidiInputService {
 /// MIDI input device list. Returns `None` when nothing matches or when MIDI
 /// initialization fails — the caller should treat this as a no-op (the app
 /// is fully usable without hardware).
+#[must_use]
 pub fn try_start() -> Option<MidiInputService> {
     let mut manager = match MidiManager::new() {
         Ok(m) => m,
@@ -93,10 +98,7 @@ pub fn try_start() -> Option<MidiInputService> {
             log::info!("MIDI: no input devices present");
         } else {
             let names: Vec<&str> = devices.iter().map(|d| d.name.as_str()).collect();
-            log::info!(
-                "MIDI: no supported controller in connected devices: {:?}",
-                names
-            );
+            log::info!("MIDI: no supported controller in connected devices: {names:?}");
         }
         return None;
     };
@@ -150,6 +152,15 @@ fn pick_supported_device(devices: &[MidiDeviceInfo]) -> Option<(&MidiDeviceInfo,
         }
     }
     None
+}
+
+impl std::fmt::Debug for MidiInputService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MidiInputService")
+            .field("controller_id", &self.controller_id)
+            .field("device_name", &self.device_name)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]

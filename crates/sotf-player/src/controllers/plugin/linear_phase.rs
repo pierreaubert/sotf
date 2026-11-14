@@ -26,6 +26,10 @@ pub(super) fn placement_value(placement: Option<EqBandPlacement>) -> f64 {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Linear-phase parameter specs bound integer selections and band counts"
+)]
 pub(super) fn value(settings: &PluginSettings, index: usize) -> Option<f64> {
     let PluginSettings::LinearPhaseEq {
         filters,
@@ -66,6 +70,11 @@ pub(super) fn value(settings: &PluginSettings, index: usize) -> Option<f64> {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Linear-phase parameter specs bound integer selections and band counts"
+)]
 pub(super) fn set_extra(settings: &mut PluginSettings, index: usize, value: f64) -> bool {
     if !value.is_finite() {
         return false;

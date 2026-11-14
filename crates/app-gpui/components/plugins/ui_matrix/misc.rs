@@ -9,9 +9,9 @@ pub(super) fn format_gain_db(linear: f32) -> String {
         let sign = if linear < 0.0 { "-" } else { "" };
         let db = 20.0 * linear.abs().log10();
         if db.abs() < 0.05 {
-            format!("{}0", sign)
+            format!("{sign}0")
         } else {
-            format!("{}{:.1}", sign, db)
+            format!("{sign}{db:.1}")
         }
     }
 }
@@ -22,6 +22,7 @@ pub(super) fn cell_index(input_idx: usize, output_idx: usize, input_count: usize
 }
 
 #[doc(hidden)]
+#[must_use]
 pub fn checked_matrix_cell_index(
     input_idx: usize,
     output_idx: usize,
@@ -60,7 +61,7 @@ mod tests {
     }
 }
 
-/// Compute output channel groups from MeterGroupSpec
+/// Compute output channel groups from `MeterGroupSpec`
 pub(super) fn compute_output_groups(
     output_channels: usize,
     speaker_config: Option<&str>,
@@ -80,7 +81,7 @@ pub(super) fn compute_output_groups(
             .collect()
     } else {
         (0..output_channels)
-            .map(|i| (format!("Ch{}", i), vec![i]))
+            .map(|i| (format!("Ch{i}"), vec![i]))
             .collect()
     }
 }

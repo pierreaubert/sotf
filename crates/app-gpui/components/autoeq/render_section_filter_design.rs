@@ -30,7 +30,7 @@
         // Sample rate + Num filters (side by side)
         let mut sr_input = NumberInput::new((base_id.clone(), "fd-sample-rate"))
             .scroll_requires_alt(true)
-            .value(config.eq_design.sample_rate as f64)
+            .value(f64::from(config.eq_design.sample_rate))
             .min(ParamLimits::SAMPLE_RATE.min)
             .max(ParamLimits::SAMPLE_RATE.max)
             .step(ParamLimits::SAMPLE_RATE.step)
@@ -41,7 +41,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_sample_rate_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             sr_input = sr_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }
 
@@ -58,7 +58,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_num_filters_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             nf_input = nf_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }
 
@@ -90,11 +90,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_peq_model_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             peq_select = peq_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_peq_model_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             peq_select = peq_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
         }
 
@@ -114,7 +114,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_min_freq_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -131,7 +131,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_max_freq_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -156,7 +156,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_min_q_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -173,7 +173,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_max_q_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -198,7 +198,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_min_db_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             min_db_input = min_db_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -215,7 +215,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_max_db_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             max_db_input = max_db_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -240,7 +240,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_spacing_weight_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             sw_input = sw_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -257,7 +257,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_min_spacing_oct_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             ms_input = ms_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -289,7 +289,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_fir_taps_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             taps_input = taps_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }
 
@@ -311,11 +311,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_fir_phase_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             phase_select = phase_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_fir_phase_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             phase_select = phase_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
         }
 
@@ -342,7 +342,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref h) = on_mixed_crossover_freq_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             xo_freq_input = xo_freq_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -361,11 +361,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_mixed_crossover_type_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             xo_type_select = xo_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_mixed_crossover_type_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             xo_type_select = xo_type_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
         }
 
@@ -384,11 +384,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_mixed_fir_band_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             fir_band_select = fir_band_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_mixed_fir_band_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             fir_band_select = fir_band_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
         }
 
@@ -416,7 +416,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_excursion_protection_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 excursion_toggle = excursion_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -438,7 +438,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_excursion_auto_detect_f3_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     auto_f3_toggle = auto_f3_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -467,7 +467,7 @@
                         .theme(theme.number_input_theme.clone());
 
                     if let Some(ref h) = on_excursion_manual_f3_change_rc {
-                        let h = h.clone();
+                        let h = std::rc::Rc::clone(h);
                         f3_input = f3_input.on_change(move |v, w, cx| h(v, w, cx));
                     }
                     section = section.child(f3_input);
@@ -487,11 +487,11 @@
                     .theme(theme.select_theme.clone());
 
                 if let Some(ref h) = on_excursion_filter_type_toggle_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     hp_select = hp_select.on_toggle(move |open, w, cx| h(open, w, cx));
                 }
                 if let Some(ref h) = on_excursion_filter_type_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     hp_select = hp_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
                 }
 
@@ -508,7 +508,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_excursion_filter_order_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     order_input = order_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
                 }
 
@@ -532,7 +532,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_excursion_margin_octaves_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     margin_input = margin_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -548,7 +548,7 @@
                 .theme(toggle_theme.clone());
 
             if let Some(ref h) = on_use_schroeder_split_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 schroeder_toggle = schroeder_toggle.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -577,7 +577,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_freq_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     s_freq_input = s_freq_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -596,7 +596,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_max_q_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     low_q_input = low_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -613,7 +613,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_max_q_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     high_q_input = high_q_input.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -630,7 +630,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_low_allow_boost_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     boost_toggle = boost_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 
@@ -640,7 +640,7 @@
                     .theme(toggle_theme.clone());
 
                 if let Some(ref h) = on_schroeder_high_shelving_only_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     shelve_toggle = shelve_toggle.on_change(move |v, w, cx| h(v, w, cx));
                 }
 

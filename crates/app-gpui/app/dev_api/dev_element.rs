@@ -143,3 +143,12 @@ pub trait DevTrackExt: IntoElement + Sized {
 }
 
 impl<I: IntoElement> DevTrackExt for I {}
+
+impl<E> std::fmt::Debug for DevTrack<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DevTrack")
+            .field("selector", &self.selector)
+            .field("frame", &self.frame)
+            .finish_non_exhaustive()
+    }
+}

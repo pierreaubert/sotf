@@ -6,6 +6,7 @@ use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
 /// Test Studio screen navigation and basic functionality
+#[derive(Debug)]
 pub struct StudioScreenScenario;
 
 impl TestScenario for StudioScreenScenario {
@@ -53,6 +54,7 @@ async fn test_studio_screen_navigation(cx: &mut TestAppContext) {
 }
 
 /// Exercise the description popover in the complete Studio view.
+#[derive(Debug)]
 pub struct StudioPickerTooltipScenario;
 
 impl TestScenario for StudioPickerTooltipScenario {

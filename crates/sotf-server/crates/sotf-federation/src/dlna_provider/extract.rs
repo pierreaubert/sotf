@@ -1,16 +1,16 @@
 use super::misc::is_content_directory_service_type;
 use super::misc::xml_unescape;
 
-/// Extract the ContentDirectory control URL from a device description XML.
+/// Extract the `ContentDirectory` control URL from a device description XML.
 ///
-/// Scoping rules (UPnP CDS spec): the device description contains a
+/// Scoping rules (`UPnP` CDS spec): the device description contains a
 /// `<serviceList>` of `<service>` blocks. Each service block contains a
 /// `<serviceType>` and a `<controlURL>`. We must locate the `<service>`
 /// whose `<serviceType>` matches
 /// `urn:schemas-upnp-org:service:ContentDirectory:<n>` and return the
 /// `<controlURL>` *from inside that block only* — never from a sibling
 /// service like `ConnectionManager`, which a naive substring search could
-/// otherwise pick up if "ContentDirectory" appears earlier in a comment,
+/// otherwise pick up if "`ContentDirectory`" appears earlier in a comment,
 /// attribute, or different element.
 pub(super) fn extract_content_directory_control_url(xml: &str) -> Option<String> {
     let mut pos = 0;

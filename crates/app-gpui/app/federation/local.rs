@@ -20,8 +20,9 @@ impl App {
             .library_state
             .library
             .get_database()
-            .map(|db| db.save_federation_source(&self.federation.sources[index]))
-            .unwrap_or(Ok(()));
+            .map_or(Ok(()), |db| {
+                db.save_federation_source(&self.federation.sources[index])
+            });
 
         if let Err(e) = result {
             self.federation.sources[index] = previous;
@@ -44,8 +45,9 @@ impl App {
             .library_state
             .library
             .get_database()
-            .map(|db| db.set_source_availability(source_id, available))
-            .unwrap_or(Ok(()));
+            .map_or(Ok(()), |db| {
+                db.set_source_availability(source_id, available)
+            });
 
         if let Err(e) = result {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
@@ -60,7 +62,7 @@ impl App {
     /// Add a new federation source of the given type and persist to database.
     pub fn add_federation_source(&mut self, type_name: &str) {
         let source_id = format!("{}_{}", type_name, chrono::Utc::now().timestamp_millis());
-        let display_name = format!("New {} source", type_name);
+        let display_name = format!("New {type_name} source");
         let source = FederationSourceEntry {
             source_id,
             display_name,
@@ -169,6 +171,9 @@ impl App {
     /// Toggle the local SOTF API connection QR. When showing the QR, make sure
     /// the enabled API has a bearer token so the encoded payload is immediately
     /// usable by remote clients.
+    ///
+    /// # Errors
+    /// Returns an error if the SOTF API is disabled or its connection settings cannot be encoded.
     pub fn toggle_sotf_api_connection_qr(&mut self) -> Result<(), String> {
         if self.ui_state.show_sotf_api_connection_qr {
             self.ui_state.show_sotf_api_connection_qr = false;
@@ -276,13 +281,10 @@ impl App {
 
     /// Load the server TLS fingerprint and trusted clients from local cert store.
     pub fn refresh_pairing_state(&mut self) {
-        let config_dir = match sotf_audio_player::config::get_app_config_dir() {
-            Some(dir) => dir,
-            None => {
-                self.federation.pairing_error =
-                    Some("Could not determine config directory".to_string());
-                return;
-            }
+        let Some(config_dir) = sotf_audio_player::config::get_app_config_dir() else {
+            self.federation.pairing_error =
+                Some("Could not determine config directory".to_string());
+            return;
         };
 
         // Load server fingerprint
@@ -436,6 +438,9 @@ impl App {
     /// Spawns a background thread that opens its own DB connection, fetches
     /// all albums/tracks from the provider, and merges them into the local database.
     /// Sends progress messages so the UI can display a live progress row.
+    ///
+    /// # Panics
+    /// Panics if the worker thread cannot be spawned or its asynchronous runtime cannot be created.
     pub fn scan_federation_source(&mut self, index: usize) {
         if index >= self.federation.sources.len() {
             return;
@@ -463,7 +468,7 @@ impl App {
             tracks_merged: 0,
         });
 
-        let cancel = self.federation.scan_cancel.clone();
+        let cancel = std::sync::Arc::clone(&self.federation.scan_cancel);
 
         std::thread::Builder::new()
             .name("federation-scan".into())
@@ -483,9 +488,8 @@ impl App {
 
     /// Poll for federation scan progress and completion. Call from the UI update loop.
     pub fn update_federation_scan(&mut self) {
-        let rx = match &self.federation.scan_receiver {
-            Some(rx) => rx,
-            None => return,
+        let Some(rx) = &self.federation.scan_receiver else {
+            return;
         };
 
         // Drain all pending messages (progress updates arrive faster than frames)
@@ -523,7 +527,7 @@ impl App {
 
     pub(super) fn handle_scan_result(&mut self, result: FederationScanResult) {
         if let Some(ref err) = result.error {
-            self.ui_state.toast_message = Some(ToastMessage::error(format!("Scan failed: {err}",)));
+            self.ui_state.toast_message = Some(ToastMessage::error(format!("Scan failed: {err}")));
             if let Some(source) = self
                 .federation
                 .sources
@@ -559,8 +563,9 @@ impl App {
                     .library_state
                     .library
                     .get_database()
-                    .map(|db| db.update_federation_source_sync_time(&result.source_id))
-                    .unwrap_or(Ok(()));
+                    .map_or(Ok(()), |db| {
+                        db.update_federation_source_sync_time(&result.source_id)
+                    });
                 if let Err(e) = sync_result {
                     self.ui_state.toast_message = Some(ToastMessage::error(format!(
                         "Scan completed, but failed to save source sync time: {e}"

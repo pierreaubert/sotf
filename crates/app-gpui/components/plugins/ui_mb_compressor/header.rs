@@ -8,6 +8,10 @@ use crate::theme::Theme;
 use gpui::{AnyElement, App, Entity};
 use sotf_audio_player::PluginSettings;
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_header(
     d: &Ds,
     entity: Entity<AppState>,

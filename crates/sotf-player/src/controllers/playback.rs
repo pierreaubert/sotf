@@ -38,6 +38,7 @@ impl Default for PlaybackController {
 }
 
 impl PlaybackController {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             is_playing: false,
@@ -74,6 +75,7 @@ impl PlaybackController {
     }
 
     /// Get effective volume (0.0 if muted).
+    #[must_use]
     pub fn effective_volume(&self) -> f32 {
         if self.muted { 0.0 } else { self.volume }
     }
@@ -87,6 +89,7 @@ impl PlaybackController {
     /// matching gain data. Album mode intentionally does not fall back to track
     /// gain: the user chose album-level consistency, so unity is less surprising
     /// than per-track loudness jumps when album gain has not been scanned yet.
+    #[must_use]
     pub fn get_replay_gain_adjustment(&self, track: &Track) -> Option<f64> {
         if !self.replay_gain_enabled {
             return None;
@@ -97,7 +100,7 @@ impl PlaybackController {
             ReplayGainMode::Album => track.album_gain?,
         };
 
-        Some(gain + self.replay_gain_preamp as f64)
+        Some(gain + f64::from(self.replay_gain_preamp))
     }
 
     // =========================================================================
@@ -121,11 +124,13 @@ impl PlaybackController {
     }
 
     /// Get the path being tracked.
+    #[must_use]
     pub fn tracked_path(&self) -> Option<&PathBuf> {
         self.play_tracker.current_track_path.as_ref()
     }
 
     /// Whether the current track has already been recorded.
+    #[must_use]
     pub fn already_recorded(&self) -> bool {
         self.play_tracker.already_recorded
     }

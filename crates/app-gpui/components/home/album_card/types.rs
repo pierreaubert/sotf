@@ -10,6 +10,7 @@ pub enum AlbumCardMode {
 }
 
 /// Render height in pixels for a given album card mode
+#[must_use]
 pub fn album_card_height(mode: AlbumCardMode) -> f32 {
     match mode {
         AlbumCardMode::Grid => 180.0,   // thumbnail + text

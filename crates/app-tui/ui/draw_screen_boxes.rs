@@ -1,4 +1,6 @@
-use super::*;
+use super::{
+    Alignment, App, Block, Borders, Frame, Line, Modifier, Paragraph, Rect, Screen, Span, Style,
+};
 
 pub(crate) fn draw_screen_boxes(f: &mut Frame, area: Rect, app: &App) {
     let text = crate::i18n::TuiTranslations::for_language(app.ui.language);

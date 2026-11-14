@@ -5,6 +5,10 @@ use std::sync::Arc;
 
 /// Batched playback state to reduce mutex locking
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent persisted options and status flags retain their existing schema "
+)]
 pub struct PlaybackState {
     pub position_secs: f64,
     pub is_playing: bool,
@@ -152,8 +156,7 @@ impl SignalPath {
         });
 
         let plugin_chain: Vec<SignalPathPlugin> = saved_config
-            .map(|c| c.plugins.as_ref())
-            .unwrap_or_default()
+            .map_or_default(|c| c.plugins.as_ref())
             .iter()
             .map(|p| SignalPathPlugin {
                 plugin_type: p.plugin_type.clone(),
@@ -161,18 +164,16 @@ impl SignalPath {
             })
             .collect();
 
-        let source_rate = source.as_ref().map(|s| s.sample_rate_hz).unwrap_or(0);
+        let source_rate = source.as_ref().map_or(0, |s| s.sample_rate_hz);
         // The configured engine sample rate is the authoritative output rate.
         // The observed hardware callback rate is reported separately in health.
         let output_rate = u64::from(engine_state.sample_rate.max(1));
-        let resampling = if source_rate > 0 && output_rate != u64::from(source_rate) {
-            Some(SignalPathResampling {
+        let resampling = (source_rate > 0 && output_rate != u64::from(source_rate)).then_some(
+            SignalPathResampling {
                 from_hz: source_rate,
                 to_hz: output_rate,
-            })
-        } else {
-            None
-        };
+            },
+        );
 
         Self {
             source,
@@ -203,11 +204,13 @@ impl SignalPath {
     }
 
     /// True if any stage resamples the signal before output.
+    #[must_use]
     pub fn is_resampled(&self) -> bool {
         self.processing.resampling.is_some()
     }
 
     /// True if the engine has reported any health issues it knows about.
+    #[must_use]
     pub fn has_known_issues(&self) -> bool {
         self.health.underruns > 0
             || self.health.stream_errors > 0
@@ -226,6 +229,7 @@ fn output_headroom_db(peak_linear: f32) -> f32 {
 
 /// Build a `SignalPathSource` from an `AudioSpec` and a format name.
 impl SignalPathSource {
+    #[must_use]
     pub fn from_spec_and_format(spec: &AudioSpec, format_name: &str, lossless: bool) -> Self {
         Self {
             format: format_name.to_string(),

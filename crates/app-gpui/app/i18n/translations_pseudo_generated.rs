@@ -3,7 +3,7 @@
 
 #[rustfmt::skip]
 mod pseudo_generated {
-use super::*;
+use super::{MultiCaptureTranslations, pseudo_static, RoomEqEasyTranslations, Language, HeadphoneEasyTranslations, HeadphoneEqTranslations, HeadphoneEqDeliveryDescriptions, StreamsTranslations, PlaylistTranslations, PluginRackTranslations, TutorialTranslations, ENGLISH_TUTORIAL_SCREENS, MetadataEditorTranslations, MetadataFieldTranslations, FileDialogTranslations, WorkflowTranslations, WizardNavigationTranslations, RoomEqWorkflowTranslations, EqDiscoveryTranslations, RecordingWorkflowTranslations, RecordingRepeatTranslations, ContextMenuTranslations, DialogTranslations, DialogAboutTranslations, ServerSettingsTranslations, PhoneTranslations, PhoneToolTranslations, PhoneLibraryTranslations, RoomEqReportTranslations, RoomEqChartTranslations, RoomEqOverviewTranslations, LevelMeterTranslations, EqViewTranslations, EqBandActionTranslations, AppearanceTranslations, SpeakerGraphTranslations, HeadphoneGraphTranslations, KeybindingTranslations, SidebarTranslations, FooterTranslations, AudioDeviceTranslations, RecordingTranslations, FederationTranslations, ABCompareTranslations, SpectrumTranslations, CastTranslations, PlaybackApplyTranslations, PluginCommonTranslations, SpatialPluginTranslations, UpmixerSummaryTranslations, MultibandPresetTranslations, ExternalPluginSettingsTranslations, ExternalPluginWorkerTranslations, LibraryFolderTranslations, SettingsSurfaceTranslations, PluginGraphNodeTranslations, PluginGraphTranslations, AutoEqSectionTranslations, AutoEqBlockTranslations, AutoEqParameterTranslations, AutoEqFormTranslations, Translations, ListeningTestTranslations, EqTrainingTranslations, EqTrainingComparisonTranslations, EqTrainingLearningTranslations, ListeningTestSetupTranslations, ListeningTestLevelTranslations, ListeningTestTrialTranslations, ListeningTestStatusTranslations};
 
 impl MultiCaptureTranslations {
     pub(super) fn pseudo() -> Self {
@@ -1337,6 +1337,7 @@ impl AutoEqFormTranslations {
 }
 
 impl Translations {
+    #[expect(clippy::too_many_lines, reason = "Keep the complete translation table together for each language") ]
     pub(super) fn pseudo() -> Self {
         Self {
             autoeq_form: AutoEqFormTranslations::for_language(Language::Pseudo),

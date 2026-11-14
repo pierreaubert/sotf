@@ -1,21 +1,33 @@
 use std::sync::{Arc, Mutex};
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static HEADPHONE_OPT_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<sotf_audio_player::autoeq::HeadphoneOptimizationResult, String>>>>,
 > = std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static HEADPHONE_OPT_PROGRESS: std::sync::OnceLock<
     Arc<Mutex<Option<(usize, usize, f64, f32)>>>,
 > = std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static HEADPHONE_LIST_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<Vec<String>, String>>>>,
 > = std::sync::OnceLock::new();
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static HEADPHONE_DOWNLOAD_RESULT: std::sync::OnceLock<
     Arc<Mutex<Option<Result<String, String>>>>,
 > = std::sync::OnceLock::new();

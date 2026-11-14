@@ -194,6 +194,7 @@ impl AlbumArtPromptContext {
         }
     }
 
+    #[must_use]
     pub fn short_content(&self) -> String {
         let mut lines = Vec::new();
         lines.push(format!("Album: {}", self.title));
@@ -217,6 +218,10 @@ impl AlbumArtPromptContext {
 }
 
 impl AlbumArtGenerationClient {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be built.
     pub fn new(config: AlbumArtClientConfig) -> anyhow::Result<Self> {
         let http = reqwest::Client::builder()
             .timeout(Duration::from_secs(120))
@@ -226,6 +231,10 @@ impl AlbumArtGenerationClient {
         Ok(Self { http, config })
     }
 
+    /// Generate.
+    ///
+    /// # Errors
+    /// Returns an error for invalid album paths, failed model requests, invalid image responses, or image file I/O failures.
     pub async fn generate(
         &self,
         context: &AlbumArtPromptContext,
@@ -235,6 +244,14 @@ impl AlbumArtGenerationClient {
         Ok(GeneratedAlbumArt { prompt, image_png })
     }
 
+    /// Enrich prompt.
+    ///
+    /// # Errors
+    /// Returns an error for invalid album paths, failed model requests, invalid image responses, or image file I/O failures.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The prompt request dispatch keeps each supported model protocol in one match"
+    )]
     pub async fn enrich_prompt(&self, context: &AlbumArtPromptContext) -> anyhow::Result<String> {
         let url = completion_api_endpoint(
             &self.config.api_base_url,
@@ -273,13 +290,13 @@ impl AlbumArtGenerationClient {
                 let response = serde_json::from_str::<ChatCompletionResponse>(&body)
                     .context("failed to decode text model response")?;
 
-                let content = response
+                let prompt_text = response
                     .choices
                     .first()
                     .map(|choice| choice.message.content.as_str())
                     .ok_or_else(|| anyhow!("text model response did not include choices"))?;
 
-                normalize_prompt_content(content)
+                normalize_prompt_content(prompt_text)
             }
             CompletionApi::Responses => {
                 let request = build_responses_request(&self.config.text_model, context);
@@ -310,8 +327,8 @@ impl AlbumArtGenerationClient {
                 let response = serde_json::from_str::<serde_json::Value>(&body)
                     .context("failed to decode responses model response")?;
 
-                let content = extract_responses_text(&response)?;
-                normalize_prompt_content(&content)
+                let prompt_text = extract_responses_text(&response)?;
+                normalize_prompt_content(&prompt_text)
             }
             CompletionApi::LmStudioChat => {
                 let request = build_lm_studio_chat_request(&self.config.text_model, context);
@@ -339,12 +356,16 @@ impl AlbumArtGenerationClient {
                 );
                 ensure_success(status, &body, "LM Studio chat model")?;
 
-                let content = extract_lm_studio_chat_text(&body)?;
-                normalize_prompt_content(&content)
+                let prompt_text = extract_lm_studio_chat_text(&body)?;
+                normalize_prompt_content(&prompt_text)
             }
         }
     }
 
+    /// Generate image.
+    ///
+    /// # Errors
+    /// Returns an error for invalid album paths, failed model requests, invalid image responses, or image file I/O failures.
     pub async fn generate_image(&self, prompt: &str) -> anyhow::Result<Vec<u8>> {
         let resolved_api = resolved_image_api(
             self.config.image_api,
@@ -499,6 +520,7 @@ impl AlbumArtGenerationClient {
     }
 }
 
+#[must_use]
 pub fn album_output_directory(album: &Album) -> Option<PathBuf> {
     album
         .tracks
@@ -506,10 +528,15 @@ pub fn album_output_directory(album: &Album) -> Option<PathBuf> {
         .find_map(|track| track.path.parent().map(Path::to_path_buf))
 }
 
+#[must_use]
 pub fn generated_cover_path(album: &Album) -> Option<PathBuf> {
     album_output_directory(album).map(|dir| dir.join(DEFAULT_ALBUM_ART_FILENAME))
 }
 
+/// Candidate for album.
+///
+/// # Errors
+/// Returns an error if the album has no usable directory for cover artwork.
 pub fn candidate_for_album(
     album_index: usize,
     album: &Album,
@@ -537,6 +564,10 @@ pub fn candidate_for_album(
     }))
 }
 
+/// Write generated cover.
+///
+/// # Errors
+/// Returns an error if the cover path is invalid or directory creation and file writing fail.
 pub fn write_generated_cover(path: &Path, png_bytes: &[u8], force: bool) -> anyhow::Result<()> {
     if path.exists() && !force {
         bail!(

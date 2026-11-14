@@ -1,7 +1,7 @@
 use super::error::SotfApiClientError;
 use super::types::SotfApiResult;
 
-pub(super) fn normalize_base_url(base_url: String) -> SotfApiResult<String> {
+pub(super) fn normalize_base_url(base_url: &str) -> SotfApiResult<String> {
     let base_url = base_url.trim().trim_end_matches('/').to_string();
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err(SotfApiClientError::InvalidConfig(

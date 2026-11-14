@@ -4,6 +4,10 @@ use ratatui::layout::{Position, Size};
 use std::io::IsTerminal;
 use std::io::{self, Stdout};
 
+#[expect(
+    clippy::unnecessary_wraps,
+    reason = "Adapt the infallible test backend to the runtime backend io::Result contract"
+)]
 fn into_io_result<T>(result: Result<T, std::convert::Infallible>) -> io::Result<T> {
     match result {
         Ok(value) => Ok(value),
@@ -28,7 +32,7 @@ impl RuntimeBackend {
 
 #[cfg(any(feature = "dev-api", test))]
 fn parse_dev_api_port(value: &str) -> io::Result<u16> {
-    let port = value.parse::<u16>().map_err(|_| {
+    let port = value.parse::<u16>().map_err(|_error| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("SOTF_DEV_API_PORT must be a valid TCP port, got `{value}`"),

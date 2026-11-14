@@ -19,7 +19,7 @@ pub struct FederationState {
         Option<std::sync::mpsc::Receiver<Vec<crate::app::state::audio_device::CastDeviceInfo>>>,
     /// Whether the local SOTF API server is in pairing mode.
     pub pairing_enabled: bool,
-    /// Current pairing nonce (valid only when pairing_enabled is true).
+    /// Current pairing nonce (valid only when `pairing_enabled` is true).
     pub pairing_nonce: Option<String>,
     /// Server TLS fingerprint for QR code display.
     pub server_fingerprint: Option<String>,

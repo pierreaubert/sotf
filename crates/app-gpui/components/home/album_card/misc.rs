@@ -1,5 +1,5 @@
 use crate::album_art_mask::prepare_album_art_image;
-use gpui::*;
+use gpui::{Image, ImageFormat, Rems, rems};
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
@@ -84,7 +84,7 @@ fn decode_album_art_image(bytes: &[u8], corner_radius_ratio: f32) -> Arc<Image> 
     if (bytes.starts_with(PNG_MAGIC) || bytes.starts_with(JPEG_MAGIC))
         && let Ok(image) = image::load_from_memory(bytes)
     {
-        let rgba = prepare_album_art_image(image, corner_radius_ratio);
+        let rgba = prepare_album_art_image(&image, corner_radius_ratio);
 
         let mut png_bytes = Vec::new();
         if rgba
@@ -107,7 +107,8 @@ pub(super) fn text_size_at_least(size: Rems, min_font_size_px: f32, effective_re
 }
 
 /// Get the audio format (e.g., "FLAC", "MP3") from a file path extension
+#[must_use]
 pub fn get_format_from_path(path: &std::path::Path) -> Option<String> {
     path.extension()
-        .and_then(|ext| ext.to_str().map(|s| s.to_uppercase()))
+        .and_then(|ext| ext.to_str().map(str::to_uppercase))
 }

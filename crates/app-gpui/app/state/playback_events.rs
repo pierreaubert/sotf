@@ -117,6 +117,7 @@ impl Default for PlaybackEventStore {
 }
 
 impl PlaybackEventStore {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             events: VecDeque::with_capacity(MAX_EVENTS),
@@ -128,6 +129,10 @@ impl PlaybackEventStore {
     }
 
     /// Record an event with optional trigger context
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned commands in the application state and plugin update interfaces"
+    )]
     pub fn record(&mut self, event: PlaybackEvent, trigger: Option<&str>) {
         if !self.enabled {
             return;
@@ -154,7 +159,7 @@ impl PlaybackEventStore {
         // Log significant events
         match &event {
             PlaybackEvent::Started { queue_index, .. } => {
-                log::info!("[PlaybackEvent] Started: queue_index={}", queue_index);
+                log::info!("[PlaybackEvent] Started: queue_index={queue_index}");
             }
             PlaybackEvent::Paused => {
                 log::info!("[PlaybackEvent] Paused");
@@ -171,33 +176,26 @@ impl PlaybackEventStore {
                 trigger,
             } => {
                 log::info!(
-                    "[PlaybackEvent] TrackChanged: {:?} -> {} ({:?})",
-                    from_index,
-                    to_index,
-                    trigger
+                    "[PlaybackEvent] TrackChanged: {from_index:?} -> {to_index} ({trigger:?})"
                 );
             }
             PlaybackEvent::VolumeChanged { from, to } => {
-                log::debug!("[PlaybackEvent] Volume: {:.2} -> {:.2}", from, to);
+                log::debug!("[PlaybackEvent] Volume: {from:.2} -> {to:.2}");
             }
             PlaybackEvent::MuteChanged { muted } => {
-                log::info!("[PlaybackEvent] Mute: {}", muted);
+                log::info!("[PlaybackEvent] Mute: {muted}");
             }
             PlaybackEvent::Seeked {
                 from_position,
                 to_position,
             } => {
-                log::info!(
-                    "[PlaybackEvent] Seek: {:.1}s -> {:.1}s",
-                    from_position,
-                    to_position
-                );
+                log::info!("[PlaybackEvent] Seek: {from_position:.1}s -> {to_position:.1}s");
             }
             PlaybackEvent::TrackEnded { queue_index } => {
-                log::info!("[PlaybackEvent] TrackEnded: queue_index={}", queue_index);
+                log::info!("[PlaybackEvent] TrackEnded: queue_index={queue_index}");
             }
             PlaybackEvent::Error { message } => {
-                log::error!("[PlaybackEvent] Error: {}", message);
+                log::error!("[PlaybackEvent] Error: {message}");
             }
             _ => {}
         }
@@ -238,9 +236,13 @@ impl PlaybackEventStore {
     }
 
     /// Get events within the last duration
+    ///
+    /// A lookback beyond the platform clock range includes all stored events.
     pub fn events_within(&self, duration: Duration) -> impl Iterator<Item = &EventRecord> {
-        let cutoff = Instant::now() - duration;
-        self.events.iter().filter(move |e| e.timestamp >= cutoff)
+        let cutoff = Instant::now().checked_sub(duration);
+        self.events
+            .iter()
+            .filter(move |event| cutoff.is_none_or(|cutoff| event.timestamp >= cutoff))
     }
 
     /// Count events of a specific type
@@ -260,6 +262,7 @@ impl PlaybackEventStore {
     }
 
     /// Get a summary of recent activity
+    #[must_use]
     pub fn summary(&self) -> EventStoreSummary {
         let total_events = self.events.len();
         let session_duration = self.session_start.elapsed();
@@ -297,22 +300,26 @@ impl PlaybackEventStore {
     }
 
     /// Check if recording is enabled
+    #[must_use]
     pub fn is_enabled(&self) -> bool {
         self.enabled
     }
 
     /// Get total event count
+    #[must_use]
     pub fn len(&self) -> usize {
         self.events.len()
     }
 
     /// Check if store is empty
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.events.is_empty()
     }
 
     /// Replay events to reconstruct state at a given point
     /// Returns a snapshot of playback state after replaying events up to the given index
+    #[must_use]
     pub fn replay_to(&self, event_index: usize) -> PlaybackSnapshot {
         let mut snapshot = PlaybackSnapshot::default();
 
@@ -328,10 +335,10 @@ impl PlaybackEventStore {
                 } => {
                     snapshot.is_playing = true;
                     snapshot.queue_index = Some(*queue_index);
-                    snapshot.current_track = track_path.clone();
+                    snapshot.current_track.clone_from(track_path);
                     snapshot.position = 0.0;
                 }
-                PlaybackEvent::Paused => {
+                PlaybackEvent::Paused | PlaybackEvent::TrackEnded { .. } => {
                     snapshot.is_playing = false;
                 }
                 PlaybackEvent::Resumed => {
@@ -364,9 +371,6 @@ impl PlaybackEventStore {
                 PlaybackEvent::QueueIndexSet { index } => {
                     snapshot.queue_index = *index;
                 }
-                PlaybackEvent::TrackEnded { .. } => {
-                    snapshot.is_playing = false;
-                }
                 PlaybackEvent::Error { .. } => {
                     // Errors don't change state
                 }
@@ -377,6 +381,7 @@ impl PlaybackEventStore {
     }
 
     /// Get current state by replaying all events
+    #[must_use]
     pub fn current_snapshot(&self) -> PlaybackSnapshot {
         if self.events.is_empty() {
             return PlaybackSnapshot::default();

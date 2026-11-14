@@ -29,6 +29,10 @@ fn spinorama_step_next_wrap(s: crate::app::SpinoramaStep) -> crate::app::Spinora
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::SpinoramaStep;
     use sotf_audio_player::room_eq_types::OptimizationStatus;
@@ -251,14 +255,14 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                                 // Existing EQ but empty — apply directly
                                 match app.apply_spinorama_to_plugins() {
                                     Ok(msg) => app.ui.status_message = Some(msg),
-                                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                                    Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                                 }
                             }
                         } else {
                             // No existing EQ — apply directly (will insert one)
                             match app.apply_spinorama_to_plugins() {
                                 Ok(msg) => app.ui.status_message = Some(msg),
-                                Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                                Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                             }
                         }
                         None
@@ -272,19 +276,18 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                             sotf_audio_player::config::get_plugin_presets_dir()
                         {
                             let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-                            let filename = format!("pre-spinorama-{}.json", timestamp);
+                            let filename = format!("pre-spinorama-{timestamp}.json");
                             match app.plugin_rack.graph.save_to_file(&presets_dir, &filename) {
-                                Ok(_) => {
+                                Ok(()) => {
                                     app.ui.status_message =
-                                        Some(format!("Saved backup: {}", filename));
+                                        Some(format!("Saved backup: {filename}"));
                                     log::info!(
-                                        "Auto-saved preset before spinorama overwrite: {}",
-                                        filename
+                                        "Auto-saved preset before spinorama overwrite: {filename}"
                                     );
                                 }
                                 Err(e) => {
-                                    app.ui.status_message = Some(format!("Backup failed: {}", e));
-                                    log::error!("Failed to auto-save preset: {}", e);
+                                    app.ui.status_message = Some(format!("Backup failed: {e}"));
+                                    log::error!("Failed to auto-save preset: {e}");
                                     // Reset and don't apply
                                     app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
                                     app.spinorama_eq.update_existing_eq_info = None;
@@ -295,7 +298,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         // Apply
                         match app.apply_spinorama_to_plugins() {
                             Ok(msg) => app.ui.status_message = Some(msg),
-                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                         }
                         app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
                         app.spinorama_eq.update_existing_eq_info = None;
@@ -305,7 +308,7 @@ pub fn handle_spinorama_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         // Apply without saving
                         match app.apply_spinorama_to_plugins() {
                             Ok(msg) => app.ui.status_message = Some(msg),
-                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                         }
                         app.spinorama_eq.update_substep = SpinUpdateSubStep::Ready;
                         app.spinorama_eq.update_existing_eq_info = None;

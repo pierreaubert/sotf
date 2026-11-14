@@ -8,7 +8,7 @@ use crate::async_runtime::AsyncRuntime;
 use crate::consts::{SPOTIFY_API_BASE, SPOTIFY_CLIENT_ID, SPOTIFY_TOKEN_URL, read_bounded_json};
 use crate::misc::{parse_release_year, truncate_for_log};
 use serde::Deserialize;
-use sotf_services::*;
+use sotf_services::{AudioQuality, ServiceAlbum, ServiceError, ServiceTrack, redact_secret};
 use std::sync::Arc;
 
 /// Page size used for paged endpoints (Spotify's maximum).
@@ -97,12 +97,8 @@ fn map_track(track: &SpotifyTrack, fallback_album: Option<&SpotifyAlbum>) -> Ser
     ServiceTrack {
         id: track.id.clone().unwrap_or_default(),
         title: track.name.clone().unwrap_or_default(),
-        artist: track
-            .artists
-            .first()
-            .map(|a| a.name.clone())
-            .unwrap_or_default(),
-        album: album.map(|a| a.name.clone()).unwrap_or_default(),
+        artist: track.artists.first().map_or_default(|a| a.name.clone()),
+        album: album.map_or_default(|a| a.name.clone()),
         duration_secs: track.duration_ms.unwrap_or(0.0) / 1000.0,
         track_number: track.track_number,
         album_art_url: album.and_then(|a| a.images.first()).map(|i| i.url.clone()),
@@ -115,11 +111,7 @@ fn map_album(album: &SpotifyAlbum) -> ServiceAlbum {
     ServiceAlbum {
         id: album.id.clone(),
         title: album.name.clone(),
-        artist: album
-            .artists
-            .first()
-            .map(|a| a.name.clone())
-            .unwrap_or_default(),
+        artist: album.artists.first().map_or_default(|a| a.name.clone()),
         year: album.release_date.as_deref().and_then(parse_release_year),
         track_count: album.total_tracks.unwrap_or(0),
         album_art_url: album.images.first().map(|i| i.url.clone()),
@@ -170,13 +162,12 @@ impl std::fmt::Debug for SpotifyWebApi {
         let token = self
             .access_token
             .read()
-            .map(|t| redact_secret(&t))
-            .unwrap_or_else(|_| "<locked>".to_string());
+            .map_or_else(|_| "<locked>".to_string(), |t| redact_secret(&t));
         f.debug_struct("SpotifyWebApi")
             .field("access_token", &token)
             .field("api_base", &self.api_base)
             .field("refresh", &self.refresh.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -226,10 +217,7 @@ impl SpotifyWebApi {
     }
 
     fn bearer_token(&self) -> String {
-        self.access_token
-            .read()
-            .map(|t| t.clone())
-            .unwrap_or_default()
+        self.access_token.read().map_or_default(|t| t.clone())
     }
 
     /// Attempt one refresh-token grant; on success installs the new access
@@ -251,7 +239,7 @@ impl SpotifyWebApi {
         {
             Ok(token) => {
                 if let Ok(mut state) = refresh.lock() {
-                    state.refresh_token = token.refresh_token.clone();
+                    state.refresh_token.clone_from(&token.refresh_token);
                 }
                 if let Some(dir) = &cache_dir
                     && let Err(e) = token.save(dir)
@@ -363,16 +351,13 @@ impl SpotifyWebApi {
                     ],
                 )
                 .await?;
-            Ok(resp
-                .tracks
-                .map(|p| {
-                    p.items
-                        .into_iter()
-                        .flatten()
-                        .map(|t| map_track(&t, None))
-                        .collect()
-                })
-                .unwrap_or_default())
+            Ok(resp.tracks.map_or_default(|p| {
+                p.items
+                    .into_iter()
+                    .flatten()
+                    .map(|t| map_track(&t, None))
+                    .collect()
+            }))
         })
     }
 
@@ -392,16 +377,13 @@ impl SpotifyWebApi {
                     ],
                 )
                 .await?;
-            Ok(resp
-                .albums
-                .map(|p| {
-                    p.items
-                        .into_iter()
-                        .flatten()
-                        .map(|a| map_album(&a))
-                        .collect()
-                })
-                .unwrap_or_default())
+            Ok(resp.albums.map_or_default(|p| {
+                p.items
+                    .into_iter()
+                    .flatten()
+                    .map(|a| map_album(&a))
+                    .collect()
+            }))
         })
     }
 

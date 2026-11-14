@@ -16,7 +16,7 @@ use crate::app::AppState;
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity};
 use gpui_ui_kit::{StackSpacing, VStack};
 use sotf_plugins::speaker_config::SpeakerConfig;
 
@@ -49,6 +49,7 @@ use build::build_header;
 /// - `speaker_config_id`: optional explicit speaker config id (e.g. "5.1.4")
 ///   when the host knows it. When `None`, we fall back to deriving the
 ///   layout from the loudness data's channel count.
+#[must_use]
 pub fn render_spatial_spider_panel(
     d: &Ds,
     entity: Entity<AppState>,
@@ -74,6 +75,7 @@ pub fn render_spatial_spider_panel(
 /// Render only the controls row (mode toggles + ref-channel selector). Use
 /// when you want to host the graph separately from its controls (e.g. a
 /// permanent graph row below a tab bar).
+#[must_use]
 pub fn render_spatial_spider_controls(
     d: &Ds,
     entity: Entity<AppState>,
@@ -100,6 +102,7 @@ pub fn render_spatial_spider_controls(
 
 /// Compact SPL/Correlation selector for hosts that expose view mode in their
 /// own header. Keep the metric selector visible even before analyzer data arrives.
+#[must_use]
 pub fn render_spatial_spider_metric_controls(
     d: &Ds,
     entity: Entity<AppState>,
@@ -180,6 +183,7 @@ pub fn render_spatial_spider_metric_controls(
 /// Render only the graph (no controls). Use when the controls live elsewhere
 /// (e.g. embedded in a plugin's tab content) and you want the visualization
 /// to occupy its own row.
+#[must_use]
 pub fn render_spatial_spider_graph(
     d: &Ds,
     snapshot: &SpatialSpiderSnapshot,

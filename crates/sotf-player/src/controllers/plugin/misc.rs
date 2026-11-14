@@ -1,6 +1,11 @@
 use crate::{BiquadFilterType, EQFilter, PluginSettings};
 
 /// Explain a custom decoder choice that lacks valid speaker geometry.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Plugin layout and parameter counts use the bounded parameter-spec domain"
+)]
 pub fn ambisonics_layout_transition_error(
     settings: &PluginSettings,
     param_idx: usize,
@@ -31,6 +36,12 @@ pub fn ambisonics_layout_transition_error(
 }
 
 /// Get parameter count for a plugin's settings.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Plugin layout and parameter counts use the bounded parameter-spec domain"
+)]
 pub fn get_param_count(settings: &PluginSettings) -> usize {
     match settings {
         PluginSettings::EQ { filters, .. } => filters.len() * 4,
@@ -69,8 +80,13 @@ pub(super) fn eq_band_types(allow_extended: bool) -> &'static [BiquadFilterType]
 
 /// Apply structural side effects after a parameter update via the generic path.
 ///
-/// Handles: output-layout choices set channel_count_changed,
-/// MultibandCompressor/Expander num_bands (idx 0) resizes band arrays.
+/// Handles: output-layout choices set `channel_count_changed`,
+/// MultibandCompressor/Expander `num_bands` (idx 0) resizes band arrays.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Plugin layout and parameter counts use the bounded parameter-spec domain"
+)]
 pub(super) fn apply_structural_side_effects(
     settings: &mut PluginSettings,
     param_idx: usize,
@@ -97,7 +113,7 @@ pub(super) fn apply_structural_side_effects(
         {
             *channel_count_changed = true;
         }
-        PluginSettings::AAE { .. } if param_idx == 0 => {
+        PluginSettings::AAE { .. } | PluginSettings::BandMerge { .. } if param_idx == 0 => {
             *channel_count_changed = true;
         }
         PluginSettings::AmbisonicsDecoder { .. } if param_idx == 1 => {
@@ -109,9 +125,6 @@ pub(super) fn apply_structural_side_effects(
         PluginSettings::BandSplit { .. } if param_idx == 3 => {
             *channel_count_changed = true;
         }
-        PluginSettings::BandMerge { .. } if param_idx == 0 => {
-            *channel_count_changed = true;
-        }
         PluginSettings::MultibandCompressor {
             num_bands, bands, ..
         } if param_idx == 0 => {
@@ -119,8 +132,7 @@ pub(super) fn apply_structural_side_effects(
             bands.resize_with(*num_bands, Default::default);
             for (i, band) in bands.iter_mut().enumerate().skip(retained_bands) {
                 band.active = match *num_bands {
-                    4 => i < 3,
-                    5 => i < 3,
+                    4 | 5 => i < 3,
                     _ => true,
                 };
             }
@@ -133,8 +145,7 @@ pub(super) fn apply_structural_side_effects(
             bands.resize_with(*num_bands, Default::default);
             for (i, band) in bands.iter_mut().enumerate().skip(retained_bands) {
                 band.active = match *num_bands {
-                    4 => i < 3,
-                    5 => i < 3,
+                    4 | 5 => i < 3,
                     _ => true,
                 };
             }

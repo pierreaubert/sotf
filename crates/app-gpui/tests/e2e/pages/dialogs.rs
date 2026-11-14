@@ -1,6 +1,7 @@
 use crate::driver::AppDriver;
 use sotf_audio_player_gpui::app::InputMode;
 
+#[derive(Debug)]
 pub struct DialogsPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

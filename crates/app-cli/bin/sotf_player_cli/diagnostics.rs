@@ -25,7 +25,7 @@ pub(super) fn run_diagnostics_command(
             }
         }
         Err(e) => {
-            log::warn!("Could not enumerate audio devices for diagnostics: {}", e);
+            log::warn!("Could not enumerate audio devices for diagnostics: {e}");
         }
     }
 
@@ -40,7 +40,7 @@ pub(super) fn run_diagnostics_command(
         } else {
             println!("Why no audio:");
             for reason in reasons {
-                println!("  - {}", reason);
+                println!("  - {reason}");
             }
         }
         return Ok(());
@@ -54,7 +54,7 @@ pub(super) fn run_diagnostics_command(
         println!("Diagnostics bundle written to {}", path.display());
     } else {
         let json = bundle.to_redacted_json()?;
-        println!("{}", json);
+        println!("{json}");
     }
 
     Ok(())

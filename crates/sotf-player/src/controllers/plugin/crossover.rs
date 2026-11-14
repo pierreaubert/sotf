@@ -23,6 +23,10 @@ pub(super) fn spec(settings: &PluginSettings, index: usize) -> Option<&'static P
     (offset / 2 < channel_count(settings)).then(|| &CHANNEL_TEMPLATE[offset % 2])
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Crossover parameter specs bound channel counts and integer selections"
+)]
 pub(super) fn value(settings: &PluginSettings, index: usize) -> Option<f64> {
     spec(settings, index)?;
     let channel = (index - CHANNEL_PARAM_START) / 2;
@@ -49,6 +53,11 @@ pub(super) fn value(settings: &PluginSettings, index: usize) -> Option<f64> {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Crossover parameter specs bound channel counts and integer selections"
+)]
 pub(super) fn set(settings: &mut PluginSettings, index: usize, value: f64) -> bool {
     let Some(spec) = spec(settings, index) else {
         return false;

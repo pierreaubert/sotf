@@ -58,6 +58,10 @@ fn idle_subsystem_requested(requested: &[String], subsystem: &str) -> bool {
             .any(|item| item.eq_ignore_ascii_case(subsystem))
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "MPD idle notifications detect exact metadata changes rather than numerical approximation"
+)]
 fn idle_changed_subsystems(
     before: &MpdStatus,
     after: &MpdStatus,
@@ -145,7 +149,7 @@ where
                     }
                 }
             }
-            _ = wait_for_cancel(cancel) => return Ok(false),
+            () = wait_for_cancel(cancel) => return Ok(false),
             _ = interval.tick() => {
                 let current = adapter.status();
                 let changed = idle_changed_subsystems(&initial, &current, requested);
@@ -166,6 +170,10 @@ where
 }
 
 /// Handle a single client session over any async stream.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The session loop keeps command lists, idle mode and authentication state together"
+)]
 pub(super) async fn handle_session<R, W>(
     reader: R,
     mut writer: W,
@@ -194,7 +202,7 @@ where
     loop {
         let read_outcome = tokio::select! {
             outcome = read_line_bounded(&mut reader, MAX_LINE_BYTES) => outcome,
-            _ = wait_for_cancel(&cancel) => break,
+            () = wait_for_cancel(&cancel) => break,
         };
 
         let line_buf = match read_outcome {

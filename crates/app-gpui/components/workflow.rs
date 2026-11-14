@@ -8,7 +8,7 @@ use crate::app::types::{
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, SharedString, div, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption, Text};
 
 fn recording_config_confirmation_labels(
@@ -143,6 +143,10 @@ impl PlayerView {
             < 64.0
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_workflow_shell(
         &self,
         content_id: &'static str,
@@ -608,7 +612,7 @@ impl PlayerView {
                                 .disabled(!can_save)
                                 .theme(theme.to_button_theme())
                                 .on_click(move |_, cx| {
-                                    save_view.update(cx, |view, cx| view.save_recordings(cx));
+                                    save_view.update(cx, crate::ui::PlayerView::save_recordings);
                                 });
                             #[cfg(feature = "dev-api")]
                             let button = {

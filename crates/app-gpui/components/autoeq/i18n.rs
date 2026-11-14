@@ -1,4 +1,4 @@
-//! Internationalization (i18n) for AutoEQ form documentation.
+//! Internationalization (i18n) for `AutoEQ` form documentation.
 //!
 //! Supports English, German, French, and Spanish translations.
 

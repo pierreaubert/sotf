@@ -14,7 +14,7 @@ use crate::components::graphs::common::theme_to_chart_theme;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, px};
 use gpui_px::{StrokeDashArray, line};
 
 macro_rules! dev_track {
@@ -37,6 +37,14 @@ use gpui_ui_kit::{
 };
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn render_room_eq_optimize(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -149,9 +157,8 @@ impl PlayerView {
                                 )
                                 .child(
                                     Text::new(format!(
-                                        "{} — the optimizer will use WAV-onset \
-                                         detection for per-channel arrival times.",
-                                        reason
+                                        "{reason} — the optimizer will use WAV-onset \
+                                         detection for per-channel arrival times."
                                     ))
                                     .size(TextSize::Xs)
                                     .color(theme.text_secondary),
@@ -375,7 +382,7 @@ impl PlayerView {
                             HStack::new()
                                 .spacing(StackSpacing::Xs)
                                 .child(
-                                    Text::new(format!("{}:", label))
+                                    Text::new(format!("{label}:"))
                                         .size(TextSize::Xs)
                                         .color(label_color),
                                 )
@@ -395,7 +402,7 @@ impl PlayerView {
                         };
 
                         let refine_text = if param_refine {
-                            format!("ON ({})", param_local_algo)
+                            format!("ON ({param_local_algo})")
                         } else {
                             "OFF".to_string()
                         };
@@ -420,15 +427,15 @@ impl PlayerView {
                                     .child(pair("Pop", param_population.to_string()))
                                     .child(pair(
                                         "Freq",
-                                        format!("{:.0}-{:.0} Hz", param_min_freq, param_max_freq),
+                                        format!("{param_min_freq:.0}-{param_max_freq:.0} Hz"),
                                     ))
                                     .child(pair(
                                         "Q",
-                                        format!("{:.1}-{:.1}", param_min_q, param_max_q),
+                                        format!("{param_min_q:.1}-{param_max_q:.1}"),
                                     ))
                                     .child(pair(
                                         "dB",
-                                        format!("{:.1}/{:.1}", param_min_db, param_max_db),
+                                        format!("{param_min_db:.1}/{param_max_db:.1}"),
                                     )),
                             )
                             // Row 3: feature flags — only show the enabled
@@ -441,10 +448,7 @@ impl PlayerView {
                                         h.child(pair(
                                             "BO",
                                             format!(
-                                                "init {} / batch {} / {}",
-                                                param_bo_initial_samples,
-                                                param_bo_batch_size,
-                                                param_bo_acquisition
+                                                "init {param_bo_initial_samples} / batch {param_bo_batch_size} / {param_bo_acquisition}"
                                             ),
                                         ))
                                     })
@@ -513,7 +517,7 @@ impl PlayerView {
                 let room_eq = &state.app.measurement_state.room_eq_state;
                 let theme = state.app.ui_state.theme.clone();
                 let history = room_eq.progress_history.clone();
-                let chart_state = room_eq.progress_chart_state.as_ref().map(|w| w.inner());
+                let chart_state = room_eq.progress_chart_state.as_ref().map(crate::app::types::room_eq::InteractiveChartStateWrapper::inner);
                 let chart_theme = theme_to_chart_theme(&theme);
 
                 let (channel_order, progress_series, all_losses) =
@@ -546,12 +550,10 @@ impl PlayerView {
                     .max(100.0);
                 let (x_min, x_max) = chart_state
                     .filter(|s| s.is_zoomed())
-                    .map(|s| s.x_domain())
-                    .unwrap_or((0.0, x_max_data));
+                    .map_or((0.0, x_max_data), gpui_px::interaction::InteractiveChartState::x_domain);
                 let (y_min_domain, y_max_domain) = chart_state
                     .filter(|s| s.is_zoomed())
-                    .map(|s| s.y_domain())
-                    .unwrap_or((y_min, y_max));
+                    .map_or((y_min, y_max), gpui_px::interaction::InteractiveChartState::y_domain);
 
                 // Guard: ensure axis ranges are finite and non-degenerate
                 let x_max = if x_max.is_finite() && x_max > x_min {
@@ -572,14 +574,14 @@ impl PlayerView {
 
                 // Per-channel colors (cycle through a palette)
                 let channel_colors: &[u32] = &[
-                    0x1f77b4, // blue
-                    0xff7f0e, // orange
-                    0x2ca02c, // green
-                    0xd62728, // red
-                    0x9467bd, // purple
-                    0x8c564b, // brown
-                    0xe377c2, // pink
-                    0x7f7f7f, // gray
+                    0x001f_77b4, // blue
+                    0x00ff_7f0e, // orange
+                    0x002c_a02c, // green
+                    0x00d6_2728, // red
+                    0x0094_67bd, // purple
+                    0x008c_564b, // brown
+                    0x00e3_77c2, // pink
+                    0x007f_7f7f, // gray
                 ];
 
                 // Build chart: each channel pass is its own series so a
@@ -728,12 +730,12 @@ impl PlayerView {
                                         .weight(TextWeight::Semibold),
                                 )
                                 .child(
-                                    Text::new(format!("Current: {:.4}", current_loss_val))
+                                    Text::new(format!("Current: {current_loss_val:.4}"))
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
-                                    Text::new(format!("Best: {:.4}", best_loss))
+                                    Text::new(format!("Best: {best_loss:.4}"))
                                         .size(TextSize::Xs)
                                         .color(theme.success),
                                 ),
@@ -743,7 +745,7 @@ impl PlayerView {
                                 .w(px(700.0)) // intentional: fixed chart container width
                                 .flex()
                                 .flex_col()
-                                .when_some(chart_element, |el, c| el.child(c)),
+                                .when_some(chart_element, gpui::ParentElement::child),
                         ),
                 )
             })
@@ -763,7 +765,7 @@ impl PlayerView {
                         let mut pairs: Vec<(String, String)> = Vec::new();
                         match serde_json::from_str::<serde_json::Value>(&room_config_json) {
                             Ok(json_val) => flatten_json(&json_val, String::new(), &mut pairs),
-                            Err(e) => log::error!("Failed to parse optimizer config JSON: {}", e),
+                            Err(e) => log::error!("Failed to parse optimizer config JSON: {e}"),
                         }
                         let total_pairs = pairs.len();
                         pairs.truncate(64);
@@ -830,7 +832,39 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn start_room_eq_optimization(&mut self, cx: &mut Context<Self>) {
+        type ProgressMsg = (
+            usize,
+            f64,
+            f32,
+            String,
+            Option<String>,
+            Option<f64>,
+            Option<PipelineStepId>,
+            Option<PipelineStepStatus>,
+        );
+
+        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
+
+        use roomeq_workflow::CallbackAction;
+
+        use sotf_audio_player::autoeq::{
+            PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
+            run_room_optimization_with_output_dir,
+            run_room_optimization_with_probe_arrivals_and_output_dir,
+        };
+
+        use sotf_audio_player::room_eq_types::RoomEqWizardMode;
+
         if self
             .state
             .read(cx)
@@ -841,14 +875,6 @@ impl PlayerView {
         {
             return;
         }
-        use crate::app::types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
-        use roomeq_workflow::CallbackAction;
-        use sotf_audio_player::autoeq::{
-            PipelineStepId, PipelineStepStatus, RoomOptimizationCallback, RoomOptimizationProgress,
-            run_room_optimization_with_output_dir,
-            run_room_optimization_with_probe_arrivals_and_output_dir,
-        };
-        use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
         log::info!("Starting room EQ optimization using roomeq");
 
@@ -1078,12 +1104,7 @@ impl PlayerView {
             );
 
             (
-                state
-                    .app
-                    .measurement_state
-                    .room_eq_state
-                    .cancel_requested
-                    .clone(),
+                std::sync::Arc::clone(&state.app.measurement_state.room_eq_state.cancel_requested),
                 generation,
             )
         });
@@ -1097,16 +1118,6 @@ impl PlayerView {
         // Create async channel for progress updates from blocking thread.
         // Tuple: (iteration, loss, overall, speaker, message, epa,
         //         step_id, step_status).
-        type ProgressMsg = (
-            usize,
-            f64,
-            f32,
-            String,
-            Option<String>,
-            Option<f64>,
-            Option<PipelineStepId>,
-            Option<PipelineStepStatus>,
-        );
         // Bounded progress channel; the producer drops updates when the
         // queue is full (`try_send`), so a fast optimizer cannot grow an
         // unbounded backlog behind a busy UI. The consumer coalesces
@@ -1134,6 +1145,16 @@ impl PlayerView {
         cx.spawn({
             async move |_, cx| {
                 loop {
+                    fn is_transition_only(
+                        speaker: &str,
+                        sid: Option<PipelineStepId>,
+                        known_channels: &[String],
+                    ) -> bool {
+                        sid.is_some()
+                            && (speaker.is_empty()
+                                || !known_channels.iter().any(|channel| channel == speaker))
+                    }
+
                     // Block until at least one message arrives (or channel closes).
                     let first = progress_rx.recv().await;
                     let Ok((
@@ -1174,15 +1195,6 @@ impl PlayerView {
                     // target test harness) still update the readout —
                     // the previous filter "iter is zero" silently
                     // dropped those.
-                    fn is_transition_only(
-                        speaker: &str,
-                        sid: Option<PipelineStepId>,
-                        known_channels: &[String],
-                    ) -> bool {
-                        sid.is_some()
-                            && (speaker.is_empty()
-                                || !known_channels.iter().any(|channel| channel == speaker))
-                    }
 
                     let mut latest_iteration = first_iteration;
                     let mut latest_loss = first_loss;
@@ -1240,7 +1252,7 @@ impl PlayerView {
                             room_eq.current_loss = latest_loss;
                             room_eq.current_channel = Some(latest_speaker);
                         } else if (saw_transition_only || latest_was_transition_only)
-                            && latest_step_status.map(is_active_step).unwrap_or(false)
+                            && latest_step_status.is_some_and(is_active_step)
                         {
                             room_eq.current_channel = None;
                             room_eq.current_iteration = 0;
@@ -1258,7 +1270,7 @@ impl PlayerView {
                             room_eq.step_history.insert(*sid, *sst);
                         }
                         if let Some(sid) = latest_step_id
-                            && latest_step_status.map(is_active_step).unwrap_or(false)
+                            && latest_step_status.is_some_and(is_active_step)
                         {
                             room_eq.current_pipeline_step = Some(sid);
                         } else if let Some(sid) = latest_step_id
@@ -1307,7 +1319,7 @@ impl PlayerView {
 
             // Create progress callback
             let progress_tx_clone = progress_tx.clone();
-            let cancel_for_cb = cancel_flag.clone();
+            let cancel_for_cb = std::sync::Arc::clone(&cancel_flag);
             let callback: RoomOptimizationCallback =
                 Box::new(move |progress: &RoomOptimizationProgress| {
                     if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1471,7 +1483,7 @@ impl PlayerView {
                                 // Extract broadband filters from the DSP chain
                                 // (labeled "broadband" EQ plugins)
                                 let bb_filters: Vec<EqFilterConfig> = chain
-                                    .map(|chain| {
+                                    .map_or_default(|chain| {
                                         chain
                                             .plugins
                                             .iter()
@@ -1497,26 +1509,25 @@ impl PlayerView {
                                                         frequency: fj
                                                             .get("freq")
                                                             .or(fj.get("frequency"))
-                                                            .and_then(|v| v.as_f64())
+                                                            .and_then(serde_json::Value::as_f64)
                                                             .unwrap_or(1000.0),
                                                         q: fj
                                                             .get("q")
-                                                            .and_then(|v| v.as_f64())
+                                                            .and_then(serde_json::Value::as_f64)
                                                             .unwrap_or(0.707),
                                                         gain_db: fj
                                                             .get("db_gain")
                                                             .or(fj.get("gain_db"))
-                                                            .and_then(|v| v.as_f64())
+                                                            .and_then(serde_json::Value::as_f64)
                                                             .unwrap_or(0.0),
                                                     })
                                                     .collect::<Vec<_>>()
                                             })
                                             .collect()
-                                    })
-                                    .unwrap_or_default();
+                                    });
 
                                 let preamp_gain_db: f64 = chain
-                                    .map(|chain| {
+                                    .map_or(0.0, |chain| {
                                         chain
                                             .plugins
                                             .iter()
@@ -1524,18 +1535,17 @@ impl PlayerView {
                                             .filter_map(|p| {
                                                 p.parameters
                                                     .get("gain_db")
-                                                    .and_then(|v| v.as_f64())
+                                                    .and_then(serde_json::Value::as_f64)
                                             })
                                             .sum()
-                                    })
-                                    .unwrap_or(0.0);
+                                    });
 
                                 ChannelOptResult {
                                     channel_name: name.clone(),
-                                    pre_score: channel_res.map(|r| r.pre_score).unwrap_or(0.0),
-                                    post_score: channel_res.map(|r| r.post_score).unwrap_or(0.0),
+                                    pre_score: channel_res.map_or(0.0, |r| r.pre_score),
+                                    post_score: channel_res.map_or(0.0, |r| r.post_score),
                                     eq_filters: channel_res
-                                        .map(|r| {
+                                        .map_or_default(|r| {
                                             r.biquads
                                                 .iter()
                                                 .map(|b| EqFilterConfig {
@@ -1545,8 +1555,7 @@ impl PlayerView {
                                                     gain_db: b.db_gain,
                                                 })
                                                 .collect()
-                                        })
-                                        .unwrap_or_default(),
+                                        }),
                                     broadband_filters: bb_filters,
                                     preamp_gain_db,
                                     crossover_freqs: None,
@@ -1612,8 +1621,7 @@ impl PlayerView {
                         let room_eq = &mut state.app.measurement_state.room_eq_state;
                         room_eq.optimization_status = OptimizationStatus::Completed;
                         room_eq.status_message = format!(
-                            "Optimization complete! Score: {:.2} -> {:.2}",
-                            avg_pre, avg_post
+                            "Optimization complete! Score: {avg_pre:.2} -> {avg_post:.2}"
                         );
                         room_eq.channel_results = all_results;
                         room_eq.overall_progress = 1.0;
@@ -1626,12 +1634,12 @@ impl PlayerView {
                     });
                 }
                 Err(e) => {
-                    log::error!("Room optimization failed: {}", e);
+                    log::error!("Room optimization failed: {e}");
                     state_clone.update(&mut cx.clone(), |state, cx| {
                         let room_eq = &mut state.app.measurement_state.room_eq_state;
                         room_eq.optimization_status = OptimizationStatus::Failed;
                         room_eq.error_message =
-                            Some(format!("Room optimization error: {}", e));
+                            Some(format!("Room optimization error: {e}"));
                         finalize_pipeline_step_state(room_eq, false);
                         cx.notify();
                     });
@@ -1657,6 +1665,11 @@ impl PlayerView {
     }
 }
 
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn room_eq_progress_chart_series(
     history: &[(usize, f64, String, Option<f64>)],
 ) -> (Vec<String>, Vec<RoomEqProgressChartSeries>, Vec<f64>) {
@@ -1673,21 +1686,20 @@ pub fn room_eq_progress_chart_series(
             continue;
         }
 
-        let active_idx = match active_by_channel.get(channel).copied() {
-            Some(idx) => idx,
-            None => {
-                if !channel_order.iter().any(|existing| existing == channel) {
-                    channel_order.push(channel.clone());
-                }
-                let pass = pass_count_by_channel
-                    .entry(channel.clone())
-                    .and_modify(|count| *count += 1)
-                    .or_insert(1);
-                series.push(RoomEqProgressChartSeries::new(channel.clone(), *pass));
-                let idx = series.len() - 1;
-                active_by_channel.insert(channel.clone(), idx);
-                idx
+        let active_idx = if let Some(idx) = active_by_channel.get(channel).copied() {
+            idx
+        } else {
+            if !channel_order.iter().any(|existing| existing == channel) {
+                channel_order.push(channel.clone());
             }
+            let pass = pass_count_by_channel
+                .entry(channel.clone())
+                .and_modify(|count| *count += 1)
+                .or_insert(1);
+            series.push(RoomEqProgressChartSeries::new(channel.clone(), *pass));
+            let idx = series.len() - 1;
+            active_by_channel.insert(channel.clone(), idx);
+            idx
         };
 
         // Completion/status records sometimes reuse iteration 0 after a
@@ -1728,7 +1740,7 @@ pub fn room_eq_progress_chart_series(
     (channel_order, series, all_losses)
 }
 
-/// Pick the curve GPUI should display for a RoomEQ channel.
+/// Pick the curve GPUI should display for a `RoomEQ` channel.
 ///
 /// `ChannelDspChain.final_curve` is the same post-DSP curve written to the
 /// roomeq JSON and used by `display-roomeq.py`; it includes route-owned stages
@@ -1756,8 +1768,9 @@ pub fn room_eq_initial_response_points(
         .filter(|points| !points.is_empty())
 }
 
-pub fn room_eq_channel_chain_by_name<'a>(
-    channels: &'a std::collections::HashMap<String, roomeq_model::ChannelDspChain>,
+#[must_use]
+pub fn room_eq_channel_chain_by_name<'a, S: ::std::hash::BuildHasher>(
+    channels: &'a std::collections::HashMap<String, roomeq_model::ChannelDspChain, S>,
     name: &str,
 ) -> Option<&'a roomeq_model::ChannelDspChain> {
     channels

@@ -4,7 +4,7 @@
 //! - Default: Custom keybindings optimized for audio player
 //! - Vim: Vim-style navigation (hjkl, etc.)
 //! - Emacs: Emacs-style navigation (C-n, C-p, etc.)
-//! - VSCode: VSCode-style shortcuts
+//! - `VSCode`: VSCode-style shortcuts
 
 mod catalog;
 mod common;
@@ -17,7 +17,7 @@ mod volume;
 mod vscode;
 
 use crate::app::actions;
-use gpui::*;
+use gpui::{Action, DummyKeyboardMapper, KeyBinding, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -51,6 +51,7 @@ pub enum KeybindingCategory {
 }
 
 impl KeybindingCategory {
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             KeybindingCategory::Playback => "Playback",
@@ -65,6 +66,7 @@ impl KeybindingCategory {
         }
     }
 
+    #[must_use]
     pub fn all() -> &'static [KeybindingCategory] {
         &[
             KeybindingCategory::Playback,
@@ -128,6 +130,7 @@ pub struct KeybindingConflict {
 }
 
 /// Get all keybindings for a given preset
+#[must_use]
 pub fn get_keybindings(preset: KeymapPreset) -> Vec<KeyBinding> {
     let mut bindings = Vec::new();
 
@@ -275,6 +278,9 @@ pub fn get_keybindings_with_overrides(
 }
 
 /// Detect the executable action that would be displaced by a pending edit.
+///
+/// # Errors
+/// Returns an error if a keybinding cannot be parsed or the action registry is inconsistent.
 pub fn keybinding_conflict(
     preset: KeymapPreset,
     overrides: &[CustomKeybinding],
@@ -319,6 +325,7 @@ pub fn set_custom_keybinding(
 }
 
 /// Get documented help/editor rows from the exact effective runtime keymap.
+#[must_use]
 pub fn get_documented_keybindings_with_overrides(
     preset: KeymapPreset,
     overrides: &[CustomKeybinding],
@@ -417,6 +424,7 @@ fn default_bindings() -> Vec<KeyBinding> {
 /// Get documented keybindings from the exact runtime registrations for the
 /// selected preset. Semantic descriptions live in the catalog, while key
 /// labels are generated from `KeyBinding::keystrokes()` so they cannot drift.
+#[must_use]
 pub fn get_documented_keybindings(preset: KeymapPreset) -> Vec<DocumentedKeybinding> {
     let runtime_bindings = get_keybindings(preset);
     catalog::documented_keybindings_from_runtime(&runtime_bindings)
@@ -425,6 +433,7 @@ pub fn get_documented_keybindings(preset: KeymapPreset) -> Vec<DocumentedKeybind
 /// Get contextual help for one screen from the authoritative runtime
 /// registrations. The screen catalog contributes descriptions and semantic
 /// grouping only; key labels always come from `KeyBinding::keystrokes()`.
+#[must_use]
 pub fn get_documented_keybindings_for_screen(
     screen: crate::app::Screen,
     preset: KeymapPreset,
@@ -434,6 +443,7 @@ pub fn get_documented_keybindings_for_screen(
 }
 
 /// Contextual shortcut labels with the same overrides as the active keymap.
+#[must_use]
 pub fn get_documented_keybindings_for_screen_with_overrides(
     screen: crate::app::Screen,
     preset: KeymapPreset,
@@ -509,6 +519,7 @@ pub fn search_command_palette_commands(
 
 /// Clone the exact action registered for a palette row. Dispatching this box
 /// therefore reaches the same handler as pressing the documented shortcut.
+#[must_use]
 pub fn command_palette_action(preset: KeymapPreset, action_name: &str) -> Option<Box<dyn Action>> {
     get_keybindings(preset)
         .into_iter()
@@ -519,6 +530,9 @@ pub fn command_palette_action(preset: KeymapPreset, action_name: &str) -> Option
 /// Validate the authoritative runtime/documentation registry for one preset.
 /// This is intentionally public so integration and release QA can enforce the
 /// same conflict and missing-command rules used by the application.
+///
+/// # Errors
+/// Returns an error if a keybinding cannot be parsed or the action registry is inconsistent.
 pub fn validate_keybinding_registry(preset: KeymapPreset) -> Result<(), String> {
     use std::collections::BTreeMap;
 

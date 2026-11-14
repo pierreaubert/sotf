@@ -2,7 +2,7 @@ use anyhow::{Result, anyhow};
 
 pub(super) fn hex_nibble(ch: char, component: &str, display: &str) -> Result<u8> {
     ch.to_digit(16)
-        .map(|n| n as u8)
+        .and_then(|n| u8::try_from(n).ok())
         .ok_or_else(|| anyhow!("invalid hex ({component}) in {display}: '{ch}'"))
 }
 

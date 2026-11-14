@@ -9,27 +9,37 @@ description = "iOS app shell for SOTF music player"
 name = "sotf_ios"
 crate-type = ["staticlib", "rlib"]
 
-[dependencies]
-gpui = { workspace = true }
+# The application implementation is compiled on iOS and tvOS.
+[target.'cfg(any(target_os = "ios", target_os = "tvos"))'.dependencies]
 gpui-ios = { workspace = true }
-gpui-ui-kit = { workspace = true }
-sotf-gpui = { path = "../app-gpui" }
-sotf-player = { workspace = true }
+gpui = { workspace = true }
 sotf-engine = { workspace = true, features = ["streaming"] }
-
 log = { workspace = true }
 parking_lot = { workspace = true }
 crossbeam = { workspace = true }
-rust-embed = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+sotf-player = { workspace = true }
+rust-embed = { workspace = true }
+sotf-gpui = { path = "../app-gpui" }
+oslog = { workspace = true }
 
-# Apple-only logging (oslog wraps os/log.h, only available on Apple platforms)
-[target.'cfg(any(target_os = "ios", target_os = "tvos", target_os = "macos"))'.dependencies]
+# Host tests compile the iOS implementation as well.
+[dev-dependencies]
+gpui-ios = { workspace = true }
+gpui = { workspace = true }
+sotf-engine = { workspace = true, features = ["streaming"] }
+log = { workspace = true }
+parking_lot = { workspace = true }
+crossbeam = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+sotf-player = { workspace = true }
+rust-embed = { workspace = true }
+sotf-gpui = { path = "../app-gpui" }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
 oslog = { workspace = true }
 
 [lints]
-
-[lints.cargo]
-# The iOS implementation and its dependencies are target-gated.
-unused_dependencies = "allow"
+workspace = true

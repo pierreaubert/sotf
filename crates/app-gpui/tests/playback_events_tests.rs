@@ -77,3 +77,11 @@ fn test_summary() {
     assert_eq!(summary.seek_count, 1);
     assert_eq!(summary.track_changes, 1);
 }
+
+#[test]
+fn oversized_lookback_includes_all_stored_events() {
+    let mut store = PlaybackEventStore::new();
+    store.record_event(PlaybackEvent::Paused);
+    store.record_event(PlaybackEvent::Resumed);
+    assert_eq!(store.events_within(std::time::Duration::MAX).count(), 2);
+}

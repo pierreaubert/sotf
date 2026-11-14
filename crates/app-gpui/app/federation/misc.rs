@@ -4,6 +4,7 @@ use std::net::IpAddr;
 
 /// Run a structured diagnostic test against a federation source.
 /// Delegates to the shared implementation in sotf-player.
+#[must_use]
 pub fn test_federation_connection(source: &FederationSourceEntry) -> ConnectionStatus {
     sotf_audio_player::federation_scan::run_connection_diagnostic(source)
 }

@@ -1,4 +1,4 @@
-//! Constants - Algorithm and model option arrays for AutoEQ forms.
+//! Constants - Algorithm and model option arrays for `AutoEQ` forms.
 
 /// Optimization type - determines which options are shown in the form
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -206,7 +206,7 @@ pub const MULTI_MEASUREMENT_STRATEGY_OPTIONS: &[(&str, &str)] = &[
 /// Local algorithm options for refinement
 pub const LOCAL_ALGO_OPTIONS: &[(&str, &str)] = &[("cobyla", "COBYLA")];
 
-/// Target distance presets: (id, label, description, recommended_slope_db_per_oct)
+/// Target distance presets: (id, label, description, `recommended_slope_db_per_oct`)
 pub const TARGET_DISTANCE_OPTIONS: &[(&str, &str, &str, f64)] = &[
     ("near", "Near-Field", "~1m \u{2014} Good for desk", -0.5),
     (

@@ -94,6 +94,7 @@ impl<'a> IntoIterator for &'a mut QueueController {
 }
 
 impl QueueController {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -101,6 +102,9 @@ impl QueueController {
     /// Add an album to the end of the queue. Returns the insertion index.
     ///
     /// Returns an error if none of the album's tracks exist on disk.
+    ///
+    /// # Errors
+    /// Returns an error if the requested media cannot be loaded or added to the playback queue.
     pub fn add_album(&mut self, album: Album) -> Result<usize, String> {
         validate_album_has_tracks(&album)?;
         #[cfg(not(feature = "testing"))]
@@ -160,6 +164,9 @@ impl QueueController {
     /// Add album to queue and immediately jump to it for playback.
     ///
     /// Returns an error if none of the album's tracks exist on disk.
+    ///
+    /// # Errors
+    /// Returns an error if the requested media cannot be loaded or added to the playback queue.
     pub fn play_album_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
         validate_album_has_tracks(&album)?;
         #[cfg(not(feature = "testing"))]
@@ -174,6 +181,9 @@ impl QueueController {
 
     /// Play a single-file selection, reusing its existing queue position when
     /// present. Other queued albums and their order are preserved.
+    ///
+    /// # Errors
+    /// Returns an error if the path is not a single supported local audio file.
     pub fn play_single_file_now(&mut self, album: Album) -> Result<QueuePlaybackEffect, String> {
         if album.tracks.len() != 1 || album.tracks[0].source.is_some() {
             return Err("A single local audio file is required".into());
@@ -207,6 +217,9 @@ impl QueueController {
     /// Schedule an album immediately after the current track, preserving the
     /// remainder of the current album and every previously queued item.
     /// Does not start or interrupt playback. With no current item, insert first.
+    ///
+    /// # Errors
+    /// Returns an error if the requested media cannot be loaded or added to the playback queue.
     pub fn enqueue_next(&mut self, album: Album) -> Result<usize, String> {
         validate_album_has_tracks(&album)?;
         #[cfg(not(feature = "testing"))]
@@ -270,6 +283,7 @@ impl QueueController {
     /// position and source must still match: source alone is ambiguous when a
     /// track occurs more than once. Playback advancement may change the flat
     /// index without changing this address.
+    #[must_use]
     pub fn resolve_upcoming_track(
         &self,
         position: QueueTrackPosition,
@@ -406,8 +420,7 @@ impl QueueController {
         self.selected_index = position.item;
         self.queue
             .current_track_source()
-            .map(QueuePlaybackEffect::Play)
-            .unwrap_or(QueuePlaybackEffect::None)
+            .map_or(QueuePlaybackEffect::None, QueuePlaybackEffect::Play)
     }
 
     /// Start playback from the first album in the queue.
@@ -419,6 +432,7 @@ impl QueueController {
     }
 
     /// Peek at the next track without mutating state (for gapless pre-queuing).
+    #[must_use]
     pub fn peek_next_track(&self) -> Option<&Track> {
         self.queue.peek_next_track()
     }
@@ -519,6 +533,7 @@ impl QueueController {
     ///
     /// Kept as a small semantic accessor because several app call sites use it
     /// to sync playback state; other queue accessors are available via `Deref`.
+    #[must_use]
     pub fn current_index(&self) -> Option<usize> {
         self.queue.current_index
     }
@@ -527,6 +542,9 @@ impl QueueController {
     ///
     /// Returns the albums that were added, so the UI can manage its own
     /// expansion state.
+    ///
+    /// # Errors
+    /// Returns an error if the requested media cannot be loaded or added to the playback queue.
     pub fn fill_magic(
         &mut self,
         db: &crate::MusicDatabase,
@@ -548,7 +566,7 @@ impl QueueController {
         // Get recommendations (target 1 hour = 3600 seconds)
         let recommendations =
             crate::recommendation::recommend_tracks(db, &current_queue_paths, 3600)
-                .map_err(|e| format!("Recommendation error: {}", e))?;
+                .map_err(|e| format!("Recommendation error: {e}"))?;
 
         log::info!(
             "[QueueController] fill_magic: Received {} recommendations",
@@ -583,8 +601,8 @@ impl QueueController {
                 }
             } else {
                 log::warn!(
-                    "[QueueController] fill_magic: Could not find album for recommended track: {:?}",
-                    path
+                    "[QueueController] fill_magic: Could not find album for recommended track: {}",
+                    path.display()
                 );
             }
         }

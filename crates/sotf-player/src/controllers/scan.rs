@@ -16,6 +16,7 @@ impl Default for ScanController {
 }
 
 impl ScanController {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             replay_gain_manager: ReplayGainScanManager::new(),
@@ -24,14 +25,24 @@ impl ScanController {
         }
     }
 
+    /// Start replay gain scan.
+    ///
+    /// # Errors
+    /// Returns an error if the background scanner cannot start.
     pub fn start_replay_gain_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         self.replay_gain_manager.start_scan()
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the background scanner cannot start.
     pub fn start_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.waveform_manager.start_scan()
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the background scanner cannot start.
     pub fn start_bliss_scan(&mut self) -> Result<String, Box<dyn std::error::Error>> {
         self.bliss_manager.start_scan()
     }
@@ -51,6 +62,7 @@ impl ScanController {
     }
 
     /// Whether any scan is currently in progress.
+    #[must_use]
     pub fn any_in_progress(&self) -> bool {
         self.replay_gain_manager.in_progress
             || self.waveform_manager.in_progress
@@ -64,7 +76,7 @@ impl ScanController {
         self.waveform_manager.set_num_threads(threads);
         self.bliss_manager.set_num_threads(threads);
         if let Some(t) = threads {
-            log::info!("Scanner thread count set to {}", t);
+            log::info!("Scanner thread count set to {t}");
         }
     }
 }

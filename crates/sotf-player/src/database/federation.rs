@@ -1,6 +1,5 @@
 use crate::federation_config::{FederationSourceEntry, SourceConnectionConfig};
 use rusqlite::{OptionalExtension, params};
-use serde_json;
 use sotf_federation::{ProviderAlbum, ProviderTrack};
 
 use super::MusicDatabase;
@@ -138,7 +137,7 @@ impl MusicDatabase {
                     source_id,
                     std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
-                        .map_or(0, |d| d.as_secs() as i64),
+                        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
                 ],
             )
             .map_err(|e| format!("toggle_federation_source: {e}"))?;
@@ -157,6 +156,9 @@ impl MusicDatabase {
     }
 
     /// Update the last sync timestamp for a federation source.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn update_federation_source_sync_time(&self, source_id: &str) -> Result<(), String> {
         let now = super::current_timestamp();
 
@@ -170,7 +172,10 @@ impl MusicDatabase {
         Ok(())
     }
 
-    /// Get the internal source ID (database primary key) from the source_id string.
+    /// Get the internal source ID (database primary key) from the `source_id` string.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_federation_source_db_id(&self, source_id: &str) -> Result<Option<i64>, String> {
         let id: Option<i64> = self
             .conn
@@ -185,8 +190,11 @@ impl MusicDatabase {
 
     /// Merge an album from a federation source into the database.
     ///
-    /// This creates or updates the album and links it to the source via album_sources.
+    /// This creates or updates the album and links it to the source via `album_sources`.
     /// Returns the album's internal database ID.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn merge_federation_album(
         &self,
         source_id: &str,
@@ -194,7 +202,7 @@ impl MusicDatabase {
     ) -> Result<i64, String> {
         let db_source_id = self
             .get_federation_source_db_id(source_id)?
-            .ok_or_else(|| format!("source not found: {}", source_id))?;
+            .ok_or_else(|| format!("source not found: {source_id}"))?;
 
         let now = super::current_timestamp();
 
@@ -217,13 +225,7 @@ impl MusicDatabase {
              ON CONFLICT(artist, title) DO UPDATE SET
                  year = excluded.year,
                  updated_at = excluded.updated_at",
-                params![
-                    &artist,
-                    &album.title,
-                    album.year.map(|y| y as i64),
-                    now,
-                    now,
-                ],
+                params![&artist, &album.title, album.year.map(i64::from), now, now,],
             )
             .map_err(|e| format!("merge_federation_album: {e}"))?;
 
@@ -253,7 +255,10 @@ impl MusicDatabase {
 
     /// Merge a track from a federation source into the database.
     ///
-    /// This creates or updates the track and links it to the source via track_sources.
+    /// This creates or updates the track and links it to the source via `track_sources`.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn merge_federation_track(
         &self,
         source_id: &str,
@@ -262,7 +267,7 @@ impl MusicDatabase {
     ) -> Result<i64, String> {
         let db_source_id = self
             .get_federation_source_db_id(source_id)?
-            .ok_or_else(|| format!("source not found: {}", source_id))?;
+            .ok_or_else(|| format!("source not found: {source_id}"))?;
 
         let now = super::current_timestamp();
 
@@ -318,8 +323,8 @@ impl MusicDatabase {
             .query_row(
                 params![
                     album_id,
-                    track.track_number.map(|n| n as i64),
-                    track.disc_number.map(|n| n as i64),
+                    track.track_number.map(i64::from),
+                    track.disc_number.map(i64::from),
                     track.title.trim(),
                 ],
                 |row| row.get(0),
@@ -330,6 +335,10 @@ impl MusicDatabase {
         Ok(track_id)
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "The database stores metadata durations as saturating whole seconds"
+    )]
     fn insert_or_update_synthetic_federation_track(
         &self,
         album_id: i64,
@@ -367,12 +376,12 @@ impl MusicDatabase {
                     &track.title,
                     &track.artist,
                     &track.album_artist,
-                    track.track_number.map(|n| n as i64),
-                    track.disc_number.map(|n| n as i64),
+                    track.track_number.map(i64::from),
+                    track.disc_number.map(i64::from),
                     track.duration_secs.map(|d| d as i64),
-                    track.channels.map(|c| c as i64),
-                    track.sample_rate.map(|r| r as i64),
-                    track.bit_depth.map(|b| b as i64),
+                    track.channels.map(i64::from),
+                    track.sample_rate.map(i64::from),
+                    track.bit_depth.map(i64::from),
                     &track.genre,
                     &track.composer,
                     now,
@@ -390,6 +399,9 @@ impl MusicDatabase {
     }
 
     /// Update the availability state of a federation source.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn set_source_availability(&self, source_id: &str, available: bool) -> Result<(), String> {
         let now = super::current_timestamp();
 
@@ -405,6 +417,9 @@ impl MusicDatabase {
 
     /// Remove albums that have no tracks left after a source data clear.
     /// This prevents empty album shells from lingering in the library.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_orphaned_albums(&self) -> Result<usize, String> {
         let removed = self
             .conn
@@ -417,7 +432,10 @@ impl MusicDatabase {
         Ok(removed)
     }
 
-    /// Remove tracks that have no track_sources entries (orphaned by a source clear).
+    /// Remove tracks that have no `track_sources` entries (orphaned by a source clear).
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_orphaned_tracks(&self) -> Result<usize, String> {
         let removed = self
             .conn
@@ -433,10 +451,12 @@ impl MusicDatabase {
 
     /// Remove federation tracks whose only source was the given source.
     /// Tracks that also belong to other sources are kept (only the junction row is removed).
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_exclusive_federation_tracks(&self, source_id: &str) -> Result<usize, String> {
-        let db_source_id = match self.get_federation_source_db_id(source_id)? {
-            Some(id) => id,
-            None => return Ok(0),
+        let Some(db_source_id) = self.get_federation_source_db_id(source_id)? else {
+            return Ok(0);
         };
 
         // Delete tracks that ONLY belong to this source (not shared with others)
@@ -459,10 +479,12 @@ impl MusicDatabase {
 
     /// Clear all data for a federation source (albums and tracks).
     /// This is called before a full resync to remove stale data.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clear_federation_source_data(&self, source_id: &str) -> Result<(), String> {
-        let db_source_id = match self.get_federation_source_db_id(source_id)? {
-            Some(id) => id,
-            None => return Ok(()), // Source doesn't exist, nothing to clear
+        let Some(db_source_id) = self.get_federation_source_db_id(source_id)? else {
+            return Ok(());
         };
 
         // Delete junction rows. Orphaned tracks/albums are cleaned up separately
@@ -485,10 +507,13 @@ impl MusicDatabase {
         Ok(())
     }
 
+    /// Unmerge federation source.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn unmerge_federation_source(&self, source_id: &str) -> Result<(usize, usize), String> {
-        let db_source_id = match self.get_federation_source_db_id(source_id)? {
-            Some(id) => id,
-            None => return Ok((0, 0)),
+        let Some(db_source_id) = self.get_federation_source_db_id(source_id)? else {
+            return Ok((0, 0));
         };
 
         self.clear_federation_source_data(source_id)?;

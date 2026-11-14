@@ -1,12 +1,14 @@
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+#[cfg(feature = "dev-api")]
+use gpui::Result;
+
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
-use sotf_audio_player::room_eq_types::DspChainOutputExt;
 
 macro_rules! dev_track {
     ($element:expr, $selector:expr) => {{
@@ -23,7 +25,7 @@ macro_rules! dev_track {
 }
 
 /// Export format options shown in the dropdown. Index 0 is the native
-/// SotF JSON; indices 1–6 map to `roomeq_workflow::ExportFormat` variants.
+/// `SotF` JSON; indices 1–6 map to `roomeq_workflow::ExportFormat` variants.
 const EXPORT_FORMATS: &[(&str, &str)] = &[
     ("SotF JSON", "json"),
     ("CamillaDSP", "yaml"),
@@ -35,6 +37,10 @@ const EXPORT_FORMATS: &[(&str, &str)] = &[
 ];
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -60,7 +66,7 @@ impl PlayerView {
             .room_eq_state
             .dsp_output
             .as_ref()
-            .is_none_or(|dsp| dsp.is_rack_compatible());
+            .is_none_or(sotf_audio_player::room_eq_types::DspChainOutputExt::is_rack_compatible);
         let selected_format_idx = state
             .app
             .measurement_state
@@ -242,11 +248,8 @@ impl PlayerView {
                                             }),
                                         )
                                         .child(
-                                            Text::label(format!(
-                                                "{} (.{})",
-                                                format_name, format_ext
-                                            ))
-                                            .color(theme.text_primary),
+                                            Text::label(format!("{format_name} (.{format_ext})"))
+                                                .color(theme.text_primary),
                                         ),
                                 )
                                 .child(dev_track!(
@@ -296,7 +299,7 @@ impl PlayerView {
                                             let name = name.to_string();
                                             let ext = ext.to_string();
                                             div()
-                                                .id(SharedString::from(format!("export-fmt-{}", i)))
+                                                .id(SharedString::from(format!("export-fmt-{i}")))
                                                 .px(px(10.0)) // intentional: compact dropdown item padding, no matching token
                                                 .py(px(5.0)) // intentional: compact dropdown item padding, no matching token
                                                 .cursor_pointer()
@@ -325,7 +328,7 @@ impl PlayerView {
                                                     })
                                                 })
                                                 .child(
-                                                    Text::new(format!("{} (.{})", name, ext))
+                                                    Text::new(format!("{name} (.{ext})"))
                                                         .size(TextSize::Xs)
                                                         .color(if is_selected {
                                                             theme.accent
@@ -345,9 +348,9 @@ impl PlayerView {
         stack
     }
 
-    /// Export DSP chain in the user-selected format (JSON, CamillaDSP,
-    /// APO, EasyEffects, Wavelet, PipeWire, Roon). Index 0 = SotF JSON
-    /// (pretty-printed DspChainOutput); indices 1–6 delegate to
+    /// Export DSP chain in the user-selected format (JSON, `CamillaDSP`,
+    /// APO, `EasyEffects`, Wavelet, `PipeWire`, Roon). Index 0 = `SotF` JSON
+    /// (pretty-printed `DspChainOutput`); indices 1–6 delegate to
     /// `roomeq_workflow::export::export_dsp_chain`.
     fn check_room_result_freshness(&mut self, cx: &mut Context<Self>) -> bool {
         let state = self.state.read(cx);
@@ -369,6 +372,14 @@ impl PlayerView {
         false
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn export_room_eq_format(&mut self, cx: &mut Context<Self>) {
         if !self.check_room_result_freshness(cx) {
             return;
@@ -418,7 +429,7 @@ impl PlayerView {
             5 => roomeq_workflow::ExportFormat::PipeWire,
             6 => roomeq_workflow::ExportFormat::RoonDsp,
             _ => {
-                log::warn!("Unknown export format index {}", format_idx);
+                log::warn!("Unknown export format index {format_idx}");
                 return;
             }
         };
@@ -485,7 +496,7 @@ impl PlayerView {
             let dsp_json = match serde_json::to_string(&dsp_output) {
                 Ok(j) => j,
                 Err(e) => {
-                    log::error!("Failed to serialize DSP output: {}", e);
+                    log::error!("Failed to serialize DSP output: {e}");
                     return;
                 }
             };
@@ -493,7 +504,7 @@ impl PlayerView {
             cx.spawn(async move |_, cx| {
                 let file = rfd::AsyncFileDialog::new()
                     .add_filter(format_name, &[ext])
-                    .set_title(format!("Export Room EQ — {}", format_name))
+                    .set_title(format!("Export Room EQ — {format_name}"))
                     .set_file_name(file_name)
                     .save_file()
                     .await;
@@ -511,9 +522,9 @@ impl PlayerView {
                             ) {
                                 Ok(()) => {
                                     log::info!(
-                                        "Exported room EQ as {} to {:?}",
+                                        "Exported room EQ as {} to {}",
                                         format_name,
-                                        file.path()
+                                        file.path().display()
                                     );
                                     state_entity.update(cx, |state, cx| {
                                         cx.notify();
@@ -535,21 +546,21 @@ impl PlayerView {
                                     });
                                 }
                                 Err(e) => {
-                                    log::error!("Export failed: {}", e);
+                                    log::error!("Export failed: {e}");
                                     state_entity.update(cx, |state, cx| {
                                         cx.notify();
                                         state.app.measurement_state.room_eq_state.error_message =
-                                            Some(format!("Export failed: {}", e));
+                                            Some(format!("Export failed: {e}"));
                                     });
                                 }
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to parse DSP output for export: {}", e);
+                            log::error!("Failed to parse DSP output for export: {e}");
                             state_entity.update(cx, |state, cx| {
                                 cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
-                                    Some(format!("Internal error: {}", e));
+                                    Some(format!("Internal error: {e}"));
                             });
                         }
                     }
@@ -559,6 +570,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn export_room_eq_json(&mut self, cx: &mut Context<Self>) {
         if !self.check_room_result_freshness(cx) {
             return;
@@ -658,11 +673,11 @@ impl PlayerView {
                     ) {
                         Ok(output) => output,
                         Err(e) => {
-                            log::error!("Failed to package Room EQ sidecars: {}", e);
+                            log::error!("Failed to package Room EQ sidecars: {e}");
                             state_entity.update(cx, |state, cx| {
                                 cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
-                                    Some(format!("Failed to package WAV files: {}", e));
+                                    Some(format!("Failed to package WAV files: {e}"));
                             });
                             return;
                         }
@@ -674,7 +689,10 @@ impl PlayerView {
                             // Write to file
                             match std::fs::write(file.path(), &json) {
                                 Ok(()) => {
-                                    log::info!("Exported room EQ config to {:?}", file.path());
+                                    log::info!(
+                                        "Exported room EQ config to {}",
+                                        file.path().display()
+                                    );
                                     state_entity.update(cx, |state, cx| {
                                         cx.notify();
                                         state
@@ -694,21 +712,21 @@ impl PlayerView {
                                     });
                                 }
                                 Err(e) => {
-                                    log::error!("Failed to write room EQ file: {}", e);
+                                    log::error!("Failed to write room EQ file: {e}");
                                     state_entity.update(cx, |state, cx| {
                                         cx.notify();
                                         state.app.measurement_state.room_eq_state.error_message =
-                                            Some(format!("Failed to write: {}", e));
+                                            Some(format!("Failed to write: {e}"));
                                     });
                                 }
                             }
                         }
                         Err(e) => {
-                            log::error!("Failed to serialize room EQ JSON: {}", e);
+                            log::error!("Failed to serialize room EQ JSON: {e}");
                             state_entity.update(cx, |state, cx| {
                                 cx.notify();
                                 state.app.measurement_state.room_eq_state.error_message =
-                                    Some(format!("Failed to serialize: {}", e));
+                                    Some(format!("Failed to serialize: {e}"));
                             });
                         }
                     }
@@ -732,7 +750,7 @@ impl PlayerView {
             cx.spawn(async move |_, cx| {
                 // Generate default filename with timestamp
                 let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S");
-                let default_name = format!("rack_backup_{}.json", timestamp);
+                let default_name = format!("rack_backup_{timestamp}.json");
 
                 // Open save file dialog
                 let file = rfd::AsyncFileDialog::new()
@@ -752,7 +770,7 @@ impl PlayerView {
 
                     match plugin_graph.save_to_file(parent_dir, filename) {
                         Ok(()) => {
-                            log::info!("Saved rack backup to {:?}", file_path);
+                            log::info!("Saved rack backup to {}", file_path.display());
                             state_entity.update(cx, |state, _| {
                                 state.app.measurement_state.room_eq_state.status_message =
                                     format!("Backup saved to {}", file_path.display());
@@ -761,10 +779,10 @@ impl PlayerView {
                             });
                         }
                         Err(e) => {
-                            log::error!("Failed to save rack backup: {}", e);
+                            log::error!("Failed to save rack backup: {e}");
                             state_entity.update(cx, |state, _| {
                                 state.app.measurement_state.room_eq_state.error_message =
-                                    Some(format!("Failed to save backup: {}", e));
+                                    Some(format!("Failed to save backup: {e}"));
                             });
                         }
                     }
@@ -780,6 +798,8 @@ impl PlayerView {
     /// TUI's apply behavior so the user only needs one "Apply" button.
     /// The status toast reports which path was taken.
     pub(super) fn apply_room_eq_to_player(&mut self, cx: &mut Context<Self>) {
+        use sotf_audio_player::autoeq::RoomEqApplyOutcome;
+
         {
             let app = &self.state.read(cx).app;
             let correction = &app.measurement_state.room_eq_state;
@@ -790,7 +810,6 @@ impl PlayerView {
         if !self.check_room_result_freshness(cx) {
             return;
         }
-        use sotf_audio_player::autoeq::RoomEqApplyOutcome;
 
         let (dsp_output, channel_result_names) = {
             let state = self.state.read(cx);
@@ -840,9 +859,9 @@ impl PlayerView {
             ) {
                 Ok(o) => o,
                 Err(e) => {
-                    log::error!("Apply room EQ failed: {}", e);
+                    log::error!("Apply room EQ failed: {e}");
                     state.app.measurement_state.room_eq_state.error_message =
-                        Some(format!("Failed to apply room EQ: {}", e));
+                        Some(format!("Failed to apply room EQ: {e}"));
                     return;
                 }
             };
@@ -926,7 +945,7 @@ impl PlayerView {
             ) {
                 Ok(o) => o,
                 Err(e) => {
-                    log::warn!("Apply-as-graph failed: {}", e);
+                    log::warn!("Apply-as-graph failed: {e}");
                     state.app.measurement_state.room_eq_state.error_message = Some(e);
                     return;
                 }

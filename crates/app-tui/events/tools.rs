@@ -5,7 +5,7 @@ use sotf_audio_player::TrialMode;
 
 pub(super) fn handle_tools_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
-        KeyCode::Up | KeyCode::Down | KeyCode::Char('j') | KeyCode::Char('k') => {
+        KeyCode::Up | KeyCode::Down | KeyCode::Char('j' | 'k') => {
             app.ui.selected_tool = match app.ui.selected_tool {
                 Tool::EarTraining => Tool::AbTesting,
                 Tool::AbTesting => Tool::EarTraining,
@@ -28,9 +28,9 @@ pub(super) fn handle_tools_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
 
 pub(super) fn handle_ab_testing_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
-        KeyCode::Char('a') | KeyCode::Char('A') => app.capture_ab_testing_path(true),
-        KeyCode::Char('b') | KeyCode::Char('B') => app.capture_ab_testing_path(false),
-        KeyCode::Char('p') | KeyCode::Char('P') => app.prepare_ab_testing_session(),
+        KeyCode::Char('a' | 'A') => app.capture_ab_testing_path(true),
+        KeyCode::Char('b' | 'B') => app.capture_ab_testing_path(false),
+        KeyCode::Char('p' | 'P') => app.prepare_ab_testing_session(),
         KeyCode::Tab | KeyCode::Char('m') => {
             app.ui.ab_testing.trial_mode = match app.ui.ab_testing.trial_mode {
                 TrialMode::BlindAb => TrialMode::Abx,
@@ -39,8 +39,8 @@ pub(super) fn handle_ab_testing_keys(app: &mut App, key: KeyEvent) -> Option<Pla
             app.ui.ab_testing.status =
                 format!("Mode: {}", trial_mode_label(app.ui.ab_testing.trial_mode));
         }
-        KeyCode::Enter | KeyCode::Char('n') | KeyCode::Char('N') => app.start_ab_testing_trial(),
-        KeyCode::Char('q') | KeyCode::Char('w') | KeyCode::Char('e') => {
+        KeyCode::Enter | KeyCode::Char('n' | 'N') => app.start_ab_testing_trial(),
+        KeyCode::Char('q' | 'w' | 'e') => {
             let index = match key.code {
                 KeyCode::Char('q') => 0,
                 KeyCode::Char('w') => 1,
@@ -58,7 +58,7 @@ pub(super) fn handle_ab_testing_keys(app: &mut App, key: KeyEvent) -> Option<Pla
                 app.activate_ab_testing_cue(cue);
             }
         }
-        KeyCode::Char('1') | KeyCode::Char('2') => {
+        KeyCode::Char('1' | '2') => {
             let index = usize::from(key.code == KeyCode::Char('2'));
             if let Some(answer) = app
                 .ui
@@ -72,8 +72,8 @@ pub(super) fn handle_ab_testing_keys(app: &mut App, key: KeyEvent) -> Option<Pla
                 app.commit_ab_testing_answer(answer);
             }
         }
-        KeyCode::Char('s') | KeyCode::Char('S') => app.save_ab_testing_session(),
-        KeyCode::Char('l') | KeyCode::Char('L') => app.load_ab_testing_session(),
+        KeyCode::Char('s' | 'S') => app.save_ab_testing_session(),
+        KeyCode::Char('l' | 'L') => app.load_ab_testing_session(),
         _ => return None,
     }
     app.ui.needs_redraw = true;

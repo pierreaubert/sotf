@@ -1,7 +1,5 @@
 pub(super) fn fmt_optional_number(value: Option<f64>, _fmt: &str) -> String {
-    value
-        .map(|value| format!("{value:.2}"))
-        .unwrap_or_else(|| "-".to_string())
+    value.map_or_else(|| "-".to_string(), |value| format!("{value:.2}"))
 }
 
 pub(super) fn fmt_db(value: f64) -> String {
@@ -9,7 +7,7 @@ pub(super) fn fmt_db(value: f64) -> String {
 }
 
 pub(super) fn fmt_optional_db(value: Option<f64>) -> String {
-    value.map(fmt_db).unwrap_or_else(|| "-".to_string())
+    value.map_or_else(|| "-".to_string(), fmt_db)
 }
 
 pub(super) fn fmt_hz(value: f64) -> String {
@@ -17,7 +15,7 @@ pub(super) fn fmt_hz(value: f64) -> String {
 }
 
 pub(super) fn fmt_optional_hz(value: Option<f64>) -> String {
-    value.map(fmt_hz).unwrap_or_else(|| "-".to_string())
+    value.map_or_else(|| "-".to_string(), fmt_hz)
 }
 
 pub(super) fn fmt_ms(value: f64) -> String {

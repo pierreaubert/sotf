@@ -29,7 +29,7 @@ pub struct PlaybackState {
     pub input_loudness_info: Option<Arc<LoudnessData>>,
     /// Output-side loudness data. Includes per-channel true-peaks (level
     /// meters, SPL spider) AND the inter-channel correlation matrix
-    /// (Correlation spider) — both are produced by the same LoudnessMonitor.
+    /// (Correlation spider) — both are produced by the same `LoudnessMonitor`.
     pub loudness_info: Option<Arc<LoudnessData>>,
     pub spectrum_info: Option<Arc<SpectrumData>>,
     pub compressor_info: Option<Arc<CompressorData>>,
@@ -73,6 +73,7 @@ impl Default for PlaybackState {
 impl PlaybackState {
     /// Output-rate context for spectrum displays. Do not label the decoded
     /// source rate as the current output rate when the engine resamples.
+    #[must_use]
     pub fn spectrum_output_sample_rate(&self) -> Option<u32> {
         #[cfg(feature = "dev-api")]
         if let Some(frame) = &self.qa_spectrum_fixture {
@@ -84,6 +85,7 @@ impl PlaybackState {
             .filter(|rate| *rate > 0)
     }
 
+    #[must_use]
     pub fn new() -> Self {
         let mut ctrl = PlaybackController::new();
         // Override the default volume with GPUI's startup volume
@@ -110,11 +112,21 @@ impl PlaybackState {
         }
     }
 
+    #[must_use]
     pub fn display_duration_secs(&self) -> f64 {
         #[cfg(feature = "dev-api")]
         if let Some(duration) = self.qa_duration_fixture {
             return duration;
         }
         self.duration_secs
+    }
+}
+
+impl std::fmt::Debug for PlaybackState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PlaybackState")
+            .field("current_queue_index", &self.current_queue_index)
+            .field("signal_path_open", &self.signal_path_open)
+            .finish_non_exhaustive()
     }
 }

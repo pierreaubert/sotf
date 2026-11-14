@@ -4,10 +4,14 @@ use crate::app::i18n::LibraryMaintenanceTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, rems};
 use gpui_ui_kit::{Button, ButtonVariant, Text};
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     fn run_library_maintenance(&mut self, remove: bool, cx: &mut Context<Self>) {
         let state = self.state.read(cx);
         let text = LibraryMaintenanceTranslations::for_language(state.app.ui_state.language);
@@ -34,7 +38,7 @@ impl PlayerView {
             .library_state
             .library
             .get_database()
-            .and_then(|db| db.backing_path());
+            .and_then(sotf_audio_player::MusicDatabase::backing_path);
         #[cfg(feature = "dev-api")]
         let fail_refresh = self.state.update(cx, |state, _| {
             std::mem::take(&mut state.app.settings.library.maintenance.qa_fail_next_refresh)
@@ -122,7 +126,7 @@ impl PlayerView {
                                         }
                                     }
                                     Err(error) => {
-                                        state.app.settings.library.maintenance.error = Some(error)
+                                        state.app.settings.library.maintenance.error = Some(error);
                                     }
                                 }
                             }
@@ -136,6 +140,10 @@ impl PlayerView {
         .detach();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_library_maintenance(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -228,7 +236,7 @@ impl PlayerView {
                             .theme(theme.to_button_theme())
                             .on_click_event(cx.listener(|view, _, _, cx| {
                                 view.state.update(cx, |state, _| {
-                                    state.app.settings.library.maintenance.review = None
+                                    state.app.settings.library.maintenance.review = None;
                                 });
                                 cx.notify();
                             }))

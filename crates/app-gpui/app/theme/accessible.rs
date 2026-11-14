@@ -6,38 +6,41 @@ pub const WCAG_NON_TEXT_CONTRAST: f32 = 3.0;
 
 impl Theme {
     /// Protanopia-safe dark theme using blue, yellow, teal, and purple separation.
+    #[must_use]
     pub fn protanopia() -> Self {
         Self::dark().with_accessible_semantics(
-            rgb(0x008fd5),
-            rgb(0x009e73),
-            rgb(0xe69f00),
-            rgb(0xcc79a7),
-            rgb(0x56b4e9),
-            rgb(0xf0e442),
+            rgb(0x0000_8fd5),
+            rgb(0x0000_9e73),
+            rgb(0x00e6_9f00),
+            rgb(0x00cc_79a7),
+            rgb(0x0056_b4e9),
+            rgb(0x00f0_e442),
         )
     }
 
     /// Deuteranopia-safe dark theme using blue/orange/pink separation.
+    #[must_use]
     pub fn deuteranopia() -> Self {
         Self::dark().with_accessible_semantics(
-            rgb(0x008fd5),
-            rgb(0x56b4e9),
-            rgb(0xe69f00),
-            rgb(0xd55e00),
-            rgb(0xcc79a7),
-            rgb(0xf0e442),
+            rgb(0x0000_8fd5),
+            rgb(0x0056_b4e9),
+            rgb(0x00e6_9f00),
+            rgb(0x00d5_5e00),
+            rgb(0x00cc_79a7),
+            rgb(0x00f0_e442),
         )
     }
 
     /// Tritanopia-safe dark theme using magenta, green, orange, and blue separation.
+    #[must_use]
     pub fn tritanopia() -> Self {
         Self::dark().with_accessible_semantics(
-            rgb(0xcc79a7),
-            rgb(0x009e73),
-            rgb(0xd55e00),
-            rgb(0xe64b35),
-            rgb(0x999999),
-            rgb(0x0072b2),
+            rgb(0x00cc_79a7),
+            rgb(0x0000_9e73),
+            rgb(0x00d5_5e00),
+            rgb(0x00e6_4b35),
+            rgb(0x0099_9999),
+            rgb(0x0000_72b2),
         )
     }
 
@@ -84,7 +87,7 @@ impl Theme {
             limiter: warning,
             gate: secondary,
             loudness: info,
-            binaural: rgb(0xcc79a7),
+            binaural: rgb(0x00cc_79a7),
             convolution: accent,
             monitor: success,
             spectrum: secondary,
@@ -99,7 +102,7 @@ impl Theme {
             deviation: secondary,
             grid: self.feedback.grid_color,
             secondary_line: self.text_secondary,
-            directivity_er: rgb(0xcc79a7),
+            directivity_er: rgb(0x00cc_79a7),
             directivity_sp: secondary,
         };
         self.plugin_palette.band_colors = vec![
@@ -109,8 +112,8 @@ impl Theme {
             info,
             accent,
             secondary,
-            rgb(0xcc79a7),
-            rgb(0x999999),
+            rgb(0x00cc_79a7),
+            rgb(0x0099_9999),
         ];
         self.plugin_palette.channel_colors = vec![info, error, success, warning, secondary, accent];
 
@@ -137,6 +140,9 @@ impl Theme {
     /// This intentionally avoids decorative pairs such as hairline borders.
     /// Selection backgrounds are composited over the surface first because many
     /// accent-muted colors are transparent overlays.
+    ///
+    /// # Errors
+    /// Returns accessibility violations if the required contrast ratios are not satisfied.
     pub fn validate_accessibility(&self) -> Result<(), String> {
         validate_pair(
             "text_primary/background",
@@ -191,8 +197,8 @@ fn lighten(color: Rgba, amount: f32) -> Rgba {
 }
 
 fn readable_text_color(background: Rgba) -> Rgba {
-    let black = rgb(0x000000);
-    let white = rgb(0xffffff);
+    let black = rgb(0x0000_0000);
+    let white = rgb(0x00ff_ffff);
 
     if contrast_ratio(black, background) >= contrast_ratio(white, background) {
         black
@@ -217,6 +223,7 @@ fn validate_pair(
     }
 }
 
+#[must_use]
 pub fn contrast_ratio(foreground: Rgba, background: Rgba) -> f32 {
     let foreground_luminance = relative_luminance(foreground);
     let background_luminance = relative_luminance(background);
@@ -225,6 +232,7 @@ pub fn contrast_ratio(foreground: Rgba, background: Rgba) -> f32 {
     (lighter + 0.05) / (darker + 0.05)
 }
 
+#[must_use]
 pub fn composite_over(foreground: Rgba, background: Rgba) -> Rgba {
     let alpha = foreground.a + background.a * (1.0 - foreground.a);
     if alpha <= f32::EPSILON {

@@ -1,6 +1,7 @@
 use crate::driver::AppDriver;
 use sotf_audio_player_gpui::app::types::{HeadphoneEqStep, OptimizationStatus};
 
+#[derive(Debug)]
 pub struct HeadphoneEqPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

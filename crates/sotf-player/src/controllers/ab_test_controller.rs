@@ -42,6 +42,7 @@ pub struct AbTestController {
 }
 
 impl AbTestController {
+    #[must_use]
     pub fn session(&self) -> Option<&AbTestSession> {
         self.session.as_ref()
     }
@@ -50,6 +51,10 @@ impl AbTestController {
         self.session.as_mut()
     }
 
+    /// Replace session.
+    ///
+    /// # Errors
+    /// Returns an error if an A/B runtime is already active.
     pub fn replace_session(&mut self, session: AbTestSession) -> Result<(), AbTestError> {
         if self.runtime.original_graph.is_some() {
             return Err(AbTestError::RuntimeAlreadyActive);
@@ -59,6 +64,10 @@ impl AbTestController {
         Ok(())
     }
 
+    /// Clear session.
+    ///
+    /// # Errors
+    /// Returns an error if an A/B runtime is already active.
     pub fn clear_session(&mut self) -> Result<(), AbTestError> {
         if self.runtime.original_graph.is_some() {
             return Err(AbTestError::RuntimeAlreadyActive);
@@ -67,6 +76,10 @@ impl AbTestController {
         Ok(())
     }
 
+    /// Start trial.
+    ///
+    /// # Errors
+    /// Returns an error if the session state rejects the transition or the playback graph cannot be updated.
     pub fn start_trial(&mut self, mode: TrialMode) -> Result<u32, AbTestError> {
         self.session
             .as_mut()
@@ -74,6 +87,10 @@ impl AbTestController {
             .start_trial(mode)
     }
 
+    /// Commit trial.
+    ///
+    /// # Errors
+    /// Returns an error if the session state rejects the transition or the playback graph cannot be updated.
     pub fn commit_trial(
         &mut self,
         answer: TrialAnswer,
@@ -91,6 +108,9 @@ impl AbTestController {
     ///
     /// Path hosts and fixed level matching are installed once here. Later cue
     /// changes touch only the plugin's binary `selected_path` field.
+    ///
+    /// # Errors
+    /// Returns an error if the session state rejects the transition or the playback graph cannot be updated.
     pub fn enter_runtime(
         &mut self,
         graph: &mut PluginGraph,
@@ -117,6 +137,9 @@ impl AbTestController {
     }
 
     /// Activate a concealed cue without exposing its A/B assignment to a UI.
+    ///
+    /// # Errors
+    /// Returns an error if the session state rejects the transition or the playback graph cannot be updated.
     pub fn activate_cue(
         &mut self,
         graph: &mut PluginGraph,
@@ -158,6 +181,9 @@ impl AbTestController {
     }
 
     /// Restore the exact graph that was active before the A/B runtime.
+    ///
+    /// # Errors
+    /// Returns an error if the session state rejects the transition or the playback graph cannot be updated.
     pub fn leave_runtime(
         &mut self,
         graph: &mut PluginGraph,

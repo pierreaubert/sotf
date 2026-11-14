@@ -1,5 +1,5 @@
 use super::misc::with_alpha;
-use gpui::*;
+use gpui::Rgba;
 
 /// Colour palette used by both 2D and 3D renderers. Keeping it in one
 /// struct means the plugin UIs can tint a single value (e.g. the polygon
@@ -37,6 +37,7 @@ impl SpiderColors {
     ///   the rest of the panel for visual continuity.
     /// - `negative_value` (anti-phase tint) uses `theme.error` so it reads
     ///   as "alarm" without clashing with the rest of the palette.
+    #[must_use]
     pub fn from_theme(theme: &crate::theme::Theme) -> Self {
         Self {
             background: theme.surface,

@@ -1,4 +1,4 @@
-//! AutoEQ form component - struct definition and builder methods.
+//! `AutoEQ` form component - struct definition and builder methods.
 
 mod auto_eq_form;
 mod is;

@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// Normalize a genre value:
 /// - Replace dots and underscores with spaces
 /// - Title case each word (first letter uppercase, rest lowercase)
-///   This is specifically for genres where formats like "world.music" or "trip_hop" are common
+///   This is specifically for genres where formats like "world.music" or "`trip_hop`" are common
 pub(super) fn normalize_genre_name(value: &str) -> String {
     value
         .replace(['.', '_'], " ")
@@ -16,7 +16,7 @@ pub(super) fn normalize_genre_name(value: &str) -> String {
             match chars.next() {
                 None => String::new(),
                 Some(first) => {
-                    let rest: String = chars.collect::<String>().to_lowercase();
+                    let rest = chars.collect::<String>().to_lowercase();
                     format!("{}{}", first.to_uppercase(), rest)
                 }
             }
@@ -30,6 +30,9 @@ pub(super) fn normalize_genre_name(value: &str) -> String {
 ///
 /// # Security
 /// Both the source database and backup destination must be within the config directory.
+///
+/// # Errors
+/// Returns an error if the database backup cannot be created or copied.
 pub fn backup_existing_database<P: AsRef<Path>>(
     db_path: P,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -58,7 +61,7 @@ pub fn backup_existing_database<P: AsRef<Path>>(
             if current_hash == backup_hash {
                 log::debug!("Database unchanged since last backup, skipping");
                 if let Err(e) = prune_old_backups(&dir) {
-                    log::warn!("Failed to prune old database backups: {}", e);
+                    log::warn!("Failed to prune old database backups: {e}");
                 }
                 return Ok(());
             }
@@ -76,7 +79,7 @@ pub fn backup_existing_database<P: AsRef<Path>>(
 
     // Best-effort pruning; log on error but keep the freshly created backup
     if let Err(e) = prune_old_backups(&dir) {
-        log::warn!("Failed to prune old database backups: {}", e);
+        log::warn!("Failed to prune old database backups: {e}");
     }
 
     Ok(())
@@ -104,7 +107,7 @@ pub(super) fn sha256_of_file(path: &Path) -> Result<[u8; 32], std::io::Error> {
 fn find_latest_backup(dir: &Path) -> Option<PathBuf> {
     std::fs::read_dir(dir)
         .ok()?
-        .filter_map(|entry| entry.ok())
+        .filter_map(std::result::Result::ok)
         .filter_map(|entry| {
             let path = entry.path();
             parse_backup_timestamp(&path).map(|ts| (path, ts))
@@ -149,10 +152,7 @@ pub(super) fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
     let mut backups: Vec<(PathBuf, NaiveDateTime, u64)> = Vec::new();
 
     for entry in std::fs::read_dir(dir)? {
-        let entry = match entry {
-            Ok(e) => e,
-            Err(_) => continue,
-        };
+        let Ok(entry) = entry else { continue };
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -233,10 +233,13 @@ pub(super) fn prune_old_backups(dir: &Path) -> std::io::Result<()> {
 
 /// Get current Unix timestamp
 pub(super) fn current_timestamp() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs() as i64
+    i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs(),
+    )
+    .unwrap_or(i64::MAX)
 }
 
 /// Get file modification time as Unix timestamp
@@ -246,4 +249,77 @@ pub(super) fn get_file_mtime(path: &Path) -> Option<u64> {
         .and_then(|meta| meta.modified().ok())
         .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
         .map(|duration| duration.as_secs())
+}
+
+pub(super) fn path_text(path: &std::path::Path) -> rusqlite::Result<&str> {
+    path.to_str().ok_or_else(|| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "database paths must be valid UTF-8",
+        )))
+    })
+}
+
+pub(super) fn row_unsigned<T: TryFrom<i64>>(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<T> {
+    let value: i64 = row.get(index)?;
+    T::try_from(value).map_err(|_error| rusqlite::Error::IntegralValueOutOfRange(index, value))
+}
+
+pub(super) fn row_optional_unsigned<T: TryFrom<i64>>(
+    row: &rusqlite::Row<'_>,
+    index: usize,
+) -> rusqlite::Result<Option<T>> {
+    let value: Option<i64> = row.get(index)?;
+    value
+        .map(|value| {
+            T::try_from(value)
+                .map_err(|_error| rusqlite::Error::IntegralValueOutOfRange(index, value))
+        })
+        .transpose()
+}
+
+pub(super) fn sql_integer<T: TryInto<i64>>(value: T) -> rusqlite::Result<i64>
+where
+    T::Error: std::error::Error + Send + Sync + 'static,
+{
+    value
+        .try_into()
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))
+}
+
+#[cfg(test)]
+mod conversion_tests {
+    use super::{path_text, row_optional_unsigned, row_unsigned, sql_integer};
+
+    #[test]
+    fn persisted_unsigned_values_reject_negative_and_oversized_integers() -> rusqlite::Result<()> {
+        let connection = rusqlite::Connection::open_in_memory()?;
+        connection.query_row("SELECT -1, 4294967296, NULL, 42", [], |row| {
+            assert!(matches!(
+                row_unsigned::<u64>(row, 0),
+                Err(rusqlite::Error::IntegralValueOutOfRange(0, -1))
+            ));
+            assert!(matches!(
+                row_unsigned::<u32>(row, 1),
+                Err(rusqlite::Error::IntegralValueOutOfRange(1, 4_294_967_296))
+            ));
+            assert_eq!(row_optional_unsigned::<u64>(row, 2)?, None);
+            assert_eq!(row_unsigned::<usize>(row, 3)?, 42);
+            Ok(())
+        })?;
+        assert!(sql_integer(u64::MAX).is_err());
+        assert_eq!(sql_integer(42_u64)?, 42);
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn database_paths_reject_invalid_utf8_without_panicking() {
+        use std::os::unix::ffi::OsStrExt as _;
+        let path = std::path::Path::new(std::ffi::OsStr::from_bytes(b"invalid-\xff.flac"));
+        assert!(path_text(path).is_err());
+    }
 }

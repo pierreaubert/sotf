@@ -37,7 +37,7 @@ impl DevReply {
     }
 }
 
-/// Reply for a /query request — same envelope as DevReply, plus an
+/// Reply for a /query request — same envelope as `DevReply`, plus an
 /// optional `value` payload on success.
 #[derive(Debug, Clone)]
 pub struct DevQueryReply {
@@ -57,7 +57,7 @@ impl DevQueryReply {
 
     pub fn to_json(&self) -> String {
         match &self.value {
-            Ok(v) => format!(r#"{{"ok":true,"value":{}}}"#, v),
+            Ok(v) => format!(r#"{{"ok":true,"value":{v}}}"#),
             Err(e) => format!(
                 r#"{{"ok":false,"error":{}}}"#,
                 serde_json::Value::String(e.clone())
@@ -185,19 +185,19 @@ pub enum DevCommand {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
-    /// Load deterministic RoomEQ recording fixture data and optionally start
+    /// Load deterministic `RoomEQ` recording fixture data and optionally start
     /// the real optimizer.
     QaRoomEq {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
-    /// Seed a RoomEQ recording fixture while deliberately leaving the RoomEQ
-    /// wizard at LoadData. The scenario must invoke the visible load control.
+    /// Seed a `RoomEQ` recording fixture while deliberately leaving the `RoomEQ`
+    /// wizard at `LoadData`. The scenario must invoke the visible load control.
     QaRoomEqUiFixture {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevReply>,
     },
-    /// Export the completed RoomEQ DSP output to a deterministic QA JSON file.
+    /// Export the completed `RoomEQ` DSP output to a deterministic QA JSON file.
     QaRoomEqExportJson {
         payload: serde_json::Value,
         reply: mpsc::SyncSender<DevQueryReply>,

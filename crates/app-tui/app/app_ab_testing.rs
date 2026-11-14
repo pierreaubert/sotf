@@ -32,6 +32,11 @@ impl App {
         self.ui.needs_redraw = true;
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+    )]
     pub fn prepare_ab_testing_session(&mut self) {
         let Some(path_a) = self.ui.ab_testing.path_a.clone() else {
             self.ui.ab_testing.status = "Capture Path A first.".into();
@@ -59,7 +64,7 @@ impl App {
             assignment_seed: if cfg!(feature = "dev-api") {
                 42_424_242
             } else {
-                timestamp as u64
+                u64::try_from(timestamp).unwrap_or(u64::MAX)
             },
             path_a_label: "Path A",
             path_b_label: "Path B",
@@ -97,7 +102,7 @@ impl App {
             let effect = controller.enter_runtime(&mut self.plugin_rack.graph);
             self.ui.ab_testing.controller = controller;
             match effect {
-                Ok(effect) => self.apply_ab_testing_effect(effect),
+                Ok(effect) => self.apply_ab_testing_effect(&effect),
                 Err(error) => {
                     self.ui.ab_testing.status = error.to_string();
                     return;
@@ -120,7 +125,7 @@ impl App {
         self.ui.ab_testing.controller = controller;
         match effect {
             Ok(effect) => {
-                self.apply_ab_testing_effect(effect);
+                self.apply_ab_testing_effect(&effect);
                 self.ui.ab_testing.status = "Cue active.".into();
             }
             Err(error) => self.ui.ab_testing.status = error.to_string(),
@@ -148,7 +153,7 @@ impl App {
         let effect = controller.leave_runtime(&mut self.plugin_rack.graph);
         self.ui.ab_testing.controller = controller;
         if let Ok(effect) = effect {
-            self.apply_ab_testing_effect(effect);
+            self.apply_ab_testing_effect(&effect);
         }
         self.ui.ab_testing.step = if self.ui.ab_testing.controller.session().is_some() {
             AbTestingStep::Results
@@ -194,20 +199,19 @@ impl App {
         }
     }
 
-    fn apply_ab_testing_effect(&mut self, effect: PluginUpdateEffect) {
+    fn apply_ab_testing_effect(&mut self, effect: &PluginUpdateEffect) {
         match effect {
-            PluginUpdateEffect::None => {}
             // The AB testing controller does not issue momentary profile commands.
-            PluginUpdateEffect::Action { .. } => {}
+            PluginUpdateEffect::None | PluginUpdateEffect::Action { .. } => {}
             PluginUpdateEffect::Structural | PluginUpdateEffect::Parameter { .. } => {
                 self.request_plugin_update();
             }
             PluginUpdateEffect::ParameterByNodeId { node_id, .. } => {
-                let Some(plugin_index) = self.plugin_rack.graph.get_engine_index(node_id) else {
+                let Some(plugin_index) = self.plugin_rack.graph.get_engine_index(*node_id) else {
                     self.request_plugin_update();
                     return;
                 };
-                let Some(node) = self.plugin_rack.graph.nodes.get(&node_id) else {
+                let Some(node) = self.plugin_rack.graph.nodes.get(node_id) else {
                     return;
                 };
                 let PluginSettings::ABCompare { selected_path, .. } = &node.plugin.settings else {

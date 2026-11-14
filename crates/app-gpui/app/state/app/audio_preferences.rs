@@ -20,6 +20,10 @@ impl App {
         }
     }
 
+    /// Restores audio preferences.
+    ///
+    /// # Errors
+    /// Returns an error if the saved sample-rate, channel-count, or buffer settings are unsupported.
     pub fn restore_audio_preferences(
         &mut self,
         preferences: &AudioPreferences,
@@ -44,6 +48,10 @@ impl App {
         devices.hal_config.sample_rate = preferences.sample_rate_hz;
         devices.hal_config.channel_count = preferences.channel_count;
         devices.hal_config.buffer_frames = preferences.buffer_frames;
+        #[expect(
+            clippy::semicolon_outside_block,
+            reason = "Stable Rust requires cfg to guard the statement block"
+        )]
         #[cfg(all(target_os = "macos", feature = "hal"))]
         {
             devices.playback_source = if preferences.systemwide_input {

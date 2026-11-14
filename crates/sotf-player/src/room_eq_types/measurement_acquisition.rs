@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 
 use crate::recording_types::RecordingResult;
 
@@ -90,7 +91,8 @@ fn response_digest(response: &RecordingResult) -> String {
     digest
         .finalize()
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join("")
+        .fold(String::new(), |mut output, byte| {
+            let _ = write!(output, "{byte:02x}");
+            output
+        })
 }

@@ -18,6 +18,9 @@ pub(super) const SERVICE_ENUMERATION_TYPE: &str = "_services._dns-sd._udp.local"
 pub(super) const MDNS_TTL_SECS: u32 = 120;
 
 /// Discover SOTF API servers advertised as `_sotf._tcp` on the local network.
+///
+/// # Errors
+/// Returns an error if discovery sockets cannot be created, configured, or read.
 pub async fn discover_sotf_api_servers(
     timeout: Duration,
 ) -> Result<Vec<DiscoveredSotfApiServer>, String> {

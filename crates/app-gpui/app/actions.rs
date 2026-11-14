@@ -4,7 +4,7 @@
 //! and the UI layer.
 
 use crate::app::theme::{CommunityThemeId, ThemeId};
-use gpui::*;
+use gpui::{Action, actions};
 
 /// Select a built-in appearance theme from the application menu.
 #[derive(Debug, Clone, PartialEq, Action)]

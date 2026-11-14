@@ -1,4 +1,4 @@
-//! Documentation generator for SotF.
+//! Documentation generator for `SotF`.
 //!
 //! Reads plugin PARAMS arrays and generates markdown reference pages
 //! into `site/src/content/docs/reference/plugins/`.

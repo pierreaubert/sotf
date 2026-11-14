@@ -1,4 +1,4 @@
-//! Scenario driver for the SotF GPUI dev API.
+//! Scenario driver for the `SotF` GPUI dev API.
 //!
 //! Parses line-based `.scn` scripts and translates each verb into an
 //! HTTP call against a running `SotF` instance with the `dev-api`
@@ -8,26 +8,26 @@
 //!   action <Name> [json-payload]
 //!   query  <path>
 //!   assert <path> == <literal>            (string|number|bool, with optional `tolerance=<f>`)
-//!   wait_until <path> == <literal>        (with optional `timeout=<duration>`)
+//!   `wait_until` <path> == <literal>        (with optional `timeout=<duration>`)
 //!   sleep <duration>
-//!   timing_start <metric-name>
-//!   timing_end <metric-name> [max=<duration>]
-//!   focus <screen-name>                   (sugar for SwitchTo<Screen>)
+//!   `timing_start` <metric-name>
+//!   `timing_end` <metric-name> [max=<duration>]
+//!   focus <screen-name>                   (sugar for `SwitchTo`<Screen>)
 //!   key <keystroke>                       (e.g. `cmd-shift-p`, `enter`, `a`)
-//!   click <selector>                      (selector must have been registered via dev_track(...))
-//!   assert_visible <selector>              (rendered selector has non-empty bounds)
-//!   assert_absent <selector>               (selector is not in the current rendered frame)
-//!   assert_in_viewport <selector>           (rendered selector is not clipped)
-//!   assert_h_centered <child> <parent> <px> (rendered horizontal centers align)
-//!   assert_text <selector> == <literal>     (rendered selector publishes expected text)
+//!   click <selector>                      (selector must have been registered via `dev_track`(...))
+//!   `assert_visible` <selector>              (rendered selector has non-empty bounds)
+//!   `assert_absent` <selector>               (selector is not in the current rendered frame)
+//!   `assert_in_viewport` <selector>           (rendered selector is not clipped)
+//!   `assert_h_centered` <child> <parent> <px> (rendered horizontal centers align)
+//!   `assert_text` <selector> == <literal>     (rendered selector publishes expected text)
 //! snapshot <path> (save authenticated diagnostic snapshot)
-//!   click_at <x> <y>                     (click a measured viewport point)
-//!   double_click_at <x> <y>              (dispatch a native double-click)
-//!   scroll_at <x> <y> <delta_y>            (wheel at a measured viewport point)
-//!   scroll_horizontal <selector> <delta_x> (horizontal wheel at measured center)
-//!   scroll_into_view <container> <target>   (bring a rendered target into its scrollport)
-//!   assert_non_overlapping <a> <b>           (rendered selectors do not overlap)
-//!   export_room_eq_json [path]             Export completed RoomEQ DSP JSON
+//!   `click_at` <x> <y>                     (click a measured viewport point)
+//!   `double_click_at` <x> <y>              (dispatch a native double-click)
+//!   `scroll_at` <x> <y> <`delta_y`>            (wheel at a measured viewport point)
+//!   `scroll_horizontal` <selector> <`delta_x`> (horizontal wheel at measured center)
+//!   `scroll_into_view` <container> <target>   (bring a rendered target into its scrollport)
+//!   `assert_non_overlapping` <a> <b>           (rendered selectors do not overlap)
+//!   `export_room_eq_json` [path]             Export completed `RoomEQ` DSP JSON
 //!   elements                              (print every tracked selector; debugging aid)
 //!
 //! `<duration>` accepts `Ns`, `Nms`, `Nm`. Bare numbers default to seconds.
@@ -56,8 +56,8 @@ mod types;
 #[path = "main/verb.rs"]
 mod verb;
 
-pub(crate) use ctx::*;
-pub(crate) use parse::*;
+pub(crate) use ctx::{NamedTiming, run_script_with_run_id};
+pub(crate) use parse::{parse_dev_response, parse_duration};
 
 use args::run;
 use types::Args;

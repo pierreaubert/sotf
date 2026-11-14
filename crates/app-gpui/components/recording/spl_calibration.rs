@@ -34,6 +34,14 @@ macro_rules! dev_track {
 
 impl PlayerView {
     /// Render the SPL calibration step UI.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn render_recording_spl_calibration_step(
         &self,
         cx: &mut Context<Self>,
@@ -80,7 +88,7 @@ impl PlayerView {
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {
-                            view.update(cx, |this, cx| this.cancel_spl_calibration_capture(cx));
+                            view.update(cx, crate::ui::PlayerView::cancel_spl_calibration_capture);
                         }
                     }),
                 "recording.spl_cancel"
@@ -101,7 +109,7 @@ impl PlayerView {
                     .on_click({
                         let view = view.clone();
                         move |_, cx| {
-                            view.update(cx, |this, cx| this.start_spl_calibration_capture(cx));
+                            view.update(cx, crate::ui::PlayerView::start_spl_calibration_capture);
                         }
                     }),
                 "recording.spl_start"
@@ -127,7 +135,7 @@ impl PlayerView {
                     .child(
                         dev_track!(
                             NumberInput::new("spl_calibration_signal_level")
-                            .value(signal_level_db as f64)
+                            .value(f64::from(signal_level_db))
                             .min(-60.0)
                             .max(0.0)
                             .step(1.0)
@@ -163,7 +171,7 @@ impl PlayerView {
 
         if let Some(r) = cal.engine_result.as_ref() {
             let view = cx.entity().clone();
-            let initial_db_spl = cal.reported_db_spl.unwrap_or(75.0) as f64;
+            let initial_db_spl = f64::from(cal.reported_db_spl.unwrap_or(75.0));
             column = column
                 .child(
                     Text::new(format!(
@@ -244,6 +252,10 @@ impl PlayerView {
     /// Result is applied back onto `state` via `apply_engine_result`;
     /// the UI surfaces the engine's peak/RMS numbers and waits for
     /// the user to type the meter reading before the cal is "ready".
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn start_spl_calibration_capture(&mut self, cx: &mut Context<Self>) {
         #[cfg(feature = "dev-api")]
         if self.complete_qa_fake_spl_calibration_capture(cx) {
@@ -278,8 +290,7 @@ impl PlayerView {
 
         let started_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
         let (capture_generation, cancel_flag) = self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
@@ -292,11 +303,14 @@ impl PlayerView {
             rec.spl_calibration_capture.tone_amp =
                 10.0_f32.powf(rec.signal_level_db / 20.0).clamp(0.0, 1.0);
             cx.notify();
-            (capture_generation, rec.spl_cancel_requested.clone())
+            (
+                capture_generation,
+                std::sync::Arc::clone(&rec.spl_cancel_requested),
+            )
         });
 
         let state_clone = self.state.clone();
-        let cancel_for_task = cancel_flag.clone();
+        let cancel_for_task = std::sync::Arc::clone(&cancel_flag);
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
                 #[cfg(not(target_os = "ios"))]

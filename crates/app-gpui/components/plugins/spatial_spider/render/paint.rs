@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{Bounds, PathBuilder, Pixels, Point, Rgba, Window, px};
 
 pub(super) fn paint_filled_rect(window: &mut Window, bounds: Bounds<Pixels>, color: Rgba) {
     let o = bounds.origin;
@@ -40,6 +40,14 @@ pub(super) fn paint_line(
     }
 }
 
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Conventional x/y coordinates and radius names describe the local geometry"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn paint_circle(
     window: &mut Window,
     cx: f32,
@@ -69,6 +77,14 @@ pub(super) fn paint_circle(
     }
 }
 
+#[expect(
+    clippy::many_single_char_names,
+    reason = "Conventional x/y coordinates and radius names describe the local geometry"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn paint_filled_disc(
     window: &mut Window,
     cx: f32,

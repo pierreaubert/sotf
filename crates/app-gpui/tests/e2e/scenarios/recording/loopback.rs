@@ -7,6 +7,7 @@ use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 use std::time::Duration;
 
+#[derive(Debug)]
 pub struct LoopbackScenario;
 
 impl TestScenario for LoopbackScenario {

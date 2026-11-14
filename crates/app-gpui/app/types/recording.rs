@@ -29,6 +29,10 @@ pub struct ImportedRetakeRoute {
 /// Complete recording screen state. Holds only GPUI-specific view state;
 /// all domain state lives in the embedded [`RecordingScreenModel`].
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RecordingState {
     /// Shared, UI-agnostic Recording wizard domain model.
     pub model: RecordingScreenModel,
@@ -113,6 +117,7 @@ pub enum QaFakeCaptureProfile {
 
 #[cfg(feature = "dev-api")]
 impl QaFakeCaptureProfile {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "clean" => Some(Self::Clean),
@@ -136,6 +141,7 @@ pub enum QaFakeCaptureFault {
 
 #[cfg(feature = "dev-api")]
 impl QaFakeCaptureFault {
+    #[must_use]
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "device-loss" => Some(Self::DeviceLost),
@@ -145,6 +151,7 @@ impl QaFakeCaptureFault {
         }
     }
 
+    #[must_use]
     pub const fn status_message(self) -> &'static str {
         match self {
             Self::DeviceLost => "Recording error: capture device was disconnected",
@@ -176,10 +183,10 @@ impl Default for RecordingState {
         Self {
             capture_inputs: None,
             imported_session: None,
-            imported_retake_routes: Default::default(),
+            imported_retake_routes: std::collections::HashMap::default(),
             imported_route_dropdown: None,
             imported_route_highlight: None,
-            take_review: Default::default(),
+            take_review: sotf_audio_player::ui_models::take_review::TakeReviewState::default(),
             config_change_confirmation_pending: false,
             model: RecordingScreenModel {
                 recording_base_directory,
@@ -210,6 +217,7 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
+    #[must_use]
     pub fn metadata_channel_names(&self) -> Vec<String> {
         if let Some(imported) = &self.imported_session {
             imported
@@ -262,6 +270,7 @@ impl RecordingState {
         self.imported_route_highlight = None;
     }
 
+    #[must_use]
     pub fn imported_route(&self, index: usize) -> Option<&ImportedRetakeRoute> {
         let route = self.imported_retake_routes.get(&index)?;
         (route.output_device.0 == self.playback_config.device_id
@@ -272,6 +281,7 @@ impl RecordingState {
             .then_some(route)
     }
 
+    #[must_use]
     pub fn validated_imported_route(
         &self,
         index: usize,
@@ -294,6 +304,7 @@ impl RecordingState {
         Some((u16::try_from(output).ok()?, microphone))
     }
 
+    #[must_use]
     pub fn capture_take_indices(&self, index: usize) -> Vec<usize> {
         let Some(selected) = self.channel_recordings.get(index) else {
             return Vec::new();
@@ -313,6 +324,7 @@ impl RecordingState {
             .collect()
     }
 
+    #[must_use]
     pub fn has_imported_takes(&self) -> bool {
         self.channel_recordings
             .iter()
@@ -320,6 +332,7 @@ impl RecordingState {
     }
 
     /// Keep absent imported capture indices distinct from an actual first input/seat.
+    #[must_use]
     pub fn take_capture_indices(&self, take: &ChannelRecording) -> (Option<usize>, Option<usize>) {
         if let Some(source) = &take.imported_source {
             let provenance = self
@@ -353,6 +366,7 @@ impl RecordingState {
         self.capture_inputs = Some(self.model.capture_input_snapshot());
     }
 
+    #[must_use]
     pub fn capture_inputs_are_current(&self) -> bool {
         // Imported responses retain their own capture configuration. Changing
         // the next retake's settings does not invalidate untouched sources.
@@ -401,6 +415,7 @@ impl RecordingState {
             .eq(current.iter().filter(|(key, _)| key.as_str() != "level"))
     }
 
+    #[must_use]
     pub fn has_captured_takes(&self) -> bool {
         self.model.channel_recordings.iter().any(|take| {
             matches!(
@@ -430,10 +445,12 @@ impl RecordingState {
             })
     }
 
+    #[must_use]
     pub fn all_channels_recorded(&self) -> bool {
         self.capture_inputs_are_current() && self.model.all_channels_recorded()
     }
 
+    #[must_use]
     pub fn save_status(&self) -> sotf_audio_player::ui_models::take_review::RecordingSaveStatus {
         if self.take_review.saved_to.is_none() {
             return sotf_audio_player::ui_models::take_review::RecordingSaveStatus::NotSaved;
@@ -442,6 +459,7 @@ impl RecordingState {
             .save_status(&self.model.save_input_snapshot())
     }
 
+    #[must_use]
     pub fn all_takes_accepted(&self) -> bool {
         self.capture_inputs_are_current()
             && self

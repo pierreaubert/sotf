@@ -9,7 +9,7 @@ use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Entity, ScrollAnchor, ScrollHandle, SharedString, div, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 use sotf_audio_player::PluginSettings;
 use sotf_plugins::ChannelState;
@@ -27,6 +27,10 @@ pub struct ChannelMuteSoloRenderState<'a> {
 }
 
 /// Render master enable beside the plugin title.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_header(
     d: &Ds,
     entity: Entity<AppState>,
@@ -53,6 +57,11 @@ pub(crate) fn render_header(
 }
 
 /// Render primary settings and independent channel actions.
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_mute_solo_plugin(
     d: &Ds,
     entity: Entity<AppState>,

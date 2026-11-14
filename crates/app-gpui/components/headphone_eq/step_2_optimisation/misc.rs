@@ -8,8 +8,8 @@ use crate::components::autoeq::{
 use crate::components::design::Ds;
 use crate::i18n::HeadphoneEqTranslations;
 use crate::ui::PlayerView;
+use gpui::div;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonTheme, ButtonVariant, Card, Progress,
     ProgressSize, ProgressVariant, Spinner, SpinnerSize, StackSpacing, Text, TextSize, TextWeight,
@@ -34,6 +34,10 @@ impl PlayerView {
     // Step 2: Optimization (EQ Design, Fine Tuning, Generate)
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_headphone_eq_optimization(
         &self,
         cx: &mut Context<Self>,
@@ -213,7 +217,6 @@ impl PlayerView {
                             .headphone_eq_state
                             .optimizer_config
                             .algorithm = match algo {
-                            "autoeq:cobyla" | "cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "autoeq:bo" => RoomEqAlgorithm::BayesianOptimization,
                             "autoeq:cmaes" | "cma-es" => RoomEqAlgorithm::CmaEs,
@@ -703,7 +706,6 @@ impl PlayerView {
                     state.update(cx, |state, cx| {
                         let heq = &mut state.app.measurement_state.headphone_eq_state;
                         heq.detail_level = match level {
-                            "simple" => DetailLevel::Simple,
                             "intermediate" => DetailLevel::Intermediate,
                             "expert" => DetailLevel::Expert,
                             _ => DetailLevel::Simple,
@@ -738,12 +740,14 @@ impl PlayerView {
                                 heq.optimizer_config.bo_batch_size = params.bo_batch_size;
                                 heq.optimizer_config.bo_posterior_std_threshold =
                                     params.bo_posterior_std_threshold;
-                                heq.optimizer_config.bo_acquisition = params.bo_acquisition.clone();
+                                heq.optimizer_config
+                                    .bo_acquisition
+                                    .clone_from(&params.bo_acquisition);
                                 heq.optimizer_config.bo_ehvi = params.bo_ehvi;
                                 heq.optimizer_config.refine = params.refine;
                                 heq.optimizer_config.smooth = params.smooth;
                                 heq.optimizer_config.smooth_n = params.smooth_n;
-                                heq.optimizer_config.loss = params.loss.clone();
+                                heq.optimizer_config.loss.clone_from(&params.loss);
                                 heq.set_ui_loss_type(&params.loss);
                             }
                         }

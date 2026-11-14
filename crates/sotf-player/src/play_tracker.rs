@@ -20,6 +20,7 @@ pub struct PlayTracker {
 }
 
 impl PlayTracker {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -50,10 +51,10 @@ impl PlayTracker {
             let elapsed = start_time.elapsed().as_secs();
             if elapsed >= PLAY_THRESHOLD_SECS {
                 if let Err(e) = db.record_play(path, duration) {
-                    log::error!("Failed to record play: {}", e);
+                    log::error!("Failed to record play: {e}");
                     return None;
                 }
-                log::info!("Recorded play for {:?} ({}s)", path, duration);
+                log::info!("Recorded play for {} ({duration}s)", path.display());
                 self.already_recorded = true;
                 return Some(path.clone());
             }

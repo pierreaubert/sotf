@@ -1373,9 +1373,9 @@ checksum = "5c0e531d93d39c34eef561e929e8a7f86d77a5af08aac4f6d6e39976c51858e9"
 
 [[package]]
 name = "bumpalo"
-version = "3.20.3"
+version = "3.20.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+checksum = "87a0cf66fd1eb2fb7b822cb78370d82303750809bc6ba855f3f58e517d3238db"
 
 [[package]]
 name = "by_address"
@@ -2345,9 +2345,9 @@ dependencies = [
 
 [[package]]
 name = "ctor"
-version = "1.0.13"
+version = "1.0.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "914a755b7c2d4af2bdcff7ce1739e2db9a1b81a9b07123d8015786ae03c0980d"
+checksum = "ea691ed9f36489d087419b8b2ba3ef27d89621380b4178c73e2445a379e4e0f4"
 dependencies = [
  "link-section",
  "linktime-proc-macro",
@@ -3864,8 +3864,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-android"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "accesskit",
  "android-activity",
@@ -3893,7 +3893,7 @@ dependencies = [
 [[package]]
 name = "gpui-audio-kit"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "gpui-d3rs",
  "gpui-design",
@@ -3904,8 +3904,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-builder"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "gpui-pretext",
  "serde",
@@ -3913,8 +3913,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-d3rs"
-version = "0.11.1"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.3"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "bytemuck",
  "delaunator",
@@ -3950,7 +3950,7 @@ dependencies = [
 [[package]]
 name = "gpui-design"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "serde",
  "sotf-gpui-toolkit-gpui",
@@ -3959,7 +3959,7 @@ dependencies = [
 [[package]]
 name = "gpui-design-tools"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "anyhow",
  "clap",
@@ -3971,16 +3971,16 @@ dependencies = [
 
 [[package]]
 name = "gpui-foreign-parent"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "web-time",
 ]
 
 [[package]]
 name = "gpui-ios"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -4007,7 +4007,7 @@ dependencies = [
 [[package]]
 name = "gpui-keybinding"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "serde",
  "serde_json",
@@ -4016,13 +4016,13 @@ dependencies = [
 
 [[package]]
 name = "gpui-layout-expr"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 
 [[package]]
 name = "gpui-miniapp"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "console_error_panic_hook",
  "gpui-android",
@@ -4042,8 +4042,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-pretext"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "hashbrown 0.17.1",
  "unicode-bidi",
@@ -4053,12 +4053,12 @@ dependencies = [
 [[package]]
 name = "gpui-profiler"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 
 [[package]]
 name = "gpui-px"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "glam",
  "gpui-builder",
@@ -4076,7 +4076,7 @@ dependencies = [
 [[package]]
 name = "gpui-themes"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "gpui-design",
  "gpui-miniapp",
@@ -4088,8 +4088,8 @@ dependencies = [
 
 [[package]]
 name = "gpui-ui-kit"
-version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+version = "0.11.1"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "gpui-builder",
  "gpui-d3rs",
@@ -4103,6 +4103,7 @@ dependencies = [
  "serde_json",
  "smol",
  "sotf-gpui-toolkit-gpui",
+ "unicode-segmentation",
  "uuid",
  "web-time",
 ]
@@ -4110,7 +4111,7 @@ dependencies = [
 [[package]]
 name = "gpui-ui-kit-macros"
 version = "0.11.0"
-source = "git+https://github.com/pierreaubert/gpui-toolkit#503337685c6e20c888b20d840be9428ba13cd449"
+source = "git+https://github.com/pierreaubert/gpui-toolkit#3d76f6ee0ecfffa1f98d35af42e8fa8a73c1b511"
 dependencies = [
  "gpui-layout-expr",
  "proc-macro2",
@@ -5393,9 +5394,9 @@ checksum = "d4a5ff6bcca6c4867b1c4fd4ef63e4db7436ef363e0ad7531d1558856bae64f4"
 
 [[package]]
 name = "link-section"
-version = "0.19.3"
+version = "0.19.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39c29a617ce3df32c08497bdc1ab6e2376e0b17948ac166a2fbe5977c5954cd9"
+checksum = "4d9aae57673c1a235149777a74d152f3210ebd3e3b13346d2cdb6809e566bd3c"
 
 [[package]]
 name = "linktime-proc-macro"
@@ -5901,9 +5902,9 @@ dependencies = [
 
 [[package]]
 name = "mio"
-version = "1.2.4"
+version = "1.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1788edb87fdc09c7e26304471e2f5be8cdefb1b6930d6e3985fc02ff53bf86ee"
+checksum = "20521a903f02b0a573cd6840e9d0a5a0cc043d361fe924092cd70f8556cc9c4a"
 dependencies = [
  "libc",
  "log",
@@ -7615,7 +7616,6 @@ version = "0.5.4"
 dependencies = [
  "gpui-audio-kit",
  "gpui-design",
- "gpui-px",
  "gpui-ui-kit",
  "math-iir-fir",
  "sotf-gpui-toolkit-gpui",
@@ -10638,7 +10638,6 @@ dependencies = [
  "anyhow",
  "crossbeam",
  "gpui-ios",
- "gpui-ui-kit",
  "log",
  "oslog",
  "parking_lot 0.13.0",
@@ -10827,7 +10826,6 @@ dependencies = [
  "serde_json",
  "sotf-host",
  "thiserror 2.0.21",
- "tokio",
 ]
 
 [[package]]

@@ -22,6 +22,7 @@ impl Default for PlaylistController {
 }
 
 impl PlaylistController {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             playlists: Vec::new(),
@@ -37,16 +38,19 @@ impl PlaylistController {
     // =========================================================================
 
     /// Get all playlists (without track entries).
+    #[must_use]
     pub fn playlists(&self) -> &[Playlist] {
         &self.playlists
     }
 
     /// Get the currently open playlist (with tracks loaded).
+    #[must_use]
     pub fn active_playlist(&self) -> Option<&Playlist> {
         self.active_playlist.as_ref()
     }
 
     /// Get the ID of the active playlist.
+    #[must_use]
     pub fn active_playlist_id(&self) -> Option<i64> {
         self.active_playlist.as_ref().and_then(|p| p.id)
     }
@@ -56,10 +60,13 @@ impl PlaylistController {
     // =========================================================================
 
     /// Load all playlists from the database (without track entries).
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn load_playlists(&mut self, db: &MusicDatabase) -> Result<(), String> {
         self.playlists = db
             .get_playlists()
-            .map_err(|e| format!("Failed to load playlists: {}", e))?;
+            .map_err(|e| format!("Failed to load playlists: {e}"))?;
         // Load track counts
         self.track_counts = self
             .playlists
@@ -79,22 +86,26 @@ impl PlaylistController {
     }
 
     /// Get track count for a playlist at the given index.
+    #[must_use]
     pub fn playlist_track_count(&self, index: usize) -> usize {
         self.track_counts.get(index).copied().unwrap_or(0)
     }
 
     /// Open a playlist by index — loads its tracks from DB.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn open_playlist(&mut self, db: &MusicDatabase, index: usize) -> Result<(), String> {
         let playlist = self
             .playlists
             .get(index)
-            .ok_or_else(|| format!("Playlist index {} out of range", index))?;
+            .ok_or_else(|| format!("Playlist index {index} out of range"))?;
         let id = playlist
             .id
             .ok_or_else(|| "Playlist has no ID".to_string())?;
         let full = db
             .get_playlist_with_tracks(id)
-            .map_err(|e| format!("Failed to load playlist tracks: {}", e))?
+            .map_err(|e| format!("Failed to load playlist tracks: {e}"))?
             .ok_or_else(|| "Playlist not found".to_string())?;
         self.active_playlist = Some(full);
         self.selected_track_index = 0;
@@ -113,7 +124,7 @@ impl PlaylistController {
             if let Some(id) = active.id {
                 let full = db
                     .get_playlist_with_tracks(id)
-                    .map_err(|e| format!("Failed to reload playlist: {}", e))?
+                    .map_err(|e| format!("Failed to reload playlist: {e}"))?
                     .ok_or_else(|| "Playlist not found".to_string())?;
                 // Clamp track index
                 let track_count = full.entries.len();
@@ -133,6 +144,9 @@ impl PlaylistController {
     // =========================================================================
 
     /// Create a new playlist.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn create_playlist(
         &mut self,
         db: &MusicDatabase,
@@ -141,7 +155,7 @@ impl PlaylistController {
     ) -> Result<i64, String> {
         let id = db
             .create_playlist(name, description)
-            .map_err(|e| format!("Failed to create playlist: {}", e))?;
+            .map_err(|e| format!("Failed to create playlist: {e}"))?;
         self.load_playlists(db)?;
         // Select the newly created playlist
         if let Some(pos) = self.playlists.iter().position(|p| p.id == Some(id)) {
@@ -153,6 +167,9 @@ impl PlaylistController {
     /// Persist an ordered track collection as a new playlist and open it.
     /// This is deliberately controller-owned so every frontend follows the
     /// same create-and-populate persistence path.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn create_playlist_with_tracks(
         &mut self,
         db: &MusicDatabase,
@@ -177,6 +194,9 @@ impl PlaylistController {
     }
 
     /// Rename the playlist at the given index.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn rename_playlist(
         &mut self,
         db: &MusicDatabase,
@@ -186,22 +206,25 @@ impl PlaylistController {
         let playlist = self
             .playlists
             .get(index)
-            .ok_or_else(|| format!("Playlist index {} out of range", index))?;
+            .ok_or_else(|| format!("Playlist index {index} out of range"))?;
         let id = playlist
             .id
             .ok_or_else(|| "Playlist has no ID".to_string())?;
         db.update_playlist(id, new_name, playlist.description.as_deref())
-            .map_err(|e| format!("Failed to rename playlist: {}", e))?;
+            .map_err(|e| format!("Failed to rename playlist: {e}"))?;
         self.load_playlists(db)?;
         Ok(())
     }
 
     /// Delete the playlist at the given index.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn delete_playlist(&mut self, db: &MusicDatabase, index: usize) -> Result<(), String> {
         let playlist = self
             .playlists
             .get(index)
-            .ok_or_else(|| format!("Playlist index {} out of range", index))?;
+            .ok_or_else(|| format!("Playlist index {index} out of range"))?;
         let id = playlist
             .id
             .ok_or_else(|| "Playlist has no ID".to_string())?;
@@ -212,7 +235,7 @@ impl PlaylistController {
         }
 
         db.delete_playlist(id)
-            .map_err(|e| format!("Failed to delete playlist: {}", e))?;
+            .map_err(|e| format!("Failed to delete playlist: {e}"))?;
         self.load_playlists(db)?;
         Ok(())
     }
@@ -222,6 +245,9 @@ impl PlaylistController {
     // =========================================================================
 
     /// Add tracks to the active playlist.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn add_tracks(
         &mut self,
         db: &MusicDatabase,
@@ -231,13 +257,16 @@ impl PlaylistController {
             .active_playlist_id()
             .ok_or_else(|| "No active playlist".to_string())?;
         db.add_tracks_to_playlist(id, track_paths)
-            .map_err(|e| format!("Failed to add tracks: {}", e))?;
+            .map_err(|e| format!("Failed to add tracks: {e}"))?;
         self.reload_active(db)?;
         self.load_playlists(db)?; // Refresh updated_at
         Ok(())
     }
 
     /// Add all tracks from an album to a playlist by index.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn add_album_to_playlist(
         &mut self,
         db: &MusicDatabase,
@@ -247,13 +276,13 @@ impl PlaylistController {
         let playlist = self
             .playlists
             .get(playlist_index)
-            .ok_or_else(|| format!("Playlist index {} out of range", playlist_index))?;
+            .ok_or_else(|| format!("Playlist index {playlist_index} out of range"))?;
         let id = playlist
             .id
             .ok_or_else(|| "Playlist has no ID".to_string())?;
         let paths: Vec<PathBuf> = album.tracks.iter().map(|t| t.path.clone()).collect();
         db.add_tracks_to_playlist(id, &paths)
-            .map_err(|e| format!("Failed to add album tracks: {}", e))?;
+            .map_err(|e| format!("Failed to add album tracks: {e}"))?;
         // Reload active if this is the open playlist
         if self.active_playlist_id() == Some(id) {
             self.reload_active(db)?;
@@ -264,6 +293,9 @@ impl PlaylistController {
 
     /// Add tracks to a playlist selected by index. This is used when restoring
     /// a deleted playlist, before it becomes the active playlist again.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn add_tracks_to_playlist(
         &mut self,
         db: &MusicDatabase,
@@ -287,6 +319,9 @@ impl PlaylistController {
     }
 
     /// Remove the track at the given index from the active playlist.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn remove_track(&mut self, db: &MusicDatabase, track_index: usize) -> Result<(), String> {
         let active = self
             .active_playlist
@@ -296,15 +331,18 @@ impl PlaylistController {
         let entry = active
             .entries
             .get(track_index)
-            .ok_or_else(|| format!("Track index {} out of range", track_index))?;
+            .ok_or_else(|| format!("Track index {track_index} out of range"))?;
         db.remove_track_from_playlist(id, &entry.track_path)
-            .map_err(|e| format!("Failed to remove track: {}", e))?;
+            .map_err(|e| format!("Failed to remove track: {e}"))?;
         self.reload_active(db)?;
         self.load_playlists(db)?;
         Ok(())
     }
 
     /// Move the currently selected track up in the active playlist.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn move_track_up(&mut self, db: &MusicDatabase) -> Result<(), String> {
         if self.selected_track_index == 0 {
             return Ok(());
@@ -318,15 +356,19 @@ impl PlaylistController {
             .entries
             .get(self.selected_track_index)
             .ok_or_else(|| "Track index out of range".to_string())?;
-        let new_pos = (self.selected_track_index - 1) as u32;
+        let new_pos = u32::try_from(self.selected_track_index - 1)
+            .map_err(|_error| "Track position exceeds the playlist range".to_string())?;
         db.move_track_in_playlist(id, &entry.track_path, new_pos)
-            .map_err(|e| format!("Failed to move track: {}", e))?;
+            .map_err(|e| format!("Failed to move track: {e}"))?;
         self.selected_track_index -= 1;
         self.reload_active(db)?;
         Ok(())
     }
 
     /// Move the currently selected track down in the active playlist.
+    ///
+    /// # Errors
+    /// Returns an error if playlist lookup, mutation, or persistence fails.
     pub fn move_track_down(&mut self, db: &MusicDatabase) -> Result<(), String> {
         let active = self
             .active_playlist
@@ -340,9 +382,10 @@ impl PlaylistController {
             .entries
             .get(self.selected_track_index)
             .ok_or_else(|| "Track index out of range".to_string())?;
-        let new_pos = (self.selected_track_index + 1) as u32;
+        let new_pos = u32::try_from(self.selected_track_index + 1)
+            .map_err(|_error| "Track position exceeds the playlist range".to_string())?;
         db.move_track_in_playlist(id, &entry.track_path, new_pos)
-            .map_err(|e| format!("Failed to move track: {}", e))?;
+            .map_err(|e| format!("Failed to move track: {e}"))?;
         self.selected_track_index += 1;
         self.reload_active(db)?;
         Ok(())
@@ -355,9 +398,8 @@ impl PlaylistController {
     /// Resolve playlist track paths to Track references from the library.
     /// Returns one entry per playlist entry; None if the track wasn't found.
     pub fn resolve_tracks<'a>(&self, library: &'a MusicLibrary) -> Vec<Option<&'a Track>> {
-        let active = match &self.active_playlist {
-            Some(p) => p,
-            None => return Vec::new(),
+        let Some(active) = &self.active_playlist else {
+            return Vec::new();
         };
         active
             .entries
@@ -382,6 +424,7 @@ impl PlaylistController {
     }
 
     /// Get all track paths from the active playlist (for "play all").
+    #[must_use]
     pub fn active_track_paths(&self) -> Vec<PathBuf> {
         match &self.active_playlist {
             Some(p) => p.entries.iter().map(|e| e.track_path.clone()).collect(),
@@ -394,6 +437,9 @@ impl PlaylistController {
     // =========================================================================
 
     /// Export the active playlist to an M3U8 file.
+    ///
+    /// # Errors
+    /// Returns an error if the playlist cannot be loaded or the export file cannot be written.
     pub fn export_playlist(
         &self,
         library: &MusicLibrary,
@@ -408,6 +454,9 @@ impl PlaylistController {
 
     /// Import a playlist from an M3U/M3U8 file.
     /// Creates a new playlist in the database and populates it with the resolved tracks.
+    ///
+    /// # Errors
+    /// Returns an error if the playlist file cannot be read or imported into the database.
     pub fn import_playlist(&mut self, db: &MusicDatabase, input_path: &Path) -> Result<(), String> {
         let imported = crate::playlist_io::import_m3u8(input_path)?;
         let id = self.create_playlist(db, &imported.name, None)?;
@@ -415,7 +464,7 @@ impl PlaylistController {
         let paths: Vec<PathBuf> = imported.entries.into_iter().map(|e| e.path).collect();
         if !paths.is_empty() {
             db.add_tracks_to_playlist(id, &paths)
-                .map_err(|e| format!("Failed to add imported tracks: {}", e))?;
+                .map_err(|e| format!("Failed to add imported tracks: {e}"))?;
         }
 
         self.load_playlists(db)?;

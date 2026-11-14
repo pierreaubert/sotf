@@ -16,6 +16,10 @@ pub struct HeadphoneMeasurementPreview {
 }
 
 impl HeadphoneMeasurementPreview {
+    /// Load.
+    ///
+    /// # Errors
+    /// Returns an error if measurement loading, curve validation, or optimization fails.
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
         path.to_str()
             .ok_or_else(|| "Measurement path must be valid UTF-8".to_string())?;
@@ -72,17 +76,21 @@ impl HeadphoneMeasurementPreview {
         })
     }
 
+    #[must_use]
     pub fn path(&self) -> &std::path::Path {
         &self.path
     }
+    #[must_use]
     pub fn points(&self) -> &[(f64, f64)] {
         &self.points
     }
+    #[must_use]
     pub fn bounds_hz(&self) -> (f64, f64) {
         self.bounds_hz
     }
 
     /// Validated source evidence, retained independently of the selected target.
+    #[must_use]
     pub fn provenance(&self) -> Option<&autoeq_measurements::MeasurementRecord> {
         self.provenance.as_ref()
     }
@@ -132,9 +140,9 @@ pub struct HeadphoneOptimizationResult {
     pub deviation_curve: Vec<f64>,
     /// Combined filter response (dB)
     pub filter_response: Vec<f64>,
-    /// Error = deviation - filter_response (dB)
+    /// Error = deviation - `filter_response` (dB)
     pub error_curve: Vec<f64>,
-    /// Corrected response = input + filter_response (dB)
+    /// Corrected response = input + `filter_response` (dB)
     pub corrected_curve: Vec<f64>,
     /// Individual filter responses (each filter's dB response)
     pub individual_filter_responses: Vec<Vec<f64>>,
@@ -174,11 +182,14 @@ impl From<HeadphoneOptResult> for HeadphoneOptimizationResult {
 /// * `curve_path` - Path to the headphone measurement CSV file
 /// * `target` - Target curve identifier (e.g., "harman-over-ear-2018", "custom")
 /// * `target_custom_path` - Path to custom target curve (only used if target is "custom")
-/// * `args` - Optimization arguments (use Args::headphone_defaults() as base)
+/// * `args` - Optimization arguments (use `Args::headphone_defaults()` as base)
 /// * `_export_format` - Export format for the resulting EQ file (unused, for compatibility)
 ///
 /// # Returns
 /// The optimization result with all curves for visualization
+///
+/// # Errors
+/// Returns an error if measurement loading, curve validation, or optimization fails.
 pub fn run_headphone_optimization(
     curve_path: &str,
     target: &str,
@@ -207,6 +218,9 @@ pub fn run_headphone_optimization(
 }
 
 /// Run headphone EQ optimization with a progress callback
+///
+/// # Errors
+/// Returns an error if measurement loading, curve validation, or optimization fails.
 pub fn run_headphone_optimization_with_callback<F>(
     curve_path: &str,
     target: &str,
@@ -241,6 +255,9 @@ where
 }
 
 /// Load target curve from bundled data or custom file
+///
+/// # Errors
+/// Returns an error if the target curve cannot be loaded or parsed.
 pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq_core::Curve, String> {
     match target {
         "flat" => {
@@ -253,13 +270,16 @@ pub fn load_target_curve(target: &str, custom_path: &str) -> Result<autoeq_core:
         "harman-over-ear-2013" => parse_csv_curve(target_curves::HARMAN_OVER_EAR_2013),
         "harman-in-ear-2019" => parse_csv_curve(target_curves::HARMAN_IN_EAR_2019),
         "custom" => autoeq_measurements::read::read_curve_from_csv(&PathBuf::from(custom_path))
-            .map_err(|e| format!("Failed to read custom target curve: {}", e)),
+            .map_err(|e| format!("Failed to read custom target curve: {e}")),
         _ => autoeq_measurements::read::read_curve_from_csv(&PathBuf::from(custom_path))
-            .map_err(|e| format!("A target curve is required for headphone: {}", e)),
+            .map_err(|e| format!("A target curve is required for headphone: {e}")),
     }
 }
 
 /// Parse a CSV string into a Curve
+///
+/// # Errors
+/// Returns an error if the CSV contains no valid frequency/level data.
 pub fn parse_csv_curve(csv_data: &str) -> Result<autoeq_core::Curve, String> {
     use ndarray::Array1;
 

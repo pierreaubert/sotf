@@ -10,6 +10,10 @@ pub struct Migration {
 }
 
 /// Define all database migrations
+#[expect(
+    clippy::too_many_lines,
+    reason = "Ordered migration definitions remain together as the database history"
+)]
 pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
     let mut migrations = HashMap::new();
     migrations.insert(
@@ -93,12 +97,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT channels FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_channels {
+                if has_channels {
+                    log::info!("Channels column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN channels INTEGER", [])?;
                     log::info!("Added channels column to tracks table");
-                } else {
-                    log::info!("Channels column already exists, skipping");
                 }
 
                 Ok(())
@@ -228,12 +232,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT replay_gain FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_replay_gain {
+                if has_replay_gain {
+                    log::info!("replay_gain column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN replay_gain REAL", [])?;
                     log::info!("Added replay_gain column to tracks table");
-                } else {
-                    log::info!("replay_gain column already exists, skipping");
                 }
 
                 let has_replay_peak = db
@@ -241,12 +245,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT replay_peak FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_replay_peak {
+                if has_replay_peak {
+                    log::info!("replay_peak column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN replay_peak REAL", [])?;
                     log::info!("Added replay_peak column to tracks table");
-                } else {
-                    log::info!("replay_peak column already exists, skipping");
                 }
 
                 Ok(())
@@ -266,12 +270,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT album_gain FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_album_gain {
+                if has_album_gain {
+                    log::info!("album_gain column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN album_gain REAL", [])?;
                     log::info!("Added album_gain column to tracks table");
-                } else {
-                    log::info!("album_gain column already exists, skipping");
                 }
 
                 let has_album_peak = db
@@ -279,12 +283,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT album_peak FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_album_peak {
+                if has_album_peak {
+                    log::info!("album_peak column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN album_peak REAL", [])?;
                     log::info!("Added album_peak column to tracks table");
-                } else {
-                    log::info!("album_peak column already exists, skipping");
                 }
 
                 Ok(())
@@ -343,12 +347,12 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                     .prepare("SELECT waveform FROM tracks LIMIT 1")
                     .is_ok();
 
-                if !has_waveform {
+                if has_waveform {
+                    log::info!("waveform column already exists, skipping");
+                } else {
                     db.conn
                         .execute("ALTER TABLE tracks ADD COLUMN waveform BLOB", [])?;
                     log::info!("Added waveform column to tracks table");
-                } else {
-                    log::info!("waveform column already exists, skipping");
                 }
 
                 Ok(())
@@ -427,15 +431,15 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                         // Check if column already exists
                         let has_column = db
                             .conn
-                            .prepare(&format!("SELECT {} FROM tracks LIMIT 1", col_name))
+                            .prepare(&format!("SELECT {col_name} FROM tracks LIMIT 1"))
                             .is_ok();
 
                         if !has_column {
                             db.conn.execute(
-                                &format!("ALTER TABLE tracks ADD COLUMN {} {}", col_name, col_type),
+                                &format!("ALTER TABLE tracks ADD COLUMN {col_name} {col_type}"),
                                 [],
                             )?;
-                            log::info!("Added {} column to tracks table", col_name);
+                            log::info!("Added {col_name} column to tracks table");
                         }
                     }
 
@@ -1206,8 +1210,7 @@ pub fn get_migrations(_db: &MusicDatabase) -> HashMap<i64, Migration> {
                         |row| row.get(0),
                     )?;
                     log::info!(
-                        "Federation migration: created source tables, linked {} tracks and {} albums to local source",
-                        track_count, album_count
+                        "Federation migration: created source tables, linked {track_count} tracks and {album_count} albums to local source"
                     );
 
                     Ok(())

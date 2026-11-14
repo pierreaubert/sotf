@@ -7,7 +7,10 @@ use std::sync::{Arc, Mutex};
 /// Total number of adjustable fields in the Room EQ configure step
 pub(super) const ROOM_EQ_FIELD_COUNT: usize = 29;
 
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Async UI tasks retain typed result and callback signatures"
+)]
 pub(super) static ROOM_OPT_RESULT: std::sync::OnceLock<
     Arc<
         Mutex<
@@ -51,6 +54,10 @@ fn prepare_room_eq_config(app: &mut App) -> Result<roomeq_model::RoomConfig, Str
     Ok(app.room_eq.model.to_room_config())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     let room_config = match prepare_room_eq_config(app) {
         Ok(config) => config,
@@ -74,7 +81,7 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     // fresh cancellation flag shared with the worker callback.
     let run_revision = app.room_eq.model.begin_run();
     app.room_eq.model.cancel_requested = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let cancel_flag = app.room_eq.model.cancel_requested.clone();
+    let cancel_flag = std::sync::Arc::clone(&app.room_eq.model.cancel_requested);
     // Design the filters at the configured rate, not a fixed 48 kHz.
     let sample_rate = app.room_eq.model.optimizer_config.sample_rate as f64;
 
@@ -91,12 +98,10 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
     // WAV-onset detection for each channel).
     let probe_arrivals = app.room_eq.model.delay_detection.probe_arrival_map();
 
-    let result_slot = ROOM_OPT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    let progress_slot = ROOM_OPT_PROGRESS
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(ROOM_OPT_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
+    let progress_slot =
+        std::sync::Arc::clone(ROOM_OPT_PROGRESS.get_or_init(|| Arc::new(Mutex::new(None))));
 
     // Clear stale results
     if let Ok(mut g) = result_slot.lock() {
@@ -112,8 +117,8 @@ pub(super) fn spawn_room_eq_optimization(app: &mut App) {
             run_room_optimization, run_room_optimization_with_probe_arrivals,
         };
 
-        let progress_slot2 = progress_slot.clone();
-        let cancel_flag2 = cancel_flag.clone();
+        let progress_slot2 = std::sync::Arc::clone(&progress_slot);
+        let cancel_flag2 = std::sync::Arc::clone(&cancel_flag);
         let callback: sotf_audio_player::autoeq::RoomOptimizationCallback = Box::new(move |p| {
             if let Ok(mut guard) = progress_slot2.lock() {
                 *guard = Some(p.clone());

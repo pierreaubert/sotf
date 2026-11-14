@@ -27,6 +27,7 @@ pub struct InputState {
 }
 
 impl InputState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -57,10 +58,11 @@ impl InputState {
     }
 
     /// Get currently selected autocomplete suggestion
+    #[must_use]
     pub fn selected_suggestion(&self) -> Option<&str> {
         self.autocomplete_suggestions
             .get(self.autocomplete_index)
-            .map(|s| s.as_str())
+            .map(std::string::String::as_str)
     }
 
     /// Clear the parameter editing state

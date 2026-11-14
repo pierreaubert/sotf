@@ -10,6 +10,7 @@ pub enum HeadphoneEqStep {
 }
 
 impl HeadphoneEqStep {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             HeadphoneEqStep::SelectFile => "File",

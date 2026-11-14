@@ -35,6 +35,10 @@ pub(super) fn api_media_source(state: &Arc<ServerState>, track_id: &str) -> Opti
     clippy::result_unit_err,
     reason = "internal range parser: unit error is intentionally opaque to callers"
 )]
+/// Api parse range header.
+///
+/// # Errors
+/// Returns an error if the range header is malformed, unsupported, or outside the resource.
 pub fn api_parse_range_header(
     range_header: Option<&str>,
     file_len: u64,
@@ -53,20 +57,23 @@ pub fn api_parse_range_header(
     };
 
     let (start, end) = if start_raw.is_empty() {
-        let suffix_len = end_raw.parse::<u64>().map_err(|_| ())?;
+        let suffix_len = end_raw.parse::<u64>().map_err(|_error| ())?;
         if suffix_len == 0 {
             return Err(());
         }
         (file_len.saturating_sub(suffix_len), file_len - 1)
     } else {
-        let start = start_raw.parse::<u64>().map_err(|_| ())?;
+        let start = start_raw.parse::<u64>().map_err(|_error| ())?;
         if start >= file_len {
             return Err(());
         }
         let end = if end_raw.is_empty() {
             file_len - 1
         } else {
-            end_raw.parse::<u64>().map_err(|_| ())?.min(file_len - 1)
+            end_raw
+                .parse::<u64>()
+                .map_err(|_error| ())?
+                .min(file_len - 1)
         };
         if end < start {
             return Err(());
@@ -129,7 +136,7 @@ pub(super) fn api_state_json(state: &Arc<ServerState>, adapter: &MpdPlayerAdapte
 
     json!({
         "playback": {
-            "state": mpd_state_name(&status.state),
+            "state": mpd_state_name(status.state),
             "position_secs": status.elapsed,
             "duration_secs": status.duration,
             "volume": status.volume,
@@ -279,12 +286,12 @@ pub(super) fn api_parse_library_album_query(path: &str) -> Result<ApiLibraryAlbu
             "offset" => {
                 query.offset = value
                     .parse::<usize>()
-                    .map_err(|_| "offset must be a non-negative integer".to_string())?;
+                    .map_err(|_error| "offset must be a non-negative integer".to_string())?;
             }
             "limit" => {
                 let limit = value
                     .parse::<usize>()
-                    .map_err(|_| "limit must be a positive integer".to_string())?;
+                    .map_err(|_error| "limit must be a positive integer".to_string())?;
                 if limit == 0 {
                     return Err("limit must be greater than zero".to_string());
                 }
@@ -506,7 +513,7 @@ pub(super) fn api_body_index(request: &ApiRequest) -> Result<usize, String> {
         .get("index")
         .and_then(Value::as_u64)
         .ok_or_else(|| "index is required".to_string())?;
-    usize::try_from(index).map_err(|_| "index is too large".to_string())
+    usize::try_from(index).map_err(|_error| "index is too large".to_string())
 }
 
 pub(super) fn api_command_response(command: &str, result: Result<(), String>) -> Vec<u8> {
@@ -542,11 +549,10 @@ pub(super) fn api_pairing_complete(
         .get("fingerprint")
         .and_then(Value::as_str)
         .ok_or_else(|| "fingerprint is required".to_string())?;
-    let name = body
-        .get("name")
-        .and_then(Value::as_str)
-        .map(sanitize_pairing_client_name)
-        .unwrap_or_else(|| "Unnamed Device".to_string());
+    let name = body.get("name").and_then(Value::as_str).map_or_else(
+        || "Unnamed Device".to_string(),
+        sanitize_pairing_client_name,
+    );
 
     if !state.consume_pairing_nonce(nonce) {
         return Err("invalid nonce".to_string());
@@ -561,11 +567,7 @@ pub(super) fn api_pairing_complete(
         .map_err(|e| format!("failed to save trusted client: {e}"))?;
     insert_live_trusted_client(state, &fingerprint)?;
 
-    log::info!(
-        "[pairing] Client '{}' added with fingerprint {}",
-        name,
-        fingerprint
-    );
+    log::info!("[pairing] Client '{name}' added with fingerprint {fingerprint}");
     Ok(json!({ "ok": true, "command": "pairing.complete" }))
 }
 
@@ -649,6 +651,10 @@ pub(super) fn api_track_id(
     media_track_id(track, album, index)
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Response builders accept ownership of their one-shot JSON body "
+)]
 pub(super) fn api_json_response(status: u16, body: Value) -> Vec<u8> {
     let body = serde_json::to_vec(&body).unwrap_or_else(|_| b"{\"error\":\"json\"}".to_vec());
     let headers = format!(
@@ -730,7 +736,7 @@ pub(super) fn api_header<'a>(headers: &'a [(String, String)], name: &str) -> Opt
 
 pub(super) fn api_content_length_from_headers(header_bytes: &[u8]) -> Result<usize, String> {
     let header_text = std::str::from_utf8(header_bytes)
-        .map_err(|_| "request headers are not valid UTF-8".to_string())?;
+        .map_err(|_error| "request headers are not valid UTF-8".to_string())?;
     let headers: Vec<_> = header_text
         .split("\r\n")
         .skip(1)
@@ -746,7 +752,7 @@ pub(super) fn api_content_length(headers: &[(String, String)]) -> Result<usize, 
     match api_header(headers, "content-length") {
         Some(value) => value
             .parse::<usize>()
-            .map_err(|_| "invalid Content-Length".to_string()),
+            .map_err(|_error| "invalid Content-Length".to_string()),
         None => Ok(0),
     }
 }

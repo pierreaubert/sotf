@@ -37,7 +37,7 @@ pub struct ContinuousListeningAreaUiConfig {
     /// Truncation in standard deviations for Gaussian prior.
     #[serde(default = "default_gaussian_truncation_sigmas")]
     pub gaussian_truncation_sigmas: f64,
-    /// Quadrature kind: "sobol", "latin_hypercube", or "gauss_legendre".
+    /// Quadrature kind: "sobol", "`latin_hypercube`", or "`gauss_legendre`".
     #[serde(default = "default_area_quadrature_kind")]
     pub quadrature_kind: String,
     /// Number of quadrature points (Sobol / Latin-Hypercube).
@@ -49,7 +49,7 @@ pub struct ContinuousListeningAreaUiConfig {
     /// Nodes per axis for Gauss-Legendre.
     #[serde(default = "default_area_gauss_legendre_points_per_axis")]
     pub gauss_legendre_points_per_axis: usize,
-    /// Scalarisation kind: "expected_value", "worst_case", or "cvar".
+    /// Scalarisation kind: "`expected_value`", "`worst_case`", or "cvar".
     #[serde(default = "default_area_scalarisation_kind")]
     pub scalarisation_kind: String,
     /// Inner-search budget for the worst-case scalarisation.
@@ -58,7 +58,7 @@ pub struct ContinuousListeningAreaUiConfig {
     /// Inner-search seed for the worst-case scalarisation.
     #[serde(default)]
     pub worst_case_inner_seed: u64,
-    /// Tail fraction for CVaR scalarisation.
+    /// Tail fraction for `CVaR` scalarisation.
     #[serde(default = "default_area_cvar_alpha")]
     pub cvar_alpha: f64,
     /// IDW power exponent for the spatial measurement interpolator.

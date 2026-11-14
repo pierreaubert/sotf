@@ -4,7 +4,7 @@
 //! (tab bar + sub-screens).  It handles Esc/Tab/BackTab routing, delegates
 //! to shared keys, then dispatches to the appropriate sub-handler.
 //!
-//! `handle_tab_bar_keys` handles tab-bar navigation when InputMode::Configure.
+//! `handle_tab_bar_keys` handles tab-bar navigation when `InputMode::Configure`.
 
 use super::PlayerCommand;
 use crate::app::{App, ConfigureSubScreen, InputMode, Screen};
@@ -37,7 +37,7 @@ fn configure_sub_screen_next(s: ConfigureSubScreen) -> ConfigureSubScreen {
     }
 }
 
-/// Entry point for all Configure input modes (called from handle_key_event).
+/// Entry point for all Configure input modes (called from `handle_key_event`).
 pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     // Esc / Tab / BackTab have configure-wide routing
     match key.code {
@@ -98,7 +98,6 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
                     super::conf_federation::handle_federation_keys(app, key)
                 }
                 InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
-                InputMode::ConfigureMetadataServices => None,
                 _ => None,
             };
         }
@@ -130,12 +129,11 @@ pub(super) fn handle_configure_mode(app: &mut App, key: KeyEvent) -> Option<Play
             super::conf_federation::handle_federation_keys(app, key)
         }
         InputMode::ConfigureServers => super::conf_servers::handle_server_keys(app, key),
-        InputMode::ConfigureMetadataServices => None,
         _ => None,
     }
 }
 
-/// Handle keys when InputMode::Configure (tab bar is focused).
+/// Handle keys when `InputMode::Configure` (tab bar is focused).
 pub(super) fn handle_tab_bar_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     fn enter_sub_screen(app: &mut App, sub: ConfigureSubScreen) {
         app.configure_sub_screen = sub;

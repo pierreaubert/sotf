@@ -4,6 +4,10 @@ use super::plugin_sandbox_permission_controller::PluginSandboxPermissionControll
 use super::types::PluginSandboxPermissionResolution;
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// Decide plugin sandbox permission or deny.
+///
+/// # Errors
+/// Returns an error if the permission decision cannot be saved.
 pub fn decide_plugin_sandbox_permission_or_deny(
     request: sotf_plugins::PluginSandboxPermissionRequest,
 ) -> Result<PluginSandboxPermissionResolution, Box<dyn std::error::Error>> {
@@ -12,6 +16,10 @@ pub fn decide_plugin_sandbox_permission_or_deny(
 }
 
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+/// Decide plugin sandbox permission with broker.
+///
+/// # Errors
+/// Returns an error if the permission decision cannot be saved.
 pub fn decide_plugin_sandbox_permission_with_broker(
     request: sotf_plugins::PluginSandboxPermissionRequest,
     broker: &mut dyn sotf_plugins::PluginSandboxPermissionBroker,

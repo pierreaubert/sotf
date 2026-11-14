@@ -62,6 +62,11 @@ impl App {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+    )]
     pub fn move_ear_training_answer(&mut self, delta: i32) {
         let count = self.ui.ear_training.answer_count();
         if count > 0
@@ -221,6 +226,11 @@ impl App {
         ));
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+    )]
     pub fn navigate_ear_training_source(&mut self, delta: i32) -> Option<AudioSource> {
         let count = self.ui.ear_training.sources.len();
         if count == 0 {

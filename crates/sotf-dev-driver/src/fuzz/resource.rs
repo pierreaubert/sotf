@@ -16,6 +16,7 @@ pub struct SystemResourceSampler {
 }
 
 impl SystemResourceSampler {
+    #[must_use]
     pub fn new(pid: u32) -> Self {
         Self {
             system: System::new().map_err(|error| error.to_string()),
@@ -44,16 +45,15 @@ impl ResourceSampler for SystemResourceSampler {
         system.refresh_processes(ProcessesToUpdate::All, true);
         let mut unavailable = BTreeMap::new();
         let process = system.process(self.pid);
-        let (rss, virtual_bytes, cpu_percent) = match process {
-            Some(process) => (
+        let (rss, virtual_bytes, cpu_percent) = if let Some(process) = process {
+            (
                 Some(process.memory()),
                 Some(process.virtual_memory()),
                 Some(process.cpu_usage()),
-            ),
-            None => {
-                unavailable.insert("process".into(), "process not found".into());
-                (None, None, None)
-            }
+            )
+        } else {
+            unavailable.insert("process".into(), "process not found".into());
+            (None, None, None)
         };
         let children = system
             .processes()
@@ -73,7 +73,7 @@ impl ResourceSampler for SystemResourceSampler {
             "sysinfo provider exposes utilization but not accumulated CPU time".into(),
         );
         ResourceSample {
-            monotonic_ms: self.started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            monotonic_ms: u64::try_from(self.started.elapsed().as_millis()).unwrap_or(u64::MAX),
             rss_bytes: rss,
             virtual_bytes,
             cpu_percent,
@@ -95,7 +95,7 @@ impl ResourceSampler for NullResourceSampler {
     fn sample(&mut self) -> ResourceSample {
         let started = *self.started.get_or_insert_with(Instant::now);
         ResourceSample {
-            monotonic_ms: started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64,
+            monotonic_ms: u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
             rss_bytes: None,
             virtual_bytes: None,
             cpu_percent: None,
@@ -140,5 +140,14 @@ mod tests {
             sample.unavailable.get("all").map(String::as_str),
             Some("system resource initialization failed: test provider failure")
         );
+    }
+}
+
+impl std::fmt::Debug for SystemResourceSampler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SystemResourceSampler")
+            .field("pid", &self.pid)
+            .field("started", &self.started)
+            .finish_non_exhaustive()
     }
 }

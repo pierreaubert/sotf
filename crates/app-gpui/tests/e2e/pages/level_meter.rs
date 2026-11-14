@@ -2,6 +2,7 @@ use crate::driver::AppDriver;
 use sotf_audio_player::PluginSettings;
 use sotf_audio_player_gpui::components::plugins::level_meters::LevelMeterManager;
 
+#[derive(Debug)]
 pub struct LevelMeterPage<'a, 'b> {
     pub driver: &'a mut AppDriver<'b>,
 }

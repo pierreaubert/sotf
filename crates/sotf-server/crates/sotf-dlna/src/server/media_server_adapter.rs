@@ -2,7 +2,7 @@ use super::types::MediaAlbum;
 use super::types::MediaSource;
 use super::types::MediaTrack;
 
-/// Trait for bridging ContentDirectory requests to the SOTF library.
+/// Trait for bridging `ContentDirectory` requests to the SOTF library.
 pub trait MediaServerAdapter: Send + Sync + 'static {
     /// Browse root: return top-level albums.
     fn browse_albums(&self, start: u32, count: u32) -> (Vec<MediaAlbum>, u32);
@@ -16,7 +16,7 @@ pub trait MediaServerAdapter: Send + Sync + 'static {
     /// Total number of albums.
     fn album_count(&self) -> u32;
 
-    /// Monotonic ContentDirectory update identifier used for GENA events.
+    /// Monotonic `ContentDirectory` update identifier used for GENA events.
     /// Adapters that do not have a library version can keep the default value;
     /// subscribers still receive the required initial event.
     fn content_directory_update_id(&self) -> u32 {

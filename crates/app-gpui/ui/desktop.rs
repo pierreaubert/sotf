@@ -4,7 +4,7 @@ use crate::app::i18n::{DesktopTranslations, SpectrumTranslations};
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, SharedString, div};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Select, SelectOption, TabItem, TabVariant, Tabs, Text,
 };
@@ -26,6 +26,10 @@ fn studio_tab(id: String, label: &str, icon: IconName, selector: String) -> TabI
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn studio_workspace_navigation(
         &self,
         screen: Screen,
@@ -225,7 +229,6 @@ impl PlayerView {
                     .map(|(target, label)| {
                         let icon = match target {
                             Screen::Spectrum => IconName::AudioWaveform,
-                            Screen::PluginGraph => IconName::SlidersHorizontal,
                             Screen::HeadphoneEq => IconName::Headphones,
                             _ => IconName::SlidersHorizontal,
                         };
@@ -313,6 +316,10 @@ impl PlayerView {
         self.render_legacy_app_sidebar(cx)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_compact_navigation(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let ui = &state.app.ui_state;

@@ -18,6 +18,7 @@ pub enum LibraryDirectoryAccessError {
 }
 
 impl LibraryDirectoryAccessError {
+    #[must_use]
     pub fn path(&self) -> &std::path::Path {
         match self {
             Self::NotFound(path)
@@ -29,22 +30,20 @@ impl LibraryDirectoryAccessError {
 }
 
 impl std::fmt::Display for LibraryDirectoryAccessError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound(path) => write!(formatter, "Folder does not exist: {}", path.display()),
+            Self::NotFound(path) => write!(f, "Folder does not exist: {}", path.display()),
             Self::NotDirectory(path) => {
-                write!(formatter, "Path is not a folder: {}", path.display())
+                write!(f, "Path is not a folder: {}", path.display())
             }
             Self::PermissionDenied(path) => write!(
-                formatter,
+                f,
                 "Permission denied while reading folder: {}",
                 path.display()
             ),
-            Self::Unreadable { path, reason } => write!(
-                formatter,
-                "Could not read folder {}: {reason}",
-                path.display()
-            ),
+            Self::Unreadable { path, reason } => {
+                write!(f, "Could not read folder {}: {reason}", path.display())
+            }
         }
     }
 }
@@ -132,7 +131,11 @@ pub(super) struct TrackMetadata {
 }
 
 /// Load immediate children of a directory from disk (one level only).
-/// Computes aggregate stats for each child from the stats_map.
+/// Computes aggregate stats for each child from the `stats_map`.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Shared configuration APIs deliberately use the standard application HashMap and HashSet types "
+)]
 pub fn load_children_from_disk(
     dir_info: &mut DirectoryInfo,
     stats_map: &HashMap<PathBuf, (usize, std::collections::HashSet<String>)>,
@@ -144,9 +147,9 @@ pub fn load_children_from_disk(
 
     let mut subdirectories = Vec::new();
     if let Ok(entries) = std::fs::read_dir(&dir_info.path) {
-        for entry in entries.filter_map(|e| e.ok()) {
+        for entry in entries.filter_map(std::result::Result::ok) {
             // Use file_type() from DirEntry — avoids extra stat syscall on most platforms
-            let is_dir = entry.file_type().map(|ft| ft.is_dir()).unwrap_or(false);
+            let is_dir = entry.file_type().is_ok_and(|ft| ft.is_dir());
             if is_dir {
                 let child_path = entry.path();
                 let (tracks, albums) = compute_aggregate_stats_for_path(&child_path, stats_map);

@@ -12,7 +12,7 @@ pub(super) fn parse_loudness_compensation(
     };
     LoudnessCompensation::new(ref_level, low, high)
         .map(Some)
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.clone())
 }
 
 pub(super) fn parse_crossfeed_mode(mode: &str) -> Result<CrossfeedMode, String> {
@@ -23,8 +23,7 @@ pub(super) fn parse_crossfeed_mode(mode: &str) -> Result<CrossfeedMode, String> 
         "hrtf" => Ok(CrossfeedMode::Hrtf),
         "off" => Ok(CrossfeedMode::Off),
         _ => Err(format!(
-            "Invalid crossfeed mode '{}'. Valid: bauer, meier, multiband/mb, hrtf, off",
-            mode
+            "Invalid crossfeed mode '{mode}'. Valid: bauer, meier, multiband/mb, hrtf, off"
         )),
     }
 }
@@ -38,8 +37,7 @@ pub(super) fn parse_crossfeed_preset(preset: &str) -> Result<CrossfeedPreset, St
         "off" => Ok(CrossfeedPreset::Off),
         "hrtf" => Ok(CrossfeedPreset::Hrtf),
         _ => Err(format!(
-            "Invalid crossfeed preset '{}'. Valid: default, cmoy, meier, multiband/mb, hrtf, off",
-            preset
+            "Invalid crossfeed preset '{preset}'. Valid: default, cmoy, meier, multiband/mb, hrtf, off"
         )),
     }
 }
@@ -54,8 +52,7 @@ pub(super) fn parse_filter_type(type_str: &str) -> Result<BiquadFilterType, Stri
         "NO" | "NOTCH" => Ok(BiquadFilterType::Notch),
         "BP" | "BANDPASS" => Ok(BiquadFilterType::Bandpass),
         _ => Err(format!(
-            "Unknown filter type '{}'. Valid types: PK/PEAK, LS/LOWSHELF, HS/HIGHSHELF, LP/LOWPASS, HP/HIGHPASS, NO/NOTCH, BP/BANDPASS",
-            type_str
+            "Unknown filter type '{type_str}'. Valid types: PK/PEAK, LS/LOWSHELF, HS/HIGHSHELF, LP/LOWPASS, HP/HIGHPASS, NO/NOTCH, BP/BANDPASS"
         )),
     }
 }
@@ -66,8 +63,7 @@ pub(super) fn parse_filters(
 ) -> Result<Vec<Biquad>, String> {
     if !sample_rate.is_finite() || sample_rate <= 0.0 {
         return Err(format!(
-            "Invalid sample rate for filter construction: {}",
-            sample_rate
+            "Invalid sample rate for filter construction: {sample_rate}"
         ));
     }
     filter_strings
@@ -79,54 +75,51 @@ pub(super) fn parse_filters(
                 3 => {
                     let frequency = parts[0]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid frequency: {}", parts[0]))?;
+                        .map_err(|_error| format!("Invalid frequency: {}", parts[0]))?;
                     let q = parts[1]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid Q: {}", parts[1]))?;
+                        .map_err(|_error| format!("Invalid Q: {}", parts[1]))?;
                     let gain = parts[2]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid gain: {}", parts[2]))?;
+                        .map_err(|_error| format!("Invalid gain: {}", parts[2]))?;
                     (BiquadFilterType::Peak, frequency, q, gain)
                 }
                 4 => {
                     let filter_type = parse_filter_type(parts[0])?;
                     let frequency = parts[1]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid frequency: {}", parts[1]))?;
+                        .map_err(|_error| format!("Invalid frequency: {}", parts[1]))?;
                     let q = parts[2]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid Q: {}", parts[2]))?;
+                        .map_err(|_error| format!("Invalid Q: {}", parts[2]))?;
                     let gain = parts[3]
                         .parse::<f64>()
-                        .map_err(|_| format!("Invalid gain: {}", parts[3]))?;
+                        .map_err(|_error| format!("Invalid gain: {}", parts[3]))?;
                     (filter_type, frequency, q, gain)
                 }
                 _ => {
                     return Err(format!(
-                        "Invalid filter format '{}'. Expected 'freq:q:gain' or 'type:freq:q:gain'",
-                        filter_str
+                        "Invalid filter format '{filter_str}'. Expected 'freq:q:gain' or 'type:freq:q:gain'"
                     ));
                 }
             };
 
             if !(20.0..=20000.0).contains(&frequency) {
                 return Err(format!(
-                    "Frequency must be between 20 and 20000 Hz, got {}",
-                    frequency
+                    "Frequency must be between 20 and 20000 Hz, got {frequency}"
                 ));
             }
             if q <= 0.0 || q > 100.0 {
-                return Err(format!("Q must be between 0 and 100, got {}", q));
+                return Err(format!("Q must be between 0 and 100, got {q}"));
             }
             if gain.abs() > 30.0 {
-                return Err(format!("Gain must be between -30 and +30 dB, got {}", gain));
+                return Err(format!("Gain must be between -30 and +30 dB, got {gain}"));
             }
             // Frequencies are in Hz; the design rate must satisfy Nyquist.
             let nyquist_hz = sample_rate / 2.0;
             if frequency >= nyquist_hz {
                 return Err(format!(
-                    "Frequency {} Hz must be below the Nyquist rate ({:.1} Hz at {:.0} Hz sample rate)",
-                    frequency, nyquist_hz, sample_rate
+                    "Frequency {frequency} Hz must be below the Nyquist rate ({nyquist_hz:.1} Hz at {sample_rate:.0} Hz sample rate)"
                 ));
             }
 
@@ -145,15 +138,17 @@ pub(super) fn parse_filters(
 /// `physical_output_channels` (max hardware index + 1, gaps included) sizes
 /// the device buffer; it must be used instead of `output_channel_map.len()`
 /// whenever a physical width is needed.
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Channel mappings return their input and output vectors together"
+)]
 pub(super) fn parse_channel_mapping(
     mapping_str: &str,
 ) -> Result<(Vec<usize>, Vec<usize>, Vec<f32>, usize), String> {
     let parts: Vec<&str> = mapping_str.split("->").collect();
     if parts.len() != 2 {
         return Err(format!(
-            "Invalid mapping format '{}'. Expected 'in1,in2,...->out1,out2,...'",
-            mapping_str
+            "Invalid mapping format '{mapping_str}'. Expected 'in1,in2,...->out1,out2,...'"
         ));
     }
 
@@ -162,7 +157,7 @@ pub(super) fn parse_channel_mapping(
         .map(|s| {
             s.trim()
                 .parse::<usize>()
-                .map_err(|_| format!("Invalid input channel: '{}'", s))
+                .map_err(|_error| format!("Invalid input channel: '{s}'"))
         })
         .collect();
     let input_channels = input_channels?;
@@ -175,12 +170,11 @@ pub(super) fn parse_channel_mapping(
     // to avoid `ch - 1` underflowing to `usize::MAX` below.
     if let Some(&bad) = input_channels.iter().find(|&&ch| ch == 0) {
         return Err(format!(
-            "Input channel index must be >= 1 (1-indexed), got {}",
-            bad
+            "Input channel index must be >= 1 (1-indexed), got {bad}"
         ));
     }
 
-    let output_spec: Vec<&str> = parts[1].split(',').map(|s| s.trim()).collect();
+    let output_spec: Vec<&str> = parts[1].split(',').map(str::trim).collect();
     if output_spec.is_empty() {
         return Err("No output channels specified".to_string());
     }
@@ -188,13 +182,13 @@ pub(super) fn parse_channel_mapping(
     let mut channel_map: Vec<Option<usize>> = Vec::new();
     let mut physical_output_channels = 0;
 
-    for spec in output_spec.iter() {
+    for spec in &output_spec {
         if *spec == "_" {
             channel_map.push(None);
         } else {
             let hw_ch = spec
                 .parse::<usize>()
-                .map_err(|_| format!("Invalid output channel: '{}'", spec))?;
+                .map_err(|_error| format!("Invalid output channel: '{spec}'"))?;
             if hw_ch == 0 {
                 return Err("Channel indices must be >= 1 (1-indexed)".to_string());
             }

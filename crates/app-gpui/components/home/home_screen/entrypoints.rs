@@ -4,7 +4,7 @@ use crate::app::{Screen, SettingsTab};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, ObjectFit, div, img, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 
 #[cfg(feature = "dev-api")]
@@ -52,7 +52,7 @@ impl PlayerView {
         let artist = track
             .artist
             .clone()
-            .unwrap_or_else(|| item.album.artist().to_string());
+            .unwrap_or_else(|| item.album.artist().clone());
         let is_playing = state.app.playback.is_playing;
         content =
             content.child(
@@ -83,7 +83,7 @@ impl PlayerView {
                                         view.toggle_playback(&PlayPause, window, cx);
                                     }
                                     view.state.update(cx, |state, _| {
-                                        state.app.set_screen(Screen::NowPlaying, "HomeResume")
+                                        state.app.set_screen(Screen::NowPlaying, "HomeResume");
                                     });
                                     view.focus_handle.focus(window, cx);
                                     cx.notify();
@@ -130,7 +130,7 @@ impl PlayerView {
                     })),
                 "library.empty.add-folder"
             ));
-        }
+        };
         actions
             .child(tracked!(
                 Button::new("home-connect-library", labels[3])

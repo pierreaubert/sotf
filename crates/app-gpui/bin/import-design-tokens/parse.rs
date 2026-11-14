@@ -61,9 +61,7 @@ pub(super) fn parse_hex(hex: &str) -> Result<(f32, f32, f32, f32)> {
 pub(super) fn needs_rgba_import(theme_obj: &Value) -> bool {
     fn check_value(v: &Value) -> bool {
         if let Some(hex) = v.get("$value").and_then(Value::as_str) {
-            return parse_hex_bytes(hex)
-                .map(|(_, _, _, a)| a != 255)
-                .unwrap_or(false);
+            return parse_hex_bytes(hex).is_ok_and(|(_, _, _, a)| a != 255);
         }
         if let Some(obj) = v.as_object() {
             return obj.values().any(check_value);

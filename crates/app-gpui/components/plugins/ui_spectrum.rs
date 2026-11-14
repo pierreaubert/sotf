@@ -6,7 +6,9 @@ use std::sync::Arc;
 
 use crate::app::state::ui::SpectrumViewState;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, Bounds, Entity, MouseMoveEvent, Pixels, canvas, div, px, relative, rems,
+};
 use gpui_audio_kit::{
     SpectrumAxisTheme, SpectrumColors, SpectrumElement, render_spectrum_frequency_axis,
 };
@@ -76,6 +78,10 @@ fn spectrum_axis_theme(d: &Ds, theme: &Theme) -> SpectrumAxisTheme {
 /// inevitably overlap once accessible text scaling is applied. Keep the true
 /// +3 dB ceiling and the evenly spaced -20 dB ticks; the graph itself still
 /// maps 0 dB at its exact value.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_spectrum_db_axis(theme: SpectrumAxisTheme) -> impl IntoElement {
     const LABELS: [(&str, f32); 4] = [("+3", 0.0), ("-20", 0.223), ("-40", 0.417), ("-60", 0.612)];
 
@@ -126,10 +132,10 @@ fn corrected_spectrum_magnitudes(
         .iter()
         .zip(data.frequencies.iter())
         .map(|(&magnitude, &frequency)| {
-            if !magnitude.is_finite() {
-                magnitude
-            } else {
+            if magnitude.is_finite() {
                 magnitude + slope * (frequency / reference_hz).log2()
+            } else {
+                magnitude
             }
         })
         .collect::<Vec<_>>()
@@ -152,6 +158,7 @@ fn spectral_tilt_option_label(correction: SpectralTiltCorrection, custom: &str) 
 use sotf_plugins::SpectrumData;
 
 /// State for rendering the Spectrum Analyzer plugin
+#[derive(Debug)]
 pub struct SpectrumRenderState<'a> {
     pub num_bins: usize,
     pub min_freq: f32,
@@ -172,6 +179,14 @@ pub struct SpectrumRenderState<'a> {
 }
 
 /// Render display tilt and reference selectors beside the plugin title.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(crate) fn render_header(
     d: &Ds,
     entity: Entity<AppState>,
@@ -346,6 +361,19 @@ pub(crate) fn render_header(
 ///
 /// Display choices belong to the shell header. The primary numeric fields
 /// precede the graph so they remain reachable in a short rack viewport.
+#[must_use]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn render_spectrum_analyzer_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -431,17 +459,14 @@ pub fn render_spectrum_analyzer_plugin(
         );
 
     #[cfg(feature = "dev-api")]
-    let spectrum_display = {
-        use crate::app::dev_api::DevTrackExt;
-        spectrum_display.dev_track("spectrum.chart")
-    };
+    let spectrum_display = { spectrum_display.dev_track("spectrum.chart") };
 
     let mut primary = div().w_full().min_w_0().flex().flex_wrap().gap(d.grid);
     for (index, value, label) in [
         (0, state.num_bins as f64, text.bins),
-        (1, state.min_freq as f64, text.minimum_frequency),
-        (2, state.max_freq as f64, text.maximum_frequency),
-        (3, state.smoothing as f64, text.smoothing),
+        (1, f64::from(state.min_freq), text.minimum_frequency),
+        (2, f64::from(state.max_freq), text.maximum_frequency),
+        (3, f64::from(state.smoothing), text.smoothing),
     ] {
         let mut param = SP[index];
         param.name = label;

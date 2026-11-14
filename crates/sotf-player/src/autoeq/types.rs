@@ -1,4 +1,4 @@
-//! AutoEQ Types
+//! `AutoEQ` Types
 //!
 //! Shared type definitions for speaker EQ optimization.
 

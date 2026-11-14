@@ -27,6 +27,5 @@ pub(super) fn room_eq_smoothing_value(value: f64) -> &'static str {
     OPTIONS
         .iter()
         .find(|(candidate, _)| (value - *candidate).abs() < 1.0e-9)
-        .map(|(_, key)| *key)
-        .unwrap_or("0.16666666666666666")
+        .map_or("0.16666666666666666", |(_, key)| *key)
 }

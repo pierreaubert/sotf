@@ -9,11 +9,19 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::time::Duration;
 
-/// DLNA MediaServer — serves library content to DLNA controllers.
+/// DLNA `MediaServer` — serves library content to DLNA controllers.
 pub struct DlnaMediaServer {
     pub(super) device: DlnaDevice,
     pub(super) adapter: Arc<dyn MediaServerAdapter>,
     pub(super) events: GenaRegistry,
+}
+
+impl std::fmt::Debug for DlnaMediaServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DlnaMediaServer")
+            .field("device", &self.device)
+            .finish_non_exhaustive()
+    }
 }
 
 impl DlnaMediaServer {
@@ -25,6 +33,10 @@ impl DlnaMediaServer {
         }
     }
 
+    /// Serve media requests until cancellation.
+    ///
+    /// # Errors
+    /// Returns an error if the listener cannot bind or initialize.
     pub async fn run(
         &self,
         bind_address: &str,
@@ -38,6 +50,10 @@ impl DlnaMediaServer {
     ///
     /// This mode is used by hermetic QA and fuzz runs that need to exercise
     /// the real DLNA request handlers without advertising on the host network.
+    /// Serve HTTP media requests without SSDP announcements.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP listener cannot bind or initialize.
     pub async fn run_http_only(
         &self,
         bind_address: &str,
@@ -66,7 +82,7 @@ impl DlnaMediaServer {
             let ssdp_cancel = cancel.clone();
             tokio::spawn(async move {
                 if let Err(e) = ssdp::listen_and_respond(ssdp_device, local_ip, ssdp_cancel).await {
-                    log::warn!("[DLNA Server] SSDP error: {}", e);
+                    log::warn!("[DLNA Server] SSDP error: {e}");
                 }
             });
         }
@@ -89,7 +105,7 @@ impl DlnaMediaServer {
                             last_update = update_id;
                             event_registry.notify(
                                 "/ContentDirectory/event",
-                                content_directory_event_body(update_id),
+                                &content_directory_event_body(update_id),
                             );
                         }
                     }
@@ -128,17 +144,17 @@ impl DlnaMediaServer {
                                 )
                                 .await
                                 {
-                                    log::debug!("[DLNA Server] HTTP error: {}", e);
+                                    log::debug!("[DLNA Server] HTTP error: {e}");
                                 }
                             });
                         }
-                        Err(e) => log::warn!("[DLNA Server] Accept error: {}", e),
+                        Err(e) => log::warn!("[DLNA Server] Accept error: {e}"),
                     }
                 }
                 _ = cancel_rx.changed() => {
                     if *cancel_rx.borrow() {
                         if discovery_enabled {
-                            ssdp::send_byebye(&self.device).await.ok();
+                            let _ = ssdp::send_byebye(&self.device).await;
                         }
                         break;
                     }

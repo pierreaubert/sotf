@@ -60,14 +60,14 @@ impl App {
                 }
                 match recording.step {
                     RecordingStep::Config => recording.recording_directory.is_some(),
-                    RecordingStep::SplCalibration => true,
+                    RecordingStep::SplCalibration
+                    | RecordingStep::Probe
+                    | RecordingStep::BassAnchor
+                    | RecordingStep::Saving => true,
                     RecordingStep::Capture => {
                         recording.all_channels_recorded() && !recording.workflow_is_busy()
                     }
                     RecordingStep::Evaluating => recording.all_takes_accepted(),
-                    RecordingStep::Probe | RecordingStep::BassAnchor | RecordingStep::Saving => {
-                        true
-                    }
                 }
             }
             Screen::RoomEq => {
@@ -75,10 +75,12 @@ impl App {
                 !room_eq.is_optimizing()
                     && match room_eq.step {
                         RoomEqStep::LoadData => room_eq.has_measurements(),
-                        RoomEqStep::Delay | RoomEqStep::Process => true,
+                        RoomEqStep::Delay
+                        | RoomEqStep::Process
+                        | RoomEqStep::Review
+                        | RoomEqStep::Export => true,
                         RoomEqStep::Configure => !room_eq.speaker_configs.is_empty(),
                         RoomEqStep::Optimize => room_eq.is_optimization_complete(),
-                        RoomEqStep::Review | RoomEqStep::Export => true,
                     }
             }
             Screen::HeadphoneEq => {

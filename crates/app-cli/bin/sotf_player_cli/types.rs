@@ -16,6 +16,10 @@ use sotf_plugins::param_specs::{
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent CLI flags preserve the plugin parameter surface"
+)]
 pub(super) struct UpmixerArgs {
     /// Enable stereo-to-surround upmixer (converts 2ch to multi-channel surround)
     #[arg(id = "upmixer_enabled", long = "upmixer", default_value_t = false)]
@@ -312,6 +316,10 @@ pub(super) struct GainArgs {
 }
 
 #[derive(Debug, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent CLI flags preserve the plugin parameter surface"
+)]
 pub(super) struct CompressorArgs {
     /// Enable single-band compressor plugin
     #[arg(
@@ -532,6 +540,10 @@ pub(super) struct GateArgs {
 }
 
 #[derive(Debug, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent CLI flags preserve the plugin parameter surface"
+)]
 pub(super) struct LimiterArgs {
     /// Enable peak limiter plugin
     #[arg(id = "limiter_enabled", long = "limiter", default_value_t = false)]
@@ -962,6 +974,10 @@ pub(super) struct MultibandExpanderArgs {
 }
 
 #[derive(Debug, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent CLI flags preserve the plugin parameter surface"
+)]
 pub(super) struct XtcArgs {
     /// Enable XTC (crosstalk cancellation) plugin for speaker playback
     #[arg(id = "xtc_enabled", long = "xtc", default_value_t = false)]
@@ -1085,6 +1101,10 @@ pub(super) struct XtcArgs {
 }
 
 #[derive(Debug, Clone, clap::Args)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent CLI flags preserve the plugin parameter surface"
+)]
 pub(super) struct DenoiserArgs {
     /// Enable denoiser plugin (Wiener filter with MCRA noise estimation)
     #[arg(id = "denoiser_enabled", long = "denoiser", default_value_t = false)]
@@ -1134,11 +1154,11 @@ pub(super) struct DenoiserArgs {
     #[arg(long = "denoiser-polyphonic-detection", default_value_t = false)]
     pub(super) polyphonic_detection: bool,
 
-    /// Denoiser MCRA alpha_s smoothing (0.0-1.0)
+    /// Denoiser MCRA `alpha_s` smoothing (0.0-1.0)
     #[arg(long = "denoiser-mcra-alpha-s", default_value = "0.9")]
     pub(super) mcra_alpha_s: f32,
 
-    /// Denoiser MCRA alpha_p smoothing (0.0-1.0)
+    /// Denoiser MCRA `alpha_p` smoothing (0.0-1.0)
     #[arg(long = "denoiser-mcra-alpha-p", default_value = "0.7")]
     pub(super) mcra_alpha_p: f32,
 
@@ -1664,7 +1684,7 @@ pub(super) enum Commands {
     /// List available audio devices
     Devices,
 
-    /// Analyze an audio file and print ReplayGain data (gain and peak)
+    /// Analyze an audio file and print `ReplayGain` data (gain and peak)
     #[command(name = "replay-gain")]
     ReplayGain {
         /// Path to audio file (supports WAV, FLAC, MP3, AAC/M4A, Vorbis/OGG, AIFF)

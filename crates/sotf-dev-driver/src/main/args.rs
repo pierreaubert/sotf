@@ -9,6 +9,10 @@ use sotf_dev_driver::fuzz::{
 };
 use std::collections::BTreeSet;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "The CLI dispatches all command variants in one exhaustive match"
+)]
 pub(super) fn run(args: &Args) -> Result<()> {
     match &args.command {
         Some(Command::RunSuite { suite, verbose }) => super::suite::run_suite(suite, *verbose),
@@ -85,23 +89,23 @@ pub(super) fn run(args: &Args) -> Result<()> {
             url,
             run_id,
             best_effort_capabilities,
-        }) => match run_replay_command(&ReplayCommandOptions {
-            replay: replay.clone(),
-            executable: executable.clone(),
-            url: url.clone(),
-            run_id: run_id.clone(),
-            best_effort_capabilities: *best_effort_capabilities,
-        })? {
-            Some(signature) => bail!(
-                "replay reproduced {:?}: {}",
-                signature.class,
-                signature.normalized
-            ),
-            None => {
-                println!("replay completed without a failure");
-                Ok(())
+        }) => {
+            if let Some(signature) = run_replay_command(&ReplayCommandOptions {
+                replay: replay.clone(),
+                executable: executable.clone(),
+                url: url.clone(),
+                run_id: run_id.clone(),
+                best_effort_capabilities: *best_effort_capabilities,
+            })? {
+                bail!(
+                    "replay reproduced {:?}: {}",
+                    signature.class,
+                    signature.normalized
+                )
             }
-        },
+            println!("replay completed without a failure");
+            Ok(())
+        }
         Some(Command::Minimize {
             replay,
             executable,

@@ -3,7 +3,7 @@
 //! playback goes through librespot's PCM path via the engine's
 //! service-stream resolver.
 //!
-//! Authentication is OAuth2 (PKCE) only — Spotify disabled password login
+//! Authentication is `OAuth2` (PKCE) only — Spotify disabled password login
 //! server-side. The provider restores a session from the librespot
 //! credential cache; an empty cache is a construction error directing the
 //! caller to the OAuth login flow.
@@ -41,6 +41,9 @@ impl SpotifyProvider {
     /// Build a provider and restore the Spotify session from the credential
     /// cache. The blocking login runs on the blocking thread pool (librespot
     /// requires an ambient tokio runtime, which blocking threads provide).
+    ///
+    /// # Errors
+    /// Returns an error if authentication or the blocking service task fails.
     pub async fn new(
         source_id: SourceId,
         config: SpotifyProviderConfig,
@@ -80,7 +83,7 @@ impl LibraryProvider for SpotifyProvider {
         &self.source_id
     }
 
-    fn display_name(&self) -> &str {
+    fn display_name(&self) -> &'static str {
         "Spotify"
     }
 
@@ -141,7 +144,10 @@ impl LibraryProvider for SpotifyProvider {
             })
             .await
             .map_err(|e| ProviderError::Other(format!("Spotify library task failed: {e}")))??;
-            *self.art_urls.lock().unwrap_or_else(|e| e.into_inner()) = art;
+            *self
+                .art_urls
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner) = art;
             Ok(albums)
         })
     }
@@ -179,7 +185,7 @@ impl LibraryProvider for SpotifyProvider {
         let url = self
             .art_urls
             .lock()
-            .unwrap_or_else(|e| e.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .get(album_external_id)
             .cloned();
         let http = self.http.clone();
@@ -194,5 +200,13 @@ impl LibraryProvider for SpotifyProvider {
     fn is_available(&self) -> ProviderFuture<'_, bool> {
         let service = Arc::clone(&self.service);
         Box::pin(async move { service.is_authenticated() })
+    }
+}
+
+impl std::fmt::Debug for SpotifyProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SpotifyProvider")
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
     }
 }

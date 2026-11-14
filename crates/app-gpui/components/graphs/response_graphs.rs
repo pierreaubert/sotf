@@ -10,15 +10,16 @@ use gpui_px::{LegendPosition, ScaleType, line};
 
 /// Fallback channel colors when no theme is available.
 const CHANNEL_COLORS_FALLBACK: [u32; 6] = [
-    0x4285f4, // Blue
-    0xea4335, // Red
-    0x34a853, // Green
-    0xfbbc04, // Yellow
-    0x9c27b0, // Purple
-    0x00bcd4, // Cyan
+    0x0042_85f4, // Blue
+    0x00ea_4335, // Red
+    0x0034_a853, // Green
+    0x00fb_bc04, // Yellow
+    0x009c_27b0, // Purple
+    0x0000_bcd4, // Cyan
 ];
 
 /// Get a channel color as u32 from the theme, with fallback.
+#[must_use]
 pub fn channel_color(theme: &Theme, idx: usize) -> u32 {
     if theme.plugin_palette.channel_colors.is_empty() {
         CHANNEL_COLORS_FALLBACK[idx % CHANNEL_COLORS_FALLBACK.len()]
@@ -30,7 +31,7 @@ pub fn channel_color(theme: &Theme, idx: usize) -> u32 {
 }
 
 /// Data series for plotting
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Series {
     pub label: String,
     pub color: u32, // 0xRRGGBB
@@ -52,11 +53,13 @@ impl Series {
         }
     }
 
+    #[must_use]
     pub fn with_width(mut self, width: f32) -> Self {
         self.stroke_width = width;
         self
     }
 
+    #[must_use]
     pub fn with_opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity;
         self
@@ -64,7 +67,7 @@ impl Series {
 }
 
 /// Common chart configuration
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChartConfig {
     pub title: Option<String>,
     pub x_label: Option<String>,
@@ -92,6 +95,11 @@ impl Default for ChartConfig {
 }
 
 /// Render a line chart with multiple series
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_line_chart(
     series: Vec<Series>,
     config: ChartConfig,
@@ -117,15 +125,15 @@ pub fn render_line_chart(
 
     // Determine effective ranges
     // If interactive state is present and zoomed, use its domain
-    let (x_min, x_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.x_domain())
-        .unwrap_or(config.x_range);
+    let (x_min, x_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        config.x_range,
+        gpui_px::interaction::InteractiveChartState::x_domain,
+    );
 
-    let (y_min, y_max) = interactive_state
-        .filter(|s| s.is_zoomed())
-        .map(|s| s.y_domain())
-        .unwrap_or(config.y_range);
+    let (y_min, y_max) = interactive_state.filter(|s| s.is_zoomed()).map_or(
+        config.y_range,
+        gpui_px::interaction::InteractiveChartState::y_domain,
+    );
 
     let mut chart = line(&first.x_values, &first.y_values)
         .x_scale(config.x_scale)
@@ -168,7 +176,7 @@ pub fn render_line_chart(
     let chart_element = match chart.build() {
         Ok(c) => c.into_any_element(),
         Err(e) => {
-            log::warn!("Chart build failed: {:?}", e);
+            log::warn!("Chart build failed: {e:?}");
             return render_empty_state(
                 crate::components::icons::IconName::AudioWaveform,
                 "Unable to render chart",

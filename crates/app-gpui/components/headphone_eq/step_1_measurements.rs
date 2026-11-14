@@ -3,7 +3,7 @@ use crate::components::design::Ds;
 use crate::i18n::HeadphoneEqTranslations;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, Input, InputSize, StackSpacing,
     Text, TextSize, TextWeight, VStack,
@@ -30,6 +30,10 @@ impl PlayerView {
     // Step 1: Measurement & Target
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_headphone_eq_measurement_target(
         &self,
         cx: &mut Context<Self>,
@@ -287,8 +291,7 @@ impl PlayerView {
                                                         && available_headphones_count > 0,
                                                     |hstack| {
                                                         hstack.child(Text::caption(runtime_text.translate(&format!(
-                                                            "{} headphones",
-                                                            available_headphones_count
+                                                            "{available_headphones_count} headphones"
                                                         )).into_owned()))
                                                     },
                                                 ),
@@ -346,8 +349,7 @@ impl PlayerView {
                                             dev_track!(
                                             div()
                                                 .id(SharedString::from(format!(
-                                                    "headphone-option-{}",
-                                                    headphone_name
+                                                    "headphone-option-{headphone_name}"
                                                 )))
                                                 .px(d.pad_x)
                                                 .py(d.pad_y)
@@ -478,7 +480,7 @@ impl PlayerView {
         match chart {
             Ok(el) => div().flex().flex_col().items_center().w_full().child(el),
             Err(e) => div().child(
-                gpui_ui_kit::Text::new(format!("Graph error: {}", e))
+                gpui_ui_kit::Text::new(format!("Graph error: {e}"))
                     .size(gpui_ui_kit::TextSize::Xs)
                     .color(theme.text_muted),
             ),

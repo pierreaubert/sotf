@@ -17,6 +17,7 @@ pub struct SpecialNode {
 }
 
 impl SpecialNode {
+    #[must_use]
     pub fn new(node_type: SpecialNodeType, position: NodePosition, channels: usize) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -28,6 +29,7 @@ impl SpecialNode {
     }
 
     /// Create a special node with a label (e.g., device name)
+    #[must_use]
     pub fn with_label(
         node_type: SpecialNodeType,
         position: NodePosition,
@@ -44,6 +46,7 @@ impl SpecialNode {
     }
 
     /// Get display name for this node
+    #[must_use]
     pub fn display_name(&self) -> String {
         if let Some(label) = &self.label {
             label.clone()
@@ -58,21 +61,21 @@ impl SpecialNode {
     }
 
     /// Input port count for this node type
+    #[must_use]
     pub fn input_channels(&self) -> usize {
         match self.node_type {
             SpecialNodeType::Input => 0, // No inputs (source)
-            SpecialNodeType::Output => self.channels,
+            SpecialNodeType::Output | SpecialNodeType::Merge => self.channels,
             SpecialNodeType::Split => 1,
-            SpecialNodeType::Merge => self.channels,
         }
     }
 
     /// Output port count for this node type
+    #[must_use]
     pub fn output_channels(&self) -> usize {
         match self.node_type {
-            SpecialNodeType::Input => self.channels,
             SpecialNodeType::Output => 0, // No outputs (sink)
-            SpecialNodeType::Split => self.channels,
+            SpecialNodeType::Input | SpecialNodeType::Split => self.channels,
             SpecialNodeType::Merge => 1,
         }
     }

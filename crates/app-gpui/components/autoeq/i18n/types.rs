@@ -1,10 +1,10 @@
 use super::auto_eq_i18n_ext::AutoEqI18nExt;
 use super::auto_eq_i18n_state::AutoEqI18nState;
-use gpui::*;
+use gpui::App;
 use gpui_ui_kit::i18n::Language;
 use std::collections::HashMap;
 
-/// Translation keys for AutoEQ documentation
+/// Translation keys for `AutoEQ` documentation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum DocKey {
     // Block titles
@@ -180,13 +180,11 @@ pub(super) type TranslationMap = HashMap<(Language, DocKey), &'static str>;
 impl AutoEqI18nExt for App {
     fn autoeq_t(&self, key: DocKey) -> &'static str {
         self.try_global::<AutoEqI18nState>()
-            .map(|s| s.t(key))
-            .unwrap_or("???")
+            .map_or("???", |s| s.t(key))
     }
 
     fn autoeq_language(&self) -> Language {
         self.try_global::<AutoEqI18nState>()
-            .map(|s| s.language)
-            .unwrap_or_default()
+            .map_or_default(|s| s.language)
     }
 }

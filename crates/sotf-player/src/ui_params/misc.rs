@@ -2,7 +2,7 @@
 ///
 /// Both `controllers::plugin::adjust_plugin_param` (GPUI index space:
 /// 0=band-0-frequency, 1=band-0-q, …) and `ui_params::PluginSettings::adjust_param`
-/// (TUI index space: 0=max_filters, then bands) decode their index into
+/// (TUI index space: `0=max_filters`, then bands) decode their index into
 /// `(filter_idx, field_idx)` and then need to apply the exact same per-field
 /// delta + clamp. Funneling the per-field math through this one helper keeps
 /// the two call sites in lockstep — historically the controller used
@@ -10,7 +10,7 @@
 /// type cycle for `field == 3`. Centralising the clamps prevents future drift.
 ///
 /// `field_idx` is the index *inside* one band, 0-based:
-///   0 = frequency, 1 = q, 2 = gain_db, 3 = filter_type (delta sign = direction).
+///   0 = frequency, 1 = q, 2 = `gain_db`, 3 = `filter_type` (delta sign = direction).
 ///
 /// Returns `true` if the field was recognised and updated.
 pub fn apply_eq_band_field(filter: &mut crate::EQFilter, field_idx: usize, delta: f64) -> bool {

@@ -39,6 +39,9 @@ pub enum ServiceStreamResolveError {
 /// Non-service sources pass through unchanged. Delegates to the
 /// process-global service manager (same code path as the engine resolver
 /// hook); see the module docs for the PCM limitation.
+///
+/// # Errors
+/// Returns an error if the service is unsupported, credentials are missing, or stream resolution fails.
 pub fn resolve_service_stream_from_env(
     source: AudioSource,
 ) -> Result<AudioSource, ServiceStreamResolveError> {

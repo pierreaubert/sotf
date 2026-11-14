@@ -32,14 +32,15 @@ mod types;
 pub use misc::*;
 pub use types::*;
 
-use misc::derive_plugin_name;
-
 /// Convert simple EQ filter tuples and apply them to the last mutable EQ in
 /// the chain, inserting a user EQ when none exists.
 ///
 /// This is the shared implementation for Spinorama/headphone EQ apply flows:
 /// UI shells collect model filters and handle their own refresh side-effects,
 /// while this function owns the graph mutation behavior.
+///
+/// # Errors
+/// Returns an error if no optimization results are available.
 pub fn apply_eq_filter_tuples_to_chain(
     graph: &mut PluginGraph,
     filters: &[(String, f64, f64, f64)],
@@ -55,7 +56,6 @@ pub fn apply_eq_filter_tuples_to_chain(
         .iter()
         .map(|(ft_str, freq, q, db_gain)| {
             let ft = match ft_str.to_ascii_lowercase().as_str() {
-                "peak" => BiquadFilterType::Peak,
                 "lowshelf" => BiquadFilterType::Lowshelf,
                 "highshelf" => BiquadFilterType::Highshelf,
                 "lowpass" => BiquadFilterType::Lowpass,
@@ -114,8 +114,7 @@ pub fn apply_eq_filter_tuples_to_chain(
     graph.update_channel_dependent_plugins();
 
     Ok(format!(
-        "Applied {} EQ filters for '{}' to plugin slot {}",
-        n, label, target_idx
+        "Applied {n} EQ filters for '{label}' to plugin slot {target_idx}"
     ))
 }
 
@@ -123,6 +122,9 @@ pub fn apply_eq_filter_tuples_to_chain(
 ///
 /// Validation and insertion happen on a clone so failure never partially
 /// changes the active graph.
+///
+/// # Errors
+/// Returns an error for invalid sample rates, playback levels, filter values, or missing active filters.
 pub fn apply_headphone_easy_chain(
     graph: &mut PluginGraph,
     filters: &[(String, f64, f64, f64)],
@@ -337,26 +339,21 @@ pub fn apply_room_eq_rack_to_chain(
             per_channel_filters.push(channel_eq_filters);
             per_channel_broadband.push(channel_bb_filters);
         } else {
-            log::info!(
-                "Channel '{}': no DSP output, using empty filters",
-                channel_name
-            );
+            log::info!("Channel '{channel_name}': no DSP output, using empty filters");
             per_channel_filters.push(Vec::new());
             per_channel_broadband.push(Vec::new());
         }
     }
 
-    let total_filters: usize = per_channel_filters.iter().map(|f| f.len()).sum();
-    let total_bb: usize = per_channel_broadband.iter().map(|f| f.len()).sum();
+    let total_filters: usize = per_channel_filters.iter().map(std::vec::Vec::len).sum();
+    let total_bb: usize = per_channel_broadband.iter().map(std::vec::Vec::len).sum();
 
     let num_channels = per_channel_filters.len();
     let global_filters = per_channel_filters.first().cloned().unwrap_or_default();
     let global_bb = per_channel_broadband.first().cloned().unwrap_or_default();
 
     log::info!(
-        "Applying room EQ with {} channels, {} total filters (per-channel mode)",
-        num_channels,
-        total_filters
+        "Applying room EQ with {num_channels} channels, {total_filters} total filters (per-channel mode)"
     );
 
     upsert_named_room_eq_plugins(
@@ -378,10 +375,10 @@ pub fn apply_room_eq_rack_to_chain(
 
 /// Apply DSP output parameters to a `PluginSettings` in-place.
 ///
-/// Handles the common plugin types from roomeq: EQ (filters / channel_filters),
-/// Gain (gain_db / channel_gains), and Delay (delay_ms / channel_delays_ms).
+/// Handles the common plugin types from roomeq: EQ (filters / `channel_filters`),
+/// Gain (`gain_db` / `channel_gains`), and Delay (`delay_ms` / `channel_delays_ms`).
 ///
-/// The factored RoomEQ builder emits multichannel plugins carrying
+/// The factored `RoomEQ` builder emits multichannel plugins carrying
 /// per-channel parameter arrays (`channel_gains`, `channel_filters`,
 /// `channel_delays_ms`). `PluginSettings::EQ` carries `channel_filters` +
 /// `per_channel_mode` natively. `PluginSettings::Gain` and `::Delay` are
@@ -390,6 +387,10 @@ pub fn apply_room_eq_rack_to_chain(
 /// something meaningful instead of an unrelated default. The actual
 /// engine plugin gets the full per-channel array via the JSON the
 /// factory consumes; this function only feeds the UI representation.
+#[expect(
+    clippy::too_many_lines,
+    reason = "The exhaustive DSP-to-settings adapter keeps all plugin parameter mappings together "
+)]
 fn apply_dsp_params_to_settings(
     settings: &mut PluginSettings,
     plugin_type_str: &str,
@@ -411,8 +412,7 @@ fn apply_dsp_params_to_settings(
                         .iter()
                         .map(|ch| {
                             ch.as_array()
-                                .map(|arr| parse_eq_filters_from_json(arr))
-                                .unwrap_or_default()
+                                .map_or_default(|arr| parse_eq_filters_from_json(arr))
                         })
                         .collect();
                     *channel_filters = Some(per_channel);
@@ -421,7 +421,7 @@ fn apply_dsp_params_to_settings(
                     // single-channel-EQ UI path shows something useful when
                     // per-channel mode is off.
                     if let Some(first) = channel_filters.as_ref().and_then(|cf| cf.first()) {
-                        *filters = first.clone();
+                        filters.clone_from(first);
                     }
                 } else if let Some(filter_arr) =
                     parameters.get("filters").and_then(|v| v.as_array())
@@ -442,7 +442,10 @@ fn apply_dsp_params_to_settings(
                     if let Some(v) = per_ch[0].as_f64() {
                         *gain_db = v;
                     }
-                } else if let Some(v) = parameters.get("gain_db").and_then(|v| v.as_f64()) {
+                } else if let Some(v) = parameters
+                    .get("gain_db")
+                    .and_then(serde_json::Value::as_f64)
+                {
                     *gain_db = v;
                 }
             }
@@ -467,7 +470,10 @@ fn apply_dsp_params_to_settings(
                     if let Some(v) = per_ch[0].as_f64() {
                         *delay_ms = v;
                     }
-                } else if let Some(v) = parameters.get("delay_ms").and_then(|v| v.as_f64()) {
+                } else if let Some(v) = parameters
+                    .get("delay_ms")
+                    .and_then(serde_json::Value::as_f64)
+                {
                     *delay_ms = v;
                 }
                 // RoomEQ delays are alignment delays. The optimizer emits
@@ -477,27 +483,27 @@ fn apply_dsp_params_to_settings(
                 // later serialized back to the engine.
                 *mix = parameters
                     .get("mix")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(1.0);
                 *feedback = parameters
                     .get("feedback")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
                 *lfo_rate_hz = parameters
                     .get("lfo_rate_hz")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
                 *lfo_depth_ms = parameters
                     .get("lfo_depth_ms")
-                    .and_then(|v| v.as_f64())
+                    .and_then(serde_json::Value::as_f64)
                     .unwrap_or(0.0);
                 *pitch_preserving = parameters
                     .get("pitch_preserving")
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
                 *allpass_feedback = parameters
                     .get("allpass_feedback")
-                    .and_then(|v| v.as_bool())
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
             }
         }
@@ -513,6 +519,21 @@ fn apply_dsp_params_to_settings(
 /// applies the optimizer's actual parameters via [`apply_dsp_params_to_settings`],
 /// adds Input/Output special nodes, wires connections, and auto-lays-out
 /// positions left-to-right by topological depth.
+///
+/// # Errors
+/// Returns an error if the EQ configuration cannot be represented by the plugin graph.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Finite per-channel gains are quantized to plugin single-precision storage and checked afterward"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Graph coordinates and finite plugin gains use single-precision presentation values"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Graph construction keeps routing, plugin creation, and channel-gain assembly in one transaction"
+)]
 pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> Result<PluginGraph, String> {
     let mut graph = PluginGraph::new();
     let graph_channels = config
@@ -598,7 +619,10 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> Result<PluginGr
                         input_channels: channels,
                         output_channels: channels,
                         matrix,
-                        channel_states: vec![Default::default(); channels],
+                        channel_states: vec![
+                                sotf_plugins::plugin_channel_mute_solo::ChannelState::default();
+                                channels
+                            ],
                     })
                 })
                 .transpose()?
@@ -687,6 +711,9 @@ pub fn build_ui_graph_from_config(config: &PluginGraphConfig) -> Result<PluginGr
 /// directly. Callers may pass an empty slice when the output is known to
 /// require a graph; the parameter is kept here so call sites that don't
 /// know in advance which path will be taken can hand it through unchanged.
+///
+/// # Errors
+/// Returns an error if the EQ configuration cannot be represented by the plugin graph.
 pub fn apply_room_eq_to_chain(
     graph: &mut PluginGraph,
     dsp_output: &DspChainOutput,
@@ -711,6 +738,9 @@ pub fn apply_room_eq_to_chain(
 /// engine config and the returned `GraphApplyOutcome.config` carries the
 /// `PluginGraphConfig` the caller must hand to
 /// `Player::update_plugin_graph(config)`.
+///
+/// # Errors
+/// Returns an error if the EQ configuration cannot be represented by the plugin graph.
 pub fn apply_room_eq_graph_to_chain(
     graph: &mut PluginGraph,
     dsp_output: &DspChainOutput,
@@ -723,11 +753,7 @@ pub fn apply_room_eq_graph_to_chain(
     }
     let num_nodes = config.nodes.len();
     let num_edges = config.edges.len();
-    log::info!(
-        "Applying room EQ as graph: {} nodes, {} edges",
-        num_nodes,
-        num_edges
-    );
+    log::info!("Applying room EQ as graph: {num_nodes} nodes, {num_edges} edges");
     *graph = build_ui_graph_from_config(&config)?;
     Ok(GraphApplyOutcome {
         config,

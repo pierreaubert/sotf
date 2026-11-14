@@ -5,7 +5,12 @@ use super::parse::needs_rgba_import;
 use super::types::ThemeConfig;
 use anyhow::{Context, Result, bail};
 use serde_json::Value;
+use std::fmt::Write as _;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the complete theme mapping or ordered application startup and capture workflow together"
+)]
 pub(super) fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> Result<String> {
     let t = &tokens[config.set_name];
     if t.is_null() {
@@ -23,10 +28,10 @@ pub(super) fn generate_theme_file(tokens: &Value, config: &ThemeConfig) -> Resul
     let rgba_import = if has_rgba { ", rgba" } else { "" };
 
     let band_colors = get_band_colors(t)?;
-    let band_lines: String = band_colors
-        .iter()
-        .map(|expr| format!("                {expr},\n"))
-        .collect();
+    let band_lines = band_colors.iter().fold(String::new(), |mut lines, expr| {
+        let _ = writeln!(&mut lines, "                {expr},");
+        lines
+    });
 
     Ok(format!(
         r#"use super::{{
@@ -303,15 +308,12 @@ pub(super) fn generate_theme_file_group(tokens: &Value, configs: &[ThemeConfig])
     }
 
     Ok(format!(
-        r#"use super::{{
+        r"use super::{{
     EQCurveColors, GraphLineColors, MeterColors, PluginColorMap, SpectrumColors, Theme, rgb{rgba_import}
 }};{rgba_use}
 
 impl Theme {{
 {methods}}}
-"#,
-        rgba_import = rgba_import,
-        rgba_use = rgba_use,
-        methods = methods,
+",
     ))
 }

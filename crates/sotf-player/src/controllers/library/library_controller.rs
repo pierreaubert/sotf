@@ -98,12 +98,10 @@ impl Default for LibraryController {
 
 impl LibraryController {
     /// Create new library controller with default database.
+    #[must_use]
     pub fn new() -> Self {
         let library = MusicLibrary::with_database().unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to initialize database, using in-memory library: {}",
-                e
-            );
+            log::warn!("Failed to initialize database, using in-memory library: {e}");
             MusicLibrary::new()
         });
         Self::with_library(library)
@@ -142,6 +140,7 @@ impl LibraryController {
     }
 
     /// Create library controller for testing (in-memory, no database).
+    #[must_use]
     pub fn new_for_test() -> Self {
         Self::with_library(MusicLibrary::new())
     }
@@ -159,6 +158,9 @@ impl LibraryController {
         self.cached_track_indices = None;
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn preview_metadata_edit(
         &self,
         target: MetadataTarget,
@@ -167,6 +169,10 @@ impl LibraryController {
         MetadataController::preview_edit(&self.library, target, patch)
     }
 
+    /// Apply metadata edit.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn apply_metadata_edit(
         &mut self,
         target: MetadataTarget,
@@ -177,6 +183,10 @@ impl LibraryController {
         Ok(preview)
     }
 
+    /// Import metadata candidate.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn import_metadata_candidate(
         &mut self,
         target: MetadataTarget,
@@ -200,8 +210,7 @@ impl LibraryController {
         self.cached_albums = self.library.get_filtered_albums(
             &self.search_query,
             self.result_order
-                .map(LibraryResultOrder::album_order)
-                .unwrap_or(self.sort_order),
+                .map_or(self.sort_order, LibraryResultOrder::album_order),
             self.filter,
             self.show_favorites_only,
         );
@@ -241,14 +250,14 @@ impl LibraryController {
             && self.selected_year.is_none()
             && !album
                 .year
-                .map(|y| y as i32)
+                .and_then(|y| i32::try_from(y).ok())
                 .is_some_and(|y| y >= decade_start && y <= decade_end)
         {
             return false;
         }
 
         if let Some(year) = self.selected_year
-            && album.year.map(|y| y as i32) != Some(year)
+            && album.year.and_then(|y| i32::try_from(y).ok()) != Some(year)
         {
             return false;
         }
@@ -329,7 +338,7 @@ impl LibraryController {
     /// Get filtered albums with selection filters applied on top of the cache.
     ///
     /// Uses `cached_selection_indices` when warm to skip the per-keystroke
-    /// re-walk of the cached_albums vec. When cold (or after any selection
+    /// re-walk of the `cached_albums` vec. When cold (or after any selection
     /// field changes), falls back to a single-pass `iter().filter()` so the
     /// behaviour stays identical to the un-cached path.
     pub fn selection_filtered_albums(&self) -> Vec<&Album> {
@@ -554,13 +563,17 @@ impl LibraryController {
     }
 
     /// Set search query with smart sort-order switching.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public search API accepts an owned query and normalizes it before storage "
+    )]
     pub fn set_search_query(&mut self, query: String) {
         if query.is_empty() {
             self.clear_search();
             return;
         }
 
-        self.search_query = query.clone();
+        self.search_query.clone_from(&query);
         let query_lower = query.to_lowercase();
 
         let mut best_order = None;
@@ -813,6 +826,9 @@ impl LibraryController {
     // =========================================================================
 
     /// Add directory to library.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn add_directory(&mut self, path: PathBuf) -> Result<bool, String> {
         self.library.add_directory(path)
     }
@@ -845,6 +861,9 @@ impl LibraryController {
     // =========================================================================
 
     /// Scan library synchronously with progress callback.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan_in_progress = true;
         self.scan_progress_tracks = 0;
@@ -875,6 +894,9 @@ impl LibraryController {
     }
 
     /// Load library from database.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn load_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library.load_from_database()?;
         self.invalidate_cache();
@@ -882,6 +904,9 @@ impl LibraryController {
     }
 
     /// Clean up database by removing tracks for files that no longer exist.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn clean_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         let removed = self.library.clean_database()?;
         if removed > 0 {
@@ -891,6 +916,9 @@ impl LibraryController {
     }
 
     /// Clear all local library albums/tracks from memory and persistent storage.
+    ///
+    /// # Errors
+    /// Returns an error if library access, metadata processing, scanning, or database persistence fails.
     pub fn clear_library_content(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         let removed = self.library.clear_library_content()?;
         self.selected_index = 0;

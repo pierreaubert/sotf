@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Clear, Constraint, Direction, Frame, Layout, List, ListItem,
+    Modifier, Paragraph, PlaylistMode, Rect, Style, draw_help_box_with_text,
+};
 
 pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
     // PlaylistMode is available via `use super::*`
@@ -59,8 +62,7 @@ pub(crate) fn draw_playlists_screen(f: &mut Frame, area: Rect, app: &App) {
                 .controller
                 .playlists()
                 .get(app.playlists.controller.selected_playlist_index)
-                .map(|p| p.name.as_str())
-                .unwrap_or("?");
+                .map_or("?", |p| p.name.as_str());
             draw_confirm_popup(
                 f,
                 area,
@@ -144,8 +146,7 @@ fn draw_playlist_tracks(f: &mut Frame, area: Rect, app: &App) {
                     let title = track.title.as_deref().unwrap_or("?");
                     let dur = track
                         .duration_secs
-                        .map(|d| format!(" [{}:{:02}]", d / 60, d % 60))
-                        .unwrap_or_default();
+                        .map_or_default(|d| format!(" [{}:{:02}]", d / 60, d % 60));
                     format!("{}. {} - {}{}", i + 1, artist, title, dur)
                 } else {
                     format!(
@@ -214,7 +215,7 @@ fn draw_input_popup(f: &mut Frame, area: Rect, title: &str, input: &str) {
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
         .title(title);
-    let text = Paragraph::new(format!("{}_", input)).block(block);
+    let text = Paragraph::new(format!("{input}_")).block(block);
     f.render_widget(Clear, popup_area);
     f.render_widget(text, popup_area);
 }

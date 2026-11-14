@@ -28,7 +28,7 @@ pub(super) fn probe_number_row(
         .child(Text::new(label).size(TextSize::Xs))
         .child(
             // intentional: numeric value emphasis in stepper, not a kicker label
-            Text::new(format!("{:.0}", current))
+            Text::new(format!("{current:.0}"))
                 .size(TextSize::Xs)
                 .weight(TextWeight::Bold),
         )

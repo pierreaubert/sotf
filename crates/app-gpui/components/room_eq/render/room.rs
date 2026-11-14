@@ -23,10 +23,11 @@ use super::types::RoomEqReportFilter;
 use super::types::RoomEqReportFirMasking;
 use super::types::RoomEqReportIr;
 use super::types::RoomEqTrendSeries;
-use gpui::*;
+use gpui::{Bounds, Hsla, Path, PathBuilder, Pixels, point, px};
 use sotf_audio::signal_analysis as dsp;
 use std::collections::BTreeSet;
 
+#[must_use]
 pub fn room_eq_trend_fit_domain(_channel_name: &str, frequencies: &[f64]) -> Option<(f64, f64)> {
     let (data_min, data_max) = finite_positive_frequency_range(frequencies)?;
     let (fit_min, fit_max) = (100.0_f64, 10_000.0_f64);
@@ -95,10 +96,12 @@ pub fn room_eq_passband_trend_fit_domain(freqs: &[f64], values: &[f64]) -> Optio
     }
 }
 
+#[must_use]
 pub fn room_eq_python_default_smoothing_octaves() -> f64 {
     ROOM_EQ_PYTHON_DEFAULT_SMOOTHING_OCTAVES
 }
 
+#[must_use]
 pub fn room_eq_channel_sort_key(channel_name: &str) -> (u16, String) {
     const CHANNEL_ORDER: &[(&str, u16)] = &[
         ("L", 10),
@@ -255,6 +258,7 @@ pub fn room_eq_report_data_from_dsp_output(
     }
 }
 
+#[must_use]
 pub fn room_eq_report_channel_has_renderable_data(channel: &RoomEqReportChannel) -> bool {
     channel.initial_curve.is_some()
         || channel.final_curve.is_some()
@@ -329,13 +333,12 @@ fn room_eq_report_eq_passes_from_plugins(
                 .get("filters")
                 .or_else(|| plugin.parameters.get("filter"))
                 .and_then(|value| value.as_array())
-                .map(|filters| {
+                .map_or_default(|filters| {
                     filters
                         .iter()
                         .filter_map(room_eq_report_filter_from_json)
                         .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+                });
             (!filters.is_empty()).then(|| RoomEqReportEqPass {
                 display_name: room_eq_report_pass_display_name(&label).to_string(),
                 color: room_eq_report_pass_color(&label),
@@ -356,16 +359,16 @@ fn room_eq_report_filter_from_json(value: &serde_json::Value) -> Option<RoomEqRe
     let freq = value
         .get("freq")
         .or_else(|| value.get("frequency"))
-        .and_then(|value| value.as_f64())?;
+        .and_then(serde_json::Value::as_f64)?;
     let q = value
         .get("q")
-        .and_then(|value| value.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .unwrap_or(1.0);
     let db_gain = value
         .get("db_gain")
         .or_else(|| value.get("gain_db"))
         .or_else(|| value.get("gain"))
-        .and_then(|value| value.as_f64())
+        .and_then(serde_json::Value::as_f64)
         .unwrap_or(0.0);
     Some(RoomEqReportFilter {
         filter_type,
@@ -388,12 +391,11 @@ fn room_eq_report_pass_display_name(label: &str) -> &'static str {
 
 fn room_eq_report_pass_color(label: &str) -> u32 {
     match label {
-        "cea2034_speaker_correction" => 0xffa500,
-        "broadband" => 0x4fc3f7,
-        "room_eq_correction" => 0x6464ff,
-        "user_preference" => 0xb464ff,
-        "post_eq" => 0x66bb6a,
-        _ => 0x6464ff,
+        "cea2034_speaker_correction" => 0x00ff_a500,
+        "broadband" => 0x004f_c3f7,
+        "user_preference" => 0x00b4_64ff,
+        "post_eq" => 0x0066_bb6a,
+        _ => 0x0064_64ff,
     }
 }
 
@@ -439,32 +441,32 @@ fn room_eq_report_epa_preference_avg(
     (pre_count > 0.0 && post_count > 0.0).then_some((pre_sum / pre_count, post_sum / post_count))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 fn room_eq_report_bass_management_from_report(
     report: &roomeq_model::BassManagementReport,
 ) -> RoomEqReportBassManagement {
-    let routes = report
-        .routing_graph
-        .as_ref()
-        .map(|graph| {
-            graph
-                .routes
-                .iter()
-                .map(|route| RoomEqReportBassRoute {
-                    source_channel: route.source_channel.clone(),
-                    destination: route.destination.clone(),
-                    route_kind: route.route_kind.clone(),
-                    group_id: route.group_id.clone(),
-                    crossover_type: route.crossover_type.clone(),
-                    high_pass_hz: route.high_pass_hz,
-                    low_pass_hz: route.low_pass_hz,
-                    gain_db: route.gain_db,
-                    matrix_gain: route.matrix_gain,
-                    delay_ms: route.delay_ms,
-                    polarity_inverted: route.polarity_inverted,
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+    let routes = report.routing_graph.as_ref().map_or_default(|graph| {
+        graph
+            .routes
+            .iter()
+            .map(|route| RoomEqReportBassRoute {
+                source_channel: route.source_channel.clone(),
+                destination: route.destination.clone(),
+                route_kind: route.route_kind.clone(),
+                group_id: route.group_id.clone(),
+                crossover_type: route.crossover_type.clone(),
+                high_pass_hz: route.high_pass_hz,
+                low_pass_hz: route.low_pass_hz,
+                gain_db: route.gain_db,
+                matrix_gain: route.matrix_gain,
+                delay_ms: route.delay_ms,
+                polarity_inverted: route.polarity_inverted,
+            })
+            .collect::<Vec<_>>()
+    });
     let mut physical_outputs: BTreeSet<String> = routes
         .iter()
         .filter(|route| {
@@ -503,8 +505,7 @@ fn room_eq_report_bass_management_from_report(
         report
             .optimization
             .as_ref()
-            .map(|opt| opt.group_results.as_slice())
-            .unwrap_or_default()
+            .map_or_default(|opt| opt.group_results.as_slice())
     } else {
         report.groups.as_slice()
     };
@@ -512,8 +513,7 @@ fn room_eq_report_bass_management_from_report(
         report
             .optimization
             .as_ref()
-            .map(|opt| opt.sub_output_results.as_slice())
-            .unwrap_or_default()
+            .map_or_default(|opt| opt.sub_output_results.as_slice())
     } else {
         report.sub_outputs.as_slice()
     };
@@ -527,13 +527,11 @@ fn room_eq_report_bass_management_from_report(
         input_channels: report
             .routing_graph
             .as_ref()
-            .map(|graph| graph.input_channels.clone())
-            .unwrap_or_default(),
+            .map_or_default(|graph| graph.input_channels.clone()),
         output_channels: report
             .routing_graph
             .as_ref()
-            .map(|graph| graph.output_channels.clone())
-            .unwrap_or_default(),
+            .map_or_default(|graph| graph.output_channels.clone()),
         physical_outputs: physical_outputs.into_iter().collect(),
         route_count: routes.len(),
         advisory: report.advisory.clone(),
@@ -644,13 +642,22 @@ pub fn room_eq_report_eq_y_range<'a>(
 
 pub(super) fn room_eq_route_color(kind: &str) -> Hsla {
     match kind {
-        "main_highpass_to_self" | "main_highpass" => Hsla::from(rgba_from_u32(0x4a90d9)),
-        "redirected_bass_lowpass_to_sub" => Hsla::from(rgba_from_u32(0x2ecc71)),
-        "lfe_lowpass_to_sub" => Hsla::from(rgba_from_u32(0xe67e22)),
-        _ => Hsla::from(rgba_from_u32(0x7f8c8d)),
+        "main_highpass_to_self" | "main_highpass" => Hsla::from(rgba_from_u32(0x004a_90d9)),
+        "redirected_bass_lowpass_to_sub" => Hsla::from(rgba_from_u32(0x002e_cc71)),
+        "lfe_lowpass_to_sub" => Hsla::from(rgba_from_u32(0x00e6_7e22)),
+        _ => Hsla::from(rgba_from_u32(0x007f_8c8d)),
     }
 }
 
+#[expect(
+    clippy::similar_names,
+    reason = "Related UI values retain the domain names used by their paired controls"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn room_eq_d3rs_path_to_gpui(
     path: &d3rs::shape::path::Path,
     bounds: Bounds<Pixels>,

@@ -8,6 +8,7 @@ use sotf_audio_player::{Album, Track};
 use std::path::PathBuf;
 
 /// Builder for creating test tracks
+#[derive(Debug)]
 pub struct TrackBuilder {
     title: Option<String>,
     artist: Option<String>,
@@ -126,6 +127,7 @@ impl TrackBuilder {
 }
 
 /// Builder for creating test albums
+#[derive(Debug)]
 pub struct AlbumBuilder {
     title: String,
     year: Option<u32>,

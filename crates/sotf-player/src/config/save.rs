@@ -8,6 +8,9 @@ use super::get::get_server_config_path;
 use super::get::get_tui_state_path;
 
 /// Save microphone presets to disk
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_microphone_presets(
     config: &crate::recording_types::MicrophonePresetsConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -23,6 +26,9 @@ pub fn save_microphone_presets(
 
 /// Save external plugin sandbox grants to disk.
 #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_plugin_sandbox_grants(
     grants: &sotf_plugins::PluginSandboxGrantStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -54,6 +60,9 @@ pub fn save_server_config(
 }
 
 /// Save metadata provider configuration to disk.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_metadata_services_config(
     config: &crate::metadata::MetadataServicesConfig,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -71,6 +80,9 @@ pub fn save_metadata_services_config(
 ///
 /// Bearer tokens are intentionally not stored in this file. Use the
 /// credential store keyed by `SotfRemoteServer::token_secret_key`.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_remote_server_store(
     store: &crate::sotf_remote::SotfRemoteServerStore,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -85,6 +97,9 @@ pub fn save_remote_server_store(
 /// Save a bearer token to the internal native remote token store.
 ///
 /// This fallback is used on platforms without a system credential store.
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_remote_server_token(key: &str, token: &str) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = get_remote_server_tokens_path() {
         if path.exists() {
@@ -100,6 +115,9 @@ pub fn save_remote_server_token(key: &str, token: &str) -> Result<(), Box<dyn st
 }
 
 /// Save TUI app configuration to disk
+///
+/// # Errors
+/// Returns an error if the configuration directory is unavailable or the configuration cannot be encoded or saved.
 pub fn save_app_config(config: &AppConfig) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(path) = get_tui_state_path() {
         // Validate that we're writing within the config directory

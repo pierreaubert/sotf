@@ -40,7 +40,7 @@ pub(super) fn run_library_command(db_path: &Path, action: &LibraryAction) -> Res
             println!("  Tracks: {}", stats.total_tracks);
             println!("  Albums: {}", albums.len());
             println!("  Artists: {}", stats.artists_count);
-            println!("  Total duration: {}s", total_duration);
+            println!("  Total duration: {total_duration}s");
             Ok(())
         }
         LibraryAction::Search { query } => {
@@ -67,7 +67,7 @@ pub(super) fn run_library_command(db_path: &Path, action: &LibraryAction) -> Res
                 println!(
                     "Matching album IDs: {}",
                     ids.iter()
-                        .map(|id| id.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect::<Vec<_>>()
                         .join(" ")
                 );

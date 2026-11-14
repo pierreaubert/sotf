@@ -13,6 +13,9 @@ use std::path::PathBuf;
 /// 4. Calculate similarity (distance) between candidates and seeds.
 /// 5. Select closest matches that are not already in the queue.
 /// 6. Return enough tracks to fill the target duration.
+///
+/// # Errors
+/// Returns an error if stored audio features cannot be loaded or compared.
 pub fn recommend_tracks(
     db: &MusicDatabase,
     current_queue_paths: &[PathBuf],
@@ -29,20 +32,20 @@ pub fn recommend_tracks(
 
     // 1. Identify seed tracks
     let mut seed_paths = Vec::new();
-    if !current_queue_paths.is_empty() {
-        // Use last 5 tracks from queue as seeds
-        let start_idx = current_queue_paths.len().saturating_sub(5);
-        seed_paths.extend_from_slice(&current_queue_paths[start_idx..]);
-        log::info!(
-            "[Recommendation] Using last {} tracks from queue as seeds",
-            seed_paths.len()
-        );
-    } else {
+    if current_queue_paths.is_empty() {
         // Fallback: Use top 5 most played tracks
         let top_tracks = db.get_top_tracks_by_play_count(5)?;
         seed_paths.extend(top_tracks);
         log::info!(
             "[Recommendation] Queue empty. Using top {} most played tracks as seeds",
+            seed_paths.len()
+        );
+    } else {
+        // Use last 5 tracks from queue as seeds
+        let start_idx = current_queue_paths.len().saturating_sub(5);
+        seed_paths.extend_from_slice(&current_queue_paths[start_idx..]);
+        log::info!(
+            "[Recommendation] Using last {} tracks from queue as seeds",
             seed_paths.len()
         );
     }
@@ -61,8 +64,8 @@ pub fn recommend_tracks(
             seed_analyses.push(analysis);
         } else {
             log::debug!(
-                "[Recommendation] Seed track has no bliss analysis: {:?}",
-                path
+                "[Recommendation] Seed track has no bliss analysis: {}",
+                path.display()
             );
         }
     }
@@ -124,14 +127,14 @@ pub fn recommend_tracks(
         }
 
         recommendations.push(path.clone());
-        excluded_paths.insert(path);
         current_duration += duration;
         log::debug!(
-            "[Recommendation] Selected: {:?} (score: {:.4}, duration: {}s)",
-            recommendations.last().unwrap(),
+            "[Recommendation] Selected: {} (score: {:.4}, duration: {}s)",
+            path.display(),
             score,
             duration
         );
+        excluded_paths.insert(path);
     }
 
     log::info!(

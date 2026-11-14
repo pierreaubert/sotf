@@ -8,6 +8,13 @@ use std::path::{Path, PathBuf};
 /// The apps use channel names as both logical roles and measurement keys, so
 /// this returns an identity map (`"L" -> "L"`, `"R" -> "R"`, ...). It also
 /// annotates subwoofer outputs when channel names indicate LFE/sub channels.
+///
+/// # Panics
+/// Panics if generated system settings no longer match the backend configuration schema.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "The public configuration builder accepts an owned optional crossover setting "
+)]
 pub fn ctc_system_config_for_speaker_names<I, S>(
     speaker_names: I,
     bass_management_crossover: Option<String>,
@@ -60,8 +67,7 @@ where
 pub(super) fn ctc_config_path_for(abs_path: &Path, output_dir: &Path) -> PathBuf {
     abs_path
         .strip_prefix(output_dir)
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| abs_path.to_path_buf())
+        .map_or_else(|_| abs_path.to_path_buf(), PathBuf::from)
 }
 
 fn ctc_position_index(id: &str) -> Option<usize> {
@@ -76,6 +82,7 @@ fn ctc_position_index(id: &str) -> Option<usize> {
 /// every exported speaker/position take must have been captured with the same
 /// sweep bounds. `None` means the manifest is empty, references recordings that
 /// cannot be found, or mixes different sweep ranges.
+#[must_use]
 pub fn ctc_uniform_sweep_range_for_measurements(
     recordings: &[ChannelRecording],
     speaker_names: &[String],

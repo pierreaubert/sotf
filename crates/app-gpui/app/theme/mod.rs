@@ -3,7 +3,10 @@
 //! Provides color definitions for different UI themes.
 
 // Allow approximate math constants in color values
-#![allow(clippy::approx_constant)]
+#![allow(
+    clippy::approx_constant,
+    reason = "Theme literals are design values rather than mathematical constants"
+)]
 
 use gpui::{App, Rgba, SharedString};
 use gpui_design::DesignExt;
@@ -205,7 +208,8 @@ impl Theme {
             .unwrap_or_else(|| SharedString::from(cx.design().typography.font_family.clone()))
     }
 
-    /// Create theme from ThemeId
+    /// Create theme from `ThemeId`
+    #[must_use]
     pub fn from_id(id: ThemeId) -> Self {
         match id {
             ThemeId::Dark => Self::dark(),
@@ -220,6 +224,10 @@ impl Theme {
         }
     }
 
+    /// Builds community bundle.
+    ///
+    /// # Errors
+    /// Returns an error if the community bundle schema or theme values are invalid.
     pub fn from_community_bundle(bundle: &CommunityThemeBundle) -> Result<Self, String> {
         bundle.validate()?;
         let theme = Self::from_editor_theme(&bundle.theme);
@@ -227,6 +235,11 @@ impl Theme {
         Ok(theme)
     }
 
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the complete theme token mapping together"
+    )]
     pub fn from_editor_theme(editor_theme: &EditorTheme) -> Self {
         let mut theme = match editor_theme.appearance() {
             ThemeAppearance::Light => Self::light(),
@@ -305,7 +318,7 @@ impl Theme {
         theme.plugin_palette.band_colors = editor_theme
             .band_colors
             .iter()
-            .map(|color| color.to_rgba())
+            .map(gpui_ui_kit::Color::to_rgba)
             .collect();
         theme.plugin_palette.channel_colors = theme.plugin_palette.band_colors.clone();
         theme.plugin_palette.eq_curve_colors = EQCurveColors {
@@ -350,6 +363,7 @@ impl Theme {
         theme
     }
 
+    #[must_use]
     pub fn with_accent_preference(self, preference: ThemeAccentPreference) -> Self {
         let Some((seed, source)) = preference.seed_and_source() else {
             return self;
@@ -357,11 +371,13 @@ impl Theme {
         self.with_accent_seed(seed, source)
     }
 
+    #[must_use]
     pub fn with_accent_seed(self, seed: ThemeColor, source: AccentSource) -> Self {
         let palette = AccentPalette::from_seed(seed, source, self.appearance());
         self.with_accent_palette(palette)
     }
 
+    #[must_use]
     pub fn with_accent_palette(mut self, palette: AccentPalette) -> Self {
         self.surface_selected = palette.accent_muted.to_rgba();
         self.border_focused = palette.accent.to_rgba();
@@ -382,6 +398,7 @@ impl Theme {
         self
     }
 
+    #[must_use]
     pub fn appearance(&self) -> ThemeAppearance {
         let luminance =
             0.2126 * self.background.r + 0.7152 * self.background.g + 0.0722 * self.background.b;
@@ -395,6 +412,7 @@ impl Theme {
 
 impl Theme {
     /// Apply opacity to a color (0.0 = transparent, 1.0 = opaque)
+    #[must_use]
     pub fn with_opacity(color: Rgba, opacity: f32) -> Rgba {
         let mut c = color;
         c.a = opacity.clamp(0.0, 1.0);
@@ -402,26 +420,31 @@ impl Theme {
     }
 
     /// Common opacity: 8% (~21 alpha)
+    #[must_use]
     pub fn opacity_8pct(color: Rgba) -> Rgba {
         Self::with_opacity(color, 0.08)
     }
 
     /// Common opacity: 20% (~51 alpha)
+    #[must_use]
     pub fn opacity_20pct(color: Rgba) -> Rgba {
         Self::with_opacity(color, 0.2)
     }
 
     /// Common opacity: 25% (~64 alpha)
+    #[must_use]
     pub fn opacity_25pct(color: Rgba) -> Rgba {
         Self::with_opacity(color, 0.25)
     }
 
     /// Common opacity: 50% (~128 alpha)
+    #[must_use]
     pub fn opacity_50pct(color: Rgba) -> Rgba {
         Self::with_opacity(color, 0.5)
     }
 
-    /// Convert to ButtonTheme for use with ui_kit Button component
+    /// Convert to `ButtonTheme` for use with `ui_kit` Button component
+    #[must_use]
     pub fn to_button_theme(&self) -> gpui_ui_kit::ButtonTheme {
         gpui_ui_kit::ButtonTheme {
             accent: self.accent,
@@ -444,7 +467,8 @@ impl Theme {
         }
     }
 
-    /// Convert to AccordionTheme for use with ui_kit Accordion component
+    /// Convert to `AccordionTheme` for use with `ui_kit` Accordion component
+    #[must_use]
     pub fn to_accordion_theme(&self) -> gpui_ui_kit::AccordionTheme {
         gpui_ui_kit::AccordionTheme {
             header_bg: self.surface,
@@ -459,7 +483,8 @@ impl Theme {
         }
     }
 
-    /// Convert to SliderTheme for use with ui_kit Slider component
+    /// Convert to `SliderTheme` for use with `ui_kit` Slider component
+    #[must_use]
     pub fn to_slider_theme(&self) -> gpui_ui_kit::SliderTheme {
         gpui_ui_kit::SliderTheme {
             track: self.surface_hover,
@@ -474,7 +499,8 @@ impl Theme {
         }
     }
 
-    /// Convert the plugin chassis palette to a NumberInput theme.
+    /// Convert the plugin chassis palette to a `NumberInput` theme.
+    #[must_use]
     pub fn to_number_input_theme(&self) -> gpui_ui_kit::NumberInputTheme {
         gpui_ui_kit::NumberInputTheme {
             background: self.background,
@@ -491,7 +517,8 @@ impl Theme {
         }
     }
 
-    /// Convert to IconButtonTheme for use with ui_kit IconButton component
+    /// Convert to `IconButtonTheme` for use with `ui_kit` `IconButton` component
+    #[must_use]
     pub fn to_icon_button_theme(&self) -> gpui_ui_kit::IconButtonTheme {
         gpui_ui_kit::IconButtonTheme {
             ghost_bg: Rgba {
@@ -513,7 +540,8 @@ impl Theme {
         }
     }
 
-    /// Convert to TabsTheme for use with ui_kit Tabs component
+    /// Convert to `TabsTheme` for use with `ui_kit` Tabs component
+    #[must_use]
     pub fn to_tabs_theme(&self) -> gpui_ui_kit::TabsTheme {
         gpui_ui_kit::TabsTheme {
             container_bg: self.surface,
@@ -534,7 +562,8 @@ impl Theme {
         }
     }
 
-    /// Convert to MenuTheme for use with ui_kit Menu component
+    /// Convert to `MenuTheme` for use with `ui_kit` Menu component
+    #[must_use]
     pub fn to_menu_theme(&self) -> gpui_ui_kit::MenuTheme {
         gpui_ui_kit::MenuTheme {
             background: self.surface,
@@ -549,7 +578,8 @@ impl Theme {
         }
     }
 
-    /// Convert to PotentiometerTheme for use with audio-kit Potentiometer component
+    /// Convert to `PotentiometerTheme` for use with audio-kit Potentiometer component
+    #[must_use]
     pub fn to_potentiometer_theme(&self) -> gpui_audio_kit::PotentiometerTheme {
         gpui_audio_kit::PotentiometerTheme {
             surface: self.surface,
@@ -566,7 +596,8 @@ impl Theme {
         }
     }
 
-    /// Convert to ToggleTheme for use with ui_kit Toggle component
+    /// Convert to `ToggleTheme` for use with `ui_kit` Toggle component
+    #[must_use]
     pub fn to_toggle_theme(&self) -> gpui_ui_kit::ToggleTheme {
         gpui_ui_kit::ToggleTheme {
             checked_bg: self.accent,
@@ -587,7 +618,8 @@ impl Theme {
         }
     }
 
-    /// Convert to ButtonSetTheme for use with ui_kit ButtonSet component
+    /// Convert to `ButtonSetTheme` for use with `ui_kit` `ButtonSet` component
+    #[must_use]
     pub fn to_button_set_theme(&self) -> gpui_ui_kit::ButtonSetTheme {
         gpui_ui_kit::ButtonSetTheme {
             bg: self.surface,
@@ -600,10 +632,11 @@ impl Theme {
         }
     }
 
-    /// Convert to ContextMenuTheme for use with ui_kit ContextMenu component
+    /// Convert to `ContextMenuTheme` for use with `ui_kit` `ContextMenu` component
+    #[must_use]
     pub fn to_context_menu_theme(&self) -> gpui_ui_kit::ContextMenuTheme {
         gpui_ui_kit::ContextMenuTheme {
-            backdrop: gpui::rgba(0x00000001),
+            backdrop: gpui::rgba(0x0000_0001),
             background: self.surface,
             border: self.border,
             separator: self.border,
@@ -616,7 +649,8 @@ impl Theme {
         }
     }
 
-    /// Convert to SelectTheme for use with ui_kit Select component
+    /// Convert to `SelectTheme` for use with `ui_kit` Select component
+    #[must_use]
     pub fn to_select_theme(&self) -> gpui_ui_kit::SelectTheme {
         gpui_ui_kit::SelectTheme {
             trigger_bg: self.surface,

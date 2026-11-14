@@ -3,8 +3,8 @@ use super::spawn::spawn_phase_data_check_thread;
 use super::spawn::spawn_spinorama_curves_thread;
 use crate::app::types::{PluginUpdateType, SpinoramaStep};
 use crate::ui::PlayerView;
+use gpui::Result;
 use gpui::prelude::*;
-use gpui::*;
 use sotf_audio_player::autoeq::speaker::{
     CallbackConfig, MeasurementInput, SpeakerOptimizationCallback, SpeakerOptimizationConfig,
     SpeakerOptimizationProgress,
@@ -18,7 +18,10 @@ type ProgressSample = (usize, f64, Option<f64>, f32);
 
 /// Final optimization result delivered via a oneshot channel.
 /// `(success, result, full_result, error_message)`.
-#[allow(clippy::type_complexity)]
+#[allow(
+    clippy::type_complexity,
+    reason = "Widget callbacks retain their typed GPUI handler signatures"
+)]
 type OptimizationOutcome = (
     bool,
     Option<crate::app::types::SpinoramaEqResult>,
@@ -78,6 +81,10 @@ impl PlayerView {
     // ========================================================================
 
     /// Main Spinorama EQ screen entry point (wizard)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_spinorama_eq_screen(
         &mut self,
         cx: &mut Context<Self>,
@@ -152,11 +159,7 @@ impl PlayerView {
             };
             let request_speaker = speaker.clone();
             let request_version = version.clone();
-            log::info!(
-                "Auto-loading spinorama curves for {} / {}",
-                speaker,
-                version
-            );
+            log::info!("Auto-loading spinorama curves for {speaker} / {version}");
             self.state.update(cx, |state, _| {
                 state
                     .app
@@ -184,9 +187,7 @@ impl PlayerView {
                         || spinorama.selected_version != request_version
                     {
                         log::debug!(
-                            "Discarding stale spinorama curves for {} / {}",
-                            request_speaker,
-                            request_version
+                            "Discarding stale spinorama curves for {request_speaker} / {request_version}"
                         );
                         return;
                     }
@@ -198,7 +199,7 @@ impl PlayerView {
                             spinorama.spinorama_curves_error = None;
                         }
                         Err(e) => {
-                            log::error!("Failed to auto-load spinorama curves: {}", e);
+                            log::error!("Failed to auto-load spinorama curves: {e}");
                             spinorama.spinorama_curves_error = Some(e);
                         }
                     }
@@ -228,6 +229,10 @@ impl PlayerView {
     // Action Handlers
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn fetch_spinorama_speakers(&mut self, cx: &mut Context<Self>) {
         log::info!("Fetching spinorama speakers from API...");
         #[cfg(feature = "dev-api")]
@@ -351,7 +356,7 @@ impl PlayerView {
                     });
                 }
                 Err(e) => {
-                    log::error!("Failed to fetch speakers: {}", e);
+                    log::error!("Failed to fetch speakers: {e}");
                     state_entity.update(cx, |state, cx| {
                         let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
                         if spinorama.speaker_list_request_id != request_id {
@@ -359,7 +364,7 @@ impl PlayerView {
                             return;
                         }
                         spinorama.loading_speakers = false;
-                        let msg = format!("Failed to fetch speakers: {}", e);
+                        let msg = format!("Failed to fetch speakers: {e}");
                         spinorama.error_message = Some(msg.clone());
                         // Surface the error via toast as well — the step_1
                         // inline banner only shows when the user is
@@ -375,7 +380,7 @@ impl PlayerView {
     }
 
     pub fn select_spinorama_speaker(&mut self, speaker: &str, cx: &mut Context<Self>) {
-        log::info!("Selected speaker: {}", speaker);
+        log::info!("Selected speaker: {speaker}");
         self.state.update(cx, |state, _cx| {
             state
                 .app
@@ -438,8 +443,12 @@ impl PlayerView {
         self.fetch_spinorama_versions(speaker, cx);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn fetch_spinorama_versions(&mut self, speaker: &str, cx: &mut Context<Self>) {
-        log::info!("Fetching versions for speaker: {}", speaker);
+        log::info!("Fetching versions for speaker: {speaker}");
         #[cfg(feature = "dev-api")]
         if let Some(versions) = self
             .state
@@ -461,7 +470,7 @@ impl PlayerView {
                 spinorama.loading_versions = false;
                 spinorama.error_message = None;
                 if let Some(version) = &version {
-                    spinorama.selected_version = version.clone();
+                    spinorama.selected_version.clone_from(version);
                 }
             });
             cx.notify();
@@ -479,10 +488,8 @@ impl PlayerView {
             let result = spinorama_runtime().and_then(|runtime| {
                 runtime.block_on(async {
                     let encoded_speaker = urlencoding::encode(&speaker_for_fetch);
-                    let url = format!(
-                        "https://api.spinorama.org/v1/speaker/{}/versions",
-                        encoded_speaker
-                    );
+                    let url =
+                        format!("https://api.spinorama.org/v1/speaker/{encoded_speaker}/versions");
                     fetch_json_with_spinorama_retries::<Vec<String>>(url).await
                 })
             });
@@ -522,14 +529,14 @@ impl PlayerView {
                         let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
                         if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
                         {
-                            log::debug!("Discarding stale versions for {}", speaker_for_poll);
+                            log::debug!("Discarding stale versions for {speaker_for_poll}");
                             return false;
                         }
                         spinorama.available_versions = versions;
                         spinorama.loading_versions = false;
                         // Auto-select first version if available
                         if let Some(ref version) = selected_version {
-                            spinorama.selected_version = version.clone();
+                            spinorama.selected_version.clone_from(version);
                         }
                         cx.notify();
                         true
@@ -545,16 +552,16 @@ impl PlayerView {
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to fetch versions: {}", e);
+                    log::error!("Failed to fetch versions: {e}");
                     state_entity.update(cx, |state, cx| {
                         let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
                         if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
                         {
-                            log::debug!("Discarding stale versions error for {}", speaker_for_poll);
+                            log::debug!("Discarding stale versions error for {speaker_for_poll}");
                             return;
                         }
                         spinorama.loading_versions = false;
-                        let msg = format!("Failed to fetch versions: {}", e);
+                        let msg = format!("Failed to fetch versions: {e}");
                         spinorama.error_message = Some(msg.clone());
                         state.app.ui_state.toast_message =
                             Some(crate::app::ToastMessage::error(msg));
@@ -566,17 +573,17 @@ impl PlayerView {
         .detach();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn fetch_spinorama_measurements(
         &mut self,
         speaker: &str,
         version: &str,
         cx: &mut Context<Self>,
     ) {
-        log::info!(
-            "Fetching measurements for speaker: {}, version: {}",
-            speaker,
-            version
-        );
+        log::info!("Fetching measurements for speaker: {speaker}, version: {version}");
         #[cfg(feature = "dev-api")]
         if let Some((measurements, response)) = self
             .state
@@ -633,7 +640,7 @@ impl PlayerView {
                     };
                 }
                 if let Some(selected) = &selected {
-                    spinorama.selected_measurement = selected.clone();
+                    spinorama.selected_measurement.clone_from(selected);
                 }
             });
             cx.notify();
@@ -687,8 +694,7 @@ impl PlayerView {
                     let encoded_speaker = urlencoding::encode(&speaker_name);
                     let encoded_version = urlencoding::encode(&version_name);
                     let url = format!(
-                        "https://api.spinorama.org/v1/speaker/{}/version/{}/measurements",
-                        encoded_speaker, encoded_version
+                        "https://api.spinorama.org/v1/speaker/{encoded_speaker}/version/{encoded_version}/measurements"
                     );
                     fetch_json_with_spinorama_retries::<Vec<String>>(url).await
                 })
@@ -740,9 +746,7 @@ impl PlayerView {
                             || spinorama.selected_version != version_for_poll
                         {
                             log::debug!(
-                                "Discarding stale measurements for {} / {}",
-                                speaker_for_poll,
-                                version_for_poll
+                                "Discarding stale measurements for {speaker_for_poll} / {version_for_poll}"
                             );
                             return false;
                         }
@@ -762,14 +766,10 @@ impl PlayerView {
                     // Fire-and-await: each follow-up has its own channel,
                     // so a second `fetch_measurements` for a different
                     // speaker can't steal results.
-                    let curves_rx = if has_cea2034 {
-                        Some(spawn_spinorama_curves_thread(
+                    let curves_rx = has_cea2034.then(|| spawn_spinorama_curves_thread(
                             speaker_for_poll.clone(),
                             version_for_poll.clone(),
-                        ))
-                    } else {
-                        None
-                    };
+                        ));
                     let phase_rx = spawn_phase_data_check_thread(
                         speaker_for_poll.clone(),
                         version_for_poll.clone(),
@@ -785,14 +785,12 @@ impl PlayerView {
                                 || spinorama.selected_version != version_for_poll
                             {
                                 log::debug!(
-                                    "Discarding stale phase check for {} / {}",
-                                    speaker_for_poll,
-                                    version_for_poll
+                                    "Discarding stale phase check for {speaker_for_poll} / {version_for_poll}"
                                 );
                                 return;
                             }
                             spinorama.has_phase_data = has_phase;
-                            log::info!("Phase data availability: {}", has_phase);
+                            log::info!("Phase data availability: {has_phase}");
                             cx.notify();
                         });
                     }
@@ -807,9 +805,7 @@ impl PlayerView {
                                 || spinorama.selected_version != version_for_poll
                             {
                                 log::debug!(
-                                    "Discarding stale spinorama curves for {} / {}",
-                                    speaker_for_poll,
-                                    version_for_poll
+                                    "Discarding stale spinorama curves for {speaker_for_poll} / {version_for_poll}"
                                 );
                                 return;
                             }
@@ -821,7 +817,7 @@ impl PlayerView {
                                     spinorama.spinorama_curves_error = None;
                                 }
                                 Err(e) => {
-                                    log::error!("Failed to auto-load spinorama curves: {}", e);
+                                    log::error!("Failed to auto-load spinorama curves: {e}");
                                     spinorama.spinorama_curves_error = Some(e);
                                 }
                             }
@@ -830,21 +826,19 @@ impl PlayerView {
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to fetch measurements: {}", e);
+                    log::error!("Failed to fetch measurements: {e}");
                     state_entity.update(cx, |state, cx| {
                         let spinorama = &mut state.app.measurement_state.spinorama_eq_state;
                         if spinorama.selected_speaker.as_deref() != Some(speaker_for_poll.as_str())
                             || spinorama.selected_version != version_for_poll
                         {
                             log::debug!(
-                                "Discarding stale measurements error for {} / {}",
-                                speaker_for_poll,
-                                version_for_poll
+                                "Discarding stale measurements error for {speaker_for_poll} / {version_for_poll}"
                             );
                             return;
                         }
                         spinorama.loading_measurements = false;
-                        let msg = format!("Failed to fetch measurements: {}", e);
+                        let msg = format!("Failed to fetch measurements: {e}");
                         spinorama.error_message = Some(msg.clone());
                         state.app.ui_state.toast_message =
                             Some(crate::app::ToastMessage::error(msg));
@@ -857,7 +851,7 @@ impl PlayerView {
     }
 
     pub fn select_spinorama_version(&mut self, version: &str, cx: &mut Context<Self>) {
-        log::info!("Selected version: {}", version);
+        log::info!("Selected version: {version}");
         let speaker = {
             let state = self.state.read(cx);
             state
@@ -909,6 +903,14 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub fn start_spinorama_optimization(&mut self, cx: &mut Context<Self>) {
         log::info!("Starting spinorama optimization...");
 
@@ -989,12 +991,13 @@ impl PlayerView {
                 .progress_history
                 .clear();
             state.app.measurement_state.spinorama_eq_state.error_message = None;
-            state
-                .app
-                .measurement_state
-                .spinorama_eq_state
-                .cancel_requested
-                .clone()
+            std::sync::Arc::clone(
+                &state
+                    .app
+                    .measurement_state
+                    .spinorama_eq_state
+                    .cancel_requested,
+            )
         });
         cx.notify();
 
@@ -1040,17 +1043,10 @@ impl PlayerView {
         };
 
         log::info!(
-            "Spinorama optimization config: speaker={}, version={}, measurement={}, curve={}",
-            speaker_name,
-            effective_version,
-            effective_measurement,
-            effective_curve_name
+            "Spinorama optimization config: speaker={speaker_name}, version={effective_version}, measurement={effective_measurement}, curve={effective_curve_name}"
         );
         log::info!(
-            "Spinorama optimization mode: {:?}, loss={}, target_curve={:?}",
-            mode,
-            loss,
-            target_curve
+            "Spinorama optimization mode: {mode:?}, loss={loss}, target_curve={target_curve:?}"
         );
         log::info!(
             "Spinorama optimization params: algo={}, maxeval={}, num_filters={}, population={}",
@@ -1063,7 +1059,7 @@ impl PlayerView {
         // Build Args using library defaults
         let mut params = autoeq_optim_types::OptimizationConfig::speaker_defaults();
         params.num_filters = optimizer_config.num_filters;
-        params.sample_rate = optimizer_config.sample_rate as f64;
+        params.sample_rate = f64::from(optimizer_config.sample_rate);
         params.min_db = optimizer_config.min_db;
         params.max_db = optimizer_config.max_db;
         params.min_q = optimizer_config.min_q;
@@ -1073,9 +1069,9 @@ impl PlayerView {
         params.maxeval = optimizer_config.max_iter;
         params.population = optimizer_config.population;
         params.recombination = optimizer_config.de_cr;
-        params.strategy = optimizer_config.strategy.clone();
+        params.strategy.clone_from(&optimizer_config.strategy);
         params.refine = optimizer_config.refine;
-        params.local_algo = optimizer_config.local_algo.clone();
+        params.local_algo.clone_from(&optimizer_config.local_algo);
         params.smooth = optimizer_config.smooth;
         params.smooth_n = optimizer_config.smooth_n;
         params.spacing_weight = optimizer_config.spacing_weight;
@@ -1086,14 +1082,16 @@ impl PlayerView {
         params.bo_initial_samples = optimizer_config.bo_initial_samples;
         params.bo_batch_size = optimizer_config.bo_batch_size;
         params.bo_posterior_std_threshold = optimizer_config.bo_posterior_std_threshold;
-        params.bo_acquisition = optimizer_config.bo_acquisition.clone();
+        params
+            .bo_acquisition
+            .clone_from(&optimizer_config.bo_acquisition);
         params.bo_ehvi = optimizer_config.bo_ehvi;
         params.loss = sotf_audio_player::autoeq::parse_loss_type(&loss);
         params.algo = algo;
-        params.curve_name = effective_curve_name.clone();
+        params.curve_name.clone_from(&effective_curve_name);
 
         // Run optimization in background thread (blocking tokio runtime)
-        let cancel_for_thread = cancel_flag.clone();
+        let cancel_for_thread = std::sync::Arc::clone(&cancel_flag);
         let progress_tx_for_thread = progress_tx.clone();
         let outcome_tx_for_thread = outcome_tx.clone();
         std::thread::spawn(move || {
@@ -1142,7 +1140,7 @@ impl PlayerView {
 
             // Create callback for progress updates
             let max_iter = params.maxeval;
-            let cancel_for_cb = cancel_for_thread.clone();
+            let cancel_for_cb = std::sync::Arc::clone(&cancel_for_thread);
             let callback: SpeakerOptimizationCallback =
                 Box::new(move |progress: &SpeakerOptimizationProgress| {
                     if cancel_for_cb.load(std::sync::atomic::Ordering::Relaxed) {
@@ -1173,7 +1171,7 @@ impl PlayerView {
                 });
 
             // Run the actual optimization
-            log::info!("Running speaker optimization for: {}", speaker_name);
+            log::info!("Running speaker optimization for: {speaker_name}");
             log::info!(
                 "Args: algo={}, maxeval={}, population={}, num_filters={}",
                 config.args.algo,
@@ -1264,7 +1262,7 @@ impl PlayerView {
                     (true, Some(result), Some(opt_result), None)
                 }
                 Err(e) => {
-                    log::error!("Optimization failed: {}", e);
+                    log::error!("Optimization failed: {e}");
                     (false, None, None, Some(e))
                 }
             };
@@ -1332,7 +1330,7 @@ impl PlayerView {
                             .app
                             .measurement_state
                             .spinorama_eq_state
-                            .status_message = format!("Optimizing{}", dots);
+                            .status_message = format!("Optimizing{dots}");
                     }
                     cx.notify();
                 });
@@ -1343,7 +1341,7 @@ impl PlayerView {
 
         // Await the per-request outcome channel — no polling, no globals.
         let weak_state_outcome = self.state.downgrade();
-        let cancel_for_poll = cancel_flag.clone();
+        let cancel_for_poll = std::sync::Arc::clone(&cancel_flag);
         cx.spawn(async move |_, cx| {
             let Ok((success, result, full_result, error)) = outcome_rx.recv().await else {
                 return;
@@ -1437,6 +1435,10 @@ impl PlayerView {
         false
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn apply_spinorama_eq_result(&mut self, cx: &mut Context<Self>) {
         {
             let app = &self.state.read(cx).app;
@@ -1519,7 +1521,7 @@ impl PlayerView {
                         auto_gain_enabled: false,
                         oversampling: 1.0,
                     };
-                    log::info!("Updated existing EQ plugin at index {}", eq_idx);
+                    log::info!("Updated existing EQ plugin at index {eq_idx}");
                 }
             } else {
                 // No EQ plugin exists, add one before monitoring plugins
@@ -1541,7 +1543,7 @@ impl PlayerView {
                         oversampling: 1.0,
                     };
                 }
-                log::info!("Inserted new EQ plugin at index {}", insert_idx);
+                log::info!("Inserted new EQ plugin at index {insert_idx}");
             }
 
             // Mark that plugin chain was modified and needs sync
@@ -1566,6 +1568,10 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn save_spinorama_eq_result(&mut self, cx: &mut Context<Self>) {
         if !self.check_spinorama_result_freshness(cx) {
             return;
@@ -1628,7 +1634,7 @@ impl PlayerView {
         let extension = sotf_audio_player::autoeq::get_export_extension(&export_format);
 
         let safe_speaker_name = speaker_name.replace([' ', '/', '\\'], "_");
-        let default_filename = format!("spinorama_eq_{}{}", safe_speaker_name, extension);
+        let default_filename = format!("spinorama_eq_{safe_speaker_name}{extension}");
 
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -1712,8 +1718,7 @@ impl PlayerView {
                         }
                         Err(error) => {
                             if spinorama.delivery.revision() == export_revision {
-                                spinorama.error_message =
-                                    Some(format!("Failed to save: {}", error));
+                                spinorama.error_message = Some(format!("Failed to save: {error}"));
                             }
                         }
                     }

@@ -1,5 +1,10 @@
-use super::*;
+use super::{Alignment, App, Block, Borders, Frame, Line, Modifier, Paragraph, Rect, Span, Style};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
     let volume_pct = (app.playback.volume * 100.0) as u32;
     let key_style = Style::default().fg(app.theme.title_color);
@@ -8,7 +13,7 @@ pub(crate) fn draw_volume_box(f: &mut Frame, area: Rect, app: &App) {
         .add_modifier(Modifier::BOLD);
     let text = Line::from(vec![
         Span::styled("[-_] ", key_style),
-        Span::styled(format!("{:>3}%", volume_pct), volume_style),
+        Span::styled(format!("{volume_pct:>3}%"), volume_style),
         Span::styled(" [=+]", key_style),
     ]);
 

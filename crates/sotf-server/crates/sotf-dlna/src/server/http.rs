@@ -20,10 +20,14 @@ pub(super) fn http_response_with_headers(
         503 => "Service Unavailable",
         _ => "Error",
     };
-    let extra_headers = extra_headers
-        .iter()
-        .map(|(name, value)| format!("{}: {}\r\n", name, value))
-        .collect::<String>();
+    let mut header_lines = String::new();
+    for (name, value) in extra_headers {
+        header_lines.push_str(name);
+        header_lines.push_str(": ");
+        header_lines.push_str(value);
+        header_lines.push_str("\r\n");
+    }
+    let extra_headers = header_lines;
     format!(
         "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\n{}Connection: close\r\n\r\n{}",
         status,

@@ -13,6 +13,9 @@ use super::types::SpeakerConfigTypeExt;
 use super::types::SpeakerOptimizationCallback;
 
 /// Run speaker optimization with callback support
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn run_speaker_optimization_with_callback(
     config: &SpeakerOptimizationConfig,
     callback: Option<SpeakerOptimizationCallback>,
@@ -35,6 +38,9 @@ pub fn run_speaker_optimization_with_callback(
 }
 
 /// Run extended speaker optimization (includes multi-sub and DBA)
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn run_speaker_optimization_extended(
     config: &SpeakerOptimizationConfigExt,
     callback: Option<SpeakerOptimizationCallback>,
@@ -81,6 +87,9 @@ pub fn run_speaker_optimization_extended(
 }
 
 /// Backward-compatible entry point
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn run_speaker_optimization(
     speaker_model: &str,
     args: &autoeq_optim_types::OptimizationConfig,

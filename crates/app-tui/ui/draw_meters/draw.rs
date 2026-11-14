@@ -1,4 +1,7 @@
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, Borders, Color, Constraint, Direction, Frame, InputMode, Layout, Line,
+    Modifier, Paragraph, Rect, Style, draw_volume_box,
+};
 use super::meter_label_buf::MeterLabelBuf;
 use std::fmt::Write as _;
 
@@ -97,6 +100,19 @@ fn draw_lufs_maximum_summary(
     rows
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let block = Block::default()
@@ -183,18 +199,10 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                         let _ =
                             write!(&mut label_buf, "{}: {:>4.1} dBTP", i18n.ui("Max TP"), value);
                     }
-                    Some(_) => {
-                        let _ = write!(
-                            &mut label_buf,
-                            "{}: {}",
-                            i18n.ui("Max TP"),
-                            i18n.ui("Unavailable")
-                        );
-                    }
                     None if loudness.true_peak_is_compliant => {
                         let _ = write!(&mut label_buf, "{}: — dBTP", i18n.ui("Max TP"));
                     }
-                    None => {
+                    Some(_) | None => {
                         let _ = write!(
                             &mut label_buf,
                             "{}: {}",
@@ -218,6 +226,8 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
             // Render true peak bars for each channel (max 2 bars to save space)
             for ch_idx in 0..visible_peak_bars {
+                use ratatui::widgets::Gauge;
+
                 if y_offset >= inner.height {
                     break;
                 }
@@ -252,12 +262,11 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 // Format label showing the dBTP value into the reused stack buffer.
                 label_buf.len = 0;
                 if true_peak_dbtp.is_finite() {
-                    let _ = write!(&mut label_buf, "{:>5.1}", true_peak_dbtp);
+                    let _ = write!(&mut label_buf, "{true_peak_dbtp:>5.1}");
                 } else {
                     let _ = write!(&mut label_buf, "  -∞");
                 }
 
-                use ratatui::widgets::Gauge;
                 let gauge = Gauge::default()
                     .ratio(ratio)
                     .label(label_buf.as_str())
@@ -342,6 +351,8 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
         // Borrows the shared stack label buffer to avoid per-bar `format!` calls.
         let draw_lufs_bar =
             |f: &mut Frame, label_buf: &mut MeterLabelBuf, y: u16, label_char: &str, lufs: f64| {
+                use ratatui::widgets::Gauge;
+
                 // Map -60 to 0 LUFS as 0% to 100%
                 let ratio = if lufs.is_finite() {
                     ((lufs + 60.0) / 60.0).clamp(0.0, 1.0)
@@ -365,14 +376,13 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
 
                 // Format label: "M -15.0" into the reused stack buffer.
                 label_buf.len = 0;
-                let _ = write!(label_buf, "{} ", label_char);
+                let _ = write!(label_buf, "{label_char} ");
                 if lufs.is_finite() {
-                    let _ = write!(label_buf, "{:>5.1}", lufs);
+                    let _ = write!(label_buf, "{lufs:>5.1}");
                 } else {
                     let _ = write!(label_buf, "  -∞");
                 }
 
-                use ratatui::widgets::Gauge;
                 let gauge = Gauge::default()
                     .ratio(ratio)
                     .label(label_buf.as_str())
@@ -519,7 +529,7 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
                 };
 
                 label_buf.len = 0;
-                let _ = write!(&mut label_buf, "{:>4.2}", stereo_width);
+                let _ = write!(&mut label_buf, "{stereo_width:>4.2}");
 
                 let gauge = Gauge::default()
                     .ratio(ratio)
@@ -627,6 +637,19 @@ pub(crate) fn draw_lufs_box(f: &mut Frame, area: Rect, app: &App) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     // Check for loudness info first
@@ -648,8 +671,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
         .playback
         .loudness_info
         .as_ref()
-        .map(|l| l.channel_peaks.len())
-        .unwrap_or(0);
+        .map_or(0, |l| l.channel_peaks.len());
     if num_channels == 0 {
         let paragraph = Paragraph::new(i18n.ui("No channels"))
             .style(Style::default().fg(app.theme.fg_muted))
@@ -824,7 +846,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     ];
 
     // Draw vertical scale legend on the left
-    for (ratio, label) in scale_markers.iter() {
+    for (ratio, label) in &scale_markers {
         let row_idx = (ratio * meter_height as f64).round() as usize;
         let y = inner.y + (meter_height - 1).saturating_sub(row_idx.min(meter_height - 1)) as u16;
 
@@ -842,7 +864,7 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
     // Draw vertical scale legend on the right (if applicable, stereo only)
     if right_scale_width > 0 {
         let right_x = inner.x + inner.width - scale_text_width as u16;
-        for (ratio, label) in scale_markers.iter() {
+        for (ratio, label) in &scale_markers {
             let row_idx = (ratio * meter_height as f64).round() as usize;
             let y =
                 inner.y + (meter_height - 1).saturating_sub(row_idx.min(meter_height - 1)) as u16;
@@ -1171,7 +1193,6 @@ pub(crate) fn draw_level_meter_box(f: &mut Frame, area: Rect, app: &mut App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::app::App;
     use crate::theme::Theme;
     use ratatui::{Terminal, backend::TestBackend};
     use sotf_audio::LoudnessData;

@@ -4,7 +4,10 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 use url::Url;
 
-#[allow(async_fn_in_trait)]
+#[allow(
+    async_fn_in_trait,
+    reason = "The metadata provider trait is internal and does not require an object-safe Send future"
+)]
 pub trait MetadataProvider {
     async fn search_album(
         &self,
@@ -36,10 +39,17 @@ pub struct MusicBrainzProvider {
 }
 
 impl MusicBrainzProvider {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error if the metadata HTTP client cannot be built.
     pub fn new(user_agent: impl Into<String>) -> Result<Self, MetadataError> {
         Self::with_endpoint("https://musicbrainz.org/ws/2/", user_agent)
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the metadata HTTP client cannot be built.
     pub fn with_endpoint(
         endpoint: impl Into<String>,
         user_agent: impl Into<String>,
@@ -60,7 +70,7 @@ impl MusicBrainzProvider {
         if let Some(previous) = *last {
             let elapsed = previous.elapsed();
             if elapsed < Duration::from_secs(1) {
-                tokio::time::sleep(Duration::from_secs(1) - elapsed).await;
+                tokio::time::sleep(Duration::from_secs(1).checked_sub(elapsed).unwrap()).await;
             }
         }
         *last = Some(Instant::now());
@@ -283,6 +293,14 @@ fn recordings_to_candidates(recordings: Vec<MbRecording>) -> Vec<MetadataImportC
             }
         })
         .collect()
+}
+
+impl std::fmt::Debug for MusicBrainzProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MusicBrainzProvider")
+            .field("endpoint", &self.endpoint)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]

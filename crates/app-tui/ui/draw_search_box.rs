@@ -1,4 +1,6 @@
-use super::*;
+use super::{
+    App, Block, Borders, Frame, InputMode, Line, Paragraph, Rect, Span, Style, format_channel_count,
+};
 
 pub(crate) fn draw_search_box(f: &mut Frame, area: Rect, app: &App) {
     use crate::app::{ChannelFilter, LibrarySortOrder};

@@ -6,19 +6,22 @@ use super::types::MpdKv;
 pub enum MpdResponse {
     Ok(Vec<MpdKv>),
     Error(MpdError),
-    /// For list_ok_begin mode: OK between commands.
+    /// For `list_ok_begin` mode: OK between commands.
     ListOk,
 }
 
 impl MpdResponse {
+    #[must_use]
     pub fn ok() -> Self {
         MpdResponse::Ok(vec![])
     }
 
+    #[must_use]
     pub fn ok_with(kvs: Vec<MpdKv>) -> Self {
         MpdResponse::Ok(kvs)
     }
 
+    #[must_use]
     pub fn format(&self) -> String {
         match self {
             MpdResponse::Ok(kvs) => {

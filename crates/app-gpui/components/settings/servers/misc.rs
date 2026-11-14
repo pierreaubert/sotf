@@ -3,7 +3,7 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{ClickEvent, FontWeight, SharedString, Window, div, px, rems};
 use gpui_ui_kit::{
     Button, ButtonSet, ButtonSetOption, ButtonSetSize, ButtonSize, ButtonVariant, Divider, HStack,
     IconButton, IconButtonSize, IconButtonVariant, Input, InputSize, QrCode, StackSpacing, Text,
@@ -59,6 +59,10 @@ impl PlayerView {
             .child(self.render_dlna_section(&server_config, &theme, &d, cx))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_sotf_api_section(
         &self,
         server_config: &sotf_audio_player::federation_config::ServerConfig,
@@ -217,6 +221,10 @@ impl PlayerView {
             })
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_mpd_section(
         &self,
         server_config: &sotf_audio_player::federation_config::ServerConfig,
@@ -479,6 +487,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_dlna_section(
         &self,
         server_config: &sotf_audio_player::federation_config::ServerConfig,
@@ -599,6 +611,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_remote_sotf_section(
         &self,
         theme: &crate::app::theme::Theme,
@@ -907,6 +923,14 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(crate) fn render_remote_sotf_server_row(
         &self,
         server: sotf_audio_player::SotfRemoteServer,
@@ -1101,8 +1125,8 @@ pub(crate) fn server_secret_field(
     on_toggle_reveal: impl Fn(&mut gpui::App) + 'static,
 ) -> impl IntoElement {
     let on_change = Rc::new(on_change);
-    let on_confirm = on_change.clone();
-    let on_text_change = on_change.clone();
+    let on_confirm = std::rc::Rc::clone(&on_change);
+    let on_text_change = std::rc::Rc::clone(&on_change);
     let reveal_label = if revealed {
         format!("Hide {label}")
     } else {
@@ -1164,8 +1188,8 @@ fn server_editable_field_with_mode(
     on_change: impl Fn(&str, &mut Window, &mut gpui::App) + 'static,
 ) -> impl IntoElement {
     let on_change = Rc::new(on_change);
-    let on_confirm = on_change.clone();
-    let on_text_change = on_change.clone();
+    let on_confirm = std::rc::Rc::clone(&on_change);
+    let on_text_change = std::rc::Rc::clone(&on_change);
 
     div()
         .flex()

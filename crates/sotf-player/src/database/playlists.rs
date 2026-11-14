@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 impl MusicDatabase {
     /// Create a new playlist
     /// Returns the ID of the newly created playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn create_playlist(&self, name: &str, description: Option<&str>) -> SqlResult<i64> {
         let now = current_timestamp();
         self.conn.execute(
@@ -18,6 +21,9 @@ impl MusicDatabase {
     }
 
     /// Update a playlist's name and/or description
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn update_playlist(
         &self,
         playlist_id: i64,
@@ -33,6 +39,9 @@ impl MusicDatabase {
     }
 
     /// Delete a playlist and all its tracks
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn delete_playlist(&self, playlist_id: i64) -> SqlResult<()> {
         // Foreign key cascade will delete playlist_tracks entries
         self.conn
@@ -41,6 +50,9 @@ impl MusicDatabase {
     }
 
     /// Get all playlists (without their tracks)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlists(&self) -> SqlResult<Vec<Playlist>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, description, created_at, updated_at FROM playlists ORDER BY name",
@@ -53,8 +65,8 @@ impl MusicDatabase {
                     name: row.get::<_, String>(1)?,
                     description: row.get::<_, Option<String>>(2)?,
                     entries: Vec::new(), // Will be loaded separately if needed
-                    created_at: Some(row.get::<_, i64>(3)? as u64),
-                    updated_at: Some(row.get::<_, i64>(4)? as u64),
+                    created_at: Some(crate::database::misc::row_unsigned::<u64>(row, 3)?),
+                    updated_at: Some(crate::database::misc::row_unsigned::<u64>(row, 4)?),
                 })
             })?
             .collect::<SqlResult<Vec<_>>>()?;
@@ -63,6 +75,9 @@ impl MusicDatabase {
     }
 
     /// Get a single playlist by ID (without tracks)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlist(&self, playlist_id: i64) -> SqlResult<Option<Playlist>> {
         let result = self.conn.query_row(
             "SELECT id, name, description, created_at, updated_at FROM playlists WHERE id = ?1",
@@ -73,8 +88,8 @@ impl MusicDatabase {
                     name: row.get::<_, String>(1)?,
                     description: row.get::<_, Option<String>>(2)?,
                     entries: Vec::new(),
-                    created_at: Some(row.get::<_, i64>(3)? as u64),
-                    updated_at: Some(row.get::<_, i64>(4)? as u64),
+                    created_at: Some(crate::database::misc::row_unsigned::<u64>(row, 3)?),
+                    updated_at: Some(crate::database::misc::row_unsigned::<u64>(row, 4)?),
                 })
             },
         );
@@ -87,6 +102,9 @@ impl MusicDatabase {
     }
 
     /// Get a playlist by name
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlist_by_name(&self, name: &str) -> SqlResult<Option<Playlist>> {
         let result = self.conn.query_row(
             "SELECT id, name, description, created_at, updated_at FROM playlists WHERE name = ?1",
@@ -97,8 +115,8 @@ impl MusicDatabase {
                     name: row.get::<_, String>(1)?,
                     description: row.get::<_, Option<String>>(2)?,
                     entries: Vec::new(),
-                    created_at: Some(row.get::<_, i64>(3)? as u64),
-                    updated_at: Some(row.get::<_, i64>(4)? as u64),
+                    created_at: Some(crate::database::misc::row_unsigned::<u64>(row, 3)?),
+                    updated_at: Some(crate::database::misc::row_unsigned::<u64>(row, 4)?),
                 })
             },
         );
@@ -111,6 +129,9 @@ impl MusicDatabase {
     }
 
     /// Load tracks for a playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlist_tracks(&self, playlist_id: i64) -> SqlResult<Vec<PlaylistEntry>> {
         let mut stmt = self.conn.prepare(
             "SELECT track_path, position FROM playlist_tracks
@@ -121,7 +142,7 @@ impl MusicDatabase {
             .query_map(params![playlist_id], |row| {
                 Ok(PlaylistEntry {
                     track_path: PathBuf::from(row.get::<_, String>(0)?),
-                    position: row.get::<_, i64>(1)? as u32,
+                    position: row.get::<_, u32>(1)?,
                 })
             })?
             .collect::<SqlResult<Vec<_>>>()?;
@@ -130,10 +151,12 @@ impl MusicDatabase {
     }
 
     /// Load a playlist with all its tracks
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlist_with_tracks(&self, playlist_id: i64) -> SqlResult<Option<Playlist>> {
-        let mut playlist = match self.get_playlist(playlist_id)? {
-            Some(p) => p,
-            None => return Ok(None),
+        let Some(mut playlist) = self.get_playlist(playlist_id)? else {
+            return Ok(None);
         };
 
         playlist.entries = self.get_playlist_tracks(playlist_id)?;
@@ -141,6 +164,9 @@ impl MusicDatabase {
     }
 
     /// Add a track to a playlist at the end
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn add_track_to_playlist(&self, playlist_id: i64, track_path: &Path) -> SqlResult<()> {
         let now = current_timestamp();
 
@@ -156,7 +182,7 @@ impl MusicDatabase {
              VALUES (?1, ?2, ?3, ?4)",
             params![
                 playlist_id,
-                track_path.to_str().unwrap(),
+                super::misc::path_text(track_path)?,
                 next_position,
                 now
             ],
@@ -172,6 +198,9 @@ impl MusicDatabase {
     }
 
     /// Add multiple tracks to a playlist at the end
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn add_tracks_to_playlist(
         &self,
         playlist_id: i64,
@@ -192,8 +221,8 @@ impl MusicDatabase {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![
                     playlist_id,
-                    track_path.to_str().unwrap(),
-                    start_position + offset as i64,
+                    super::misc::path_text(track_path)?,
+                    start_position + crate::database::misc::sql_integer(offset)?,
                     now
                 ],
             )?;
@@ -209,6 +238,9 @@ impl MusicDatabase {
     }
 
     /// Remove a track from a playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_track_from_playlist(&self, playlist_id: i64, track_path: &Path) -> SqlResult<()> {
         let now = current_timestamp();
 
@@ -217,7 +249,7 @@ impl MusicDatabase {
             .conn
             .query_row(
                 "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 AND track_path = ?2",
-                params![playlist_id, track_path.to_str().unwrap()],
+                params![playlist_id, super::misc::path_text(track_path)?],
                 |row| row.get(0),
             )
             .ok();
@@ -225,7 +257,7 @@ impl MusicDatabase {
         // Delete the track
         self.conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_path = ?2",
-            params![playlist_id, track_path.to_str().unwrap()],
+            params![playlist_id, super::misc::path_text(track_path)?],
         )?;
 
         // Reorder remaining tracks to fill the gap
@@ -247,6 +279,9 @@ impl MusicDatabase {
     }
 
     /// Move a track to a new position in the playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn move_track_in_playlist(
         &self,
         playlist_id: i64,
@@ -258,11 +293,11 @@ impl MusicDatabase {
         // Get the current position
         let current_position: i64 = self.conn.query_row(
             "SELECT position FROM playlist_tracks WHERE playlist_id = ?1 AND track_path = ?2",
-            params![playlist_id, track_path.to_str().unwrap()],
+            params![playlist_id, super::misc::path_text(track_path)?],
             |row| row.get(0),
         )?;
 
-        let new_pos = new_position as i64;
+        let new_pos = i64::from(new_position);
 
         if current_position == new_pos {
             return Ok(()); // No change needed
@@ -288,7 +323,7 @@ impl MusicDatabase {
         self.conn.execute(
             "UPDATE playlist_tracks SET position = ?1
              WHERE playlist_id = ?2 AND track_path = ?3",
-            params![new_pos, playlist_id, track_path.to_str().unwrap()],
+            params![new_pos, playlist_id, super::misc::path_text(track_path)?],
         )?;
 
         // Update playlist's updated_at
@@ -301,6 +336,9 @@ impl MusicDatabase {
     }
 
     /// Clear all tracks from a playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clear_playlist(&self, playlist_id: i64) -> SqlResult<()> {
         let now = current_timestamp();
 
@@ -319,12 +357,15 @@ impl MusicDatabase {
     }
 
     /// Get the number of tracks in a playlist
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_playlist_track_count(&self, playlist_id: i64) -> SqlResult<usize> {
-        let count: i64 = self.conn.query_row(
+        let count: usize = self.conn.query_row(
             "SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1",
             params![playlist_id],
-            |row| row.get(0),
+            |row| crate::database::misc::row_unsigned::<usize>(row, 0),
         )?;
-        Ok(count as usize)
+        Ok(count)
     }
 }

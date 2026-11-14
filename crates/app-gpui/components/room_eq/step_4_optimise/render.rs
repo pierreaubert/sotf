@@ -2,7 +2,7 @@
 use crate::app::i18n::RoomEqReportTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, px};
 use gpui_ui_kit::{HStack, StackSpacing, Text, TextSize, TextWeight};
 
 /// Render the pipeline-step strip: one chip per `PipelineStepId::ALL`
@@ -43,7 +43,7 @@ pub(super) fn render_pipeline_step_strip(
                 Some(PipelineStepStatus::Skipped) => {
                     (theme.surface_hover, theme.text_muted, theme.border)
                 }
-                Some(PipelineStepStatus::Started) | Some(PipelineStepStatus::InProgress) => {
+                Some(PipelineStepStatus::Started | PipelineStepStatus::InProgress) => {
                     (theme.accent_muted, theme.text_primary, theme.accent)
                 }
                 None => (theme.surface_hover, theme.text_muted, theme.border),
@@ -67,6 +67,10 @@ pub(super) fn render_pipeline_step_strip(
     row
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(super) fn render_pipeline_phase_readout(
     text: RoomEqReportTranslations,
     theme: &crate::app::theme::Theme,

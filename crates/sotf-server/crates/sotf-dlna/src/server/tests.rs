@@ -347,7 +347,7 @@ async fn http_server_exposes_scpd_and_gena_lifecycle() {
     // reaches the same subscriber without another HTTP control request.
     events.notify(
         "/ContentDirectory/event",
-        super::handle::content_directory_event_body(2),
+        &super::handle::content_directory_event_body(2),
     );
     let notifications = notifications.await.unwrap();
     assert_eq!(notifications.len(), 2);

@@ -6,8 +6,8 @@ use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use uuid::Uuid;
 
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(1_800);
-const MAX_TIMEOUT: Duration = Duration::from_secs(86_400);
+const DEFAULT_TIMEOUT: Duration = Duration::from_mins(30);
+const MAX_TIMEOUT: Duration = Duration::from_hours(24);
 const CALLBACK_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_SUBSCRIPTIONS: usize = 64;
 
@@ -103,10 +103,10 @@ impl GenaRegistry {
                     next_sequence: 1,
                     send_lock: Arc::clone(&send_lock),
                 },
-            );
-        }
+            )
+        };
 
-        self.spawn_notify(callback, sid.clone(), 0, initial_event, send_lock);
+        Self::spawn_notify(callback, sid.clone(), 0, initial_event, send_lock);
         GenaResponse::ok(sid, timeout)
     }
 
@@ -133,7 +133,7 @@ impl GenaRegistry {
     /// numbers are assigned while holding the registry lock, so concurrent
     /// updates cannot deliver duplicate or reordered sequence numbers for a
     /// single subscription.
-    pub(crate) fn notify(&self, service: &str, event: String) {
+    pub(crate) fn notify(&self, service: &str, event: &str) {
         let targets = {
             let mut subscriptions = self.lock();
             let now = Instant::now();
@@ -155,7 +155,7 @@ impl GenaRegistry {
         };
 
         for (callback, sid, sequence, send_lock) in targets {
-            self.spawn_notify(callback, sid, sequence, event.clone(), send_lock);
+            Self::spawn_notify(callback, sid, sequence, event.to_owned(), send_lock);
         }
     }
 
@@ -168,7 +168,6 @@ impl GenaRegistry {
     }
 
     fn spawn_notify(
-        &self,
         callback: Callback,
         sid: String,
         sequence: u32,
@@ -186,7 +185,7 @@ impl GenaRegistry {
     fn lock(&self) -> std::sync::MutexGuard<'_, HashMap<String, Subscription>> {
         self.subscriptions
             .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 }
 
@@ -277,8 +276,9 @@ fn parse_callback(value: &str) -> Option<Callback> {
     } else {
         let (hostname, port) = authority
             .rsplit_once(':')
-            .map(|(hostname, port)| (hostname, port.parse().ok()))
-            .unwrap_or((authority, Some(80)));
+            .map_or((authority, Some(80)), |(hostname, port)| {
+                (hostname, port.parse().ok())
+            });
         let port = port?;
         if hostname.is_empty() || hostname.contains(':') {
             return None;
@@ -308,7 +308,7 @@ async fn send_notify(
         TcpStream::connect((callback.connect_host.as_str(), callback.port)),
     )
     .await
-    .map_err(|_| "callback connect timeout".to_string())?
+    .map_err(|_error| "callback connect timeout".to_string())?
     .map_err(|error| error.to_string())?;
     let request = format!(
         "NOTIFY {} HTTP/1.1\r\n\

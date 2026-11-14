@@ -4,7 +4,11 @@ use super::recording_tui_state::RecordingTuiState;
 /// Map a flat field index to its logical identity. Returns `None` past the
 /// last valid row.
 pub fn recording_field_at(s: &RecordingTuiState, idx: usize) -> Option<RecordingField> {
-    use RecordingField::*;
+    use RecordingField::{
+        ChannelInput, CtcLoopbackInput, CtcStrategy, Duration, Level, MicCal, NumPositions,
+        NumRecordingChannels, NumSweeps, OutputDir, PlaybackDevice, RecordingDevice, SignalType,
+        SpeakerConfig, SweepEnd, SweepStart,
+    };
     let n = s.model.recording_config.num_channels.max(1);
     match idx {
         0 => Some(PlaybackDevice),

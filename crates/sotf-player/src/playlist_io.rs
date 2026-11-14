@@ -41,6 +41,9 @@ pub struct ImportedEntry {
 ///
 /// Writes Extended M3U format with UTF-8 encoding. Track metadata (artist, title,
 /// duration) is looked up from the library when available.
+///
+/// # Errors
+/// Returns an error if playlist file I/O or database access fails.
 pub fn export_m3u8(
     playlist: &Playlist,
     library: &MusicLibrary,
@@ -58,16 +61,16 @@ pub fn export_m3u8(
             .find(|t| t.path == entry.track_path);
 
         if let Some(track) = track {
-            let duration = track.duration_secs.unwrap_or(0) as i64;
+            let duration = i64::try_from(track.duration_secs.unwrap_or(0)).unwrap_or(i64::MAX);
             let artist = track.artist.as_deref().unwrap_or("Unknown");
             let title = track.title.as_deref().unwrap_or("Unknown");
-            writeln!(content, "#EXTINF:{},{} - {}", duration, artist, title).unwrap();
+            writeln!(content, "#EXTINF:{duration},{artist} - {title}").unwrap();
         }
 
         writeln!(content, "{}", entry.track_path.display()).unwrap();
     }
 
-    fs::write(output_path, content).map_err(|e| format!("Failed to write M3U8 file: {}", e))
+    fs::write(output_path, content).map_err(|e| format!("Failed to write M3U8 file: {e}"))
 }
 
 /// Import a playlist from an M3U/M3U8 file.
@@ -75,8 +78,16 @@ pub fn export_m3u8(
 /// Tolerant parser — works with or without `#EXTM3U` header, handles both
 /// `#EXTINF` metadata lines and plain file paths. Relative paths are resolved
 /// against the directory containing the M3U file.
+///
+/// # Errors
+/// Returns an error if playlist file I/O or database access fails.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Playlist durations are quantized and saturated to nonnegative whole seconds"
+)]
 pub fn import_m3u8(input_path: &Path) -> Result<ImportedPlaylist, String> {
-    let file = fs::File::open(input_path).map_err(|e| format!("Failed to open M3U file: {}", e))?;
+    let file = fs::File::open(input_path).map_err(|e| format!("Failed to open M3U file: {e}"))?;
     let reader = BufReader::new(file);
 
     let name = input_path
@@ -92,7 +103,7 @@ pub fn import_m3u8(input_path: &Path) -> Result<ImportedPlaylist, String> {
     let mut pending_duration: Option<u64> = None;
 
     for line in reader.lines() {
-        let line = line.map_err(|e| format!("Failed to read line: {}", e))?;
+        let line = line.map_err(|e| format!("Failed to read line: {e}"))?;
         let line = line.trim().to_string();
 
         // Skip empty lines

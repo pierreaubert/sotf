@@ -32,7 +32,7 @@ pub struct MultiSpeakerOptimizationResult {
     pub combined_initial_loss: f64,
     /// Combined final loss (weighted average)
     pub combined_final_loss: f64,
-    /// Optimization history: (iteration, combined_loss)
+    /// Optimization history: (iteration, `combined_loss`)
     pub optimization_history: Vec<(usize, f64)>,
 }
 
@@ -43,7 +43,7 @@ pub struct MultiSpeakerProgress {
     pub iteration: usize,
     /// Current combined loss value
     pub combined_loss: f64,
-    /// Total iterations expected (maxeval * num_speakers)
+    /// Total iterations expected (maxeval * `num_speakers`)
     pub max_iterations: usize,
     /// Stage of optimization
     pub stage: OptimizationStage,

@@ -1,3 +1,5 @@
+const MAX_LINES: usize = 2_000;
+
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
@@ -29,6 +31,7 @@ pub struct DevApiTargetConfig {
 }
 
 impl DevApiTargetConfig {
+    #[must_use]
     pub fn desktop(executable: Option<PathBuf>, url: Option<String>) -> Self {
         Self {
             target: TargetId::DesktopGpui,
@@ -41,6 +44,7 @@ impl DevApiTargetConfig {
         }
     }
 
+    #[must_use]
     pub fn tui(executable: Option<PathBuf>, url: Option<String>) -> Self {
         Self {
             target: TargetId::Tui,
@@ -70,6 +74,10 @@ pub struct DevApiTarget {
 }
 
 impl DevApiTarget {
+    /// Creates a development API target.
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be built.
     pub fn new(config: DevApiTargetConfig) -> Result<Self, TargetError> {
         Ok(Self {
             config,
@@ -231,7 +239,6 @@ impl DevApiTarget {
         if let Some(path) = self.stderr_path.clone() {
             lines.extend(read_appended(&path, &mut self.stderr_offset));
         }
-        const MAX_LINES: usize = 2_000;
         if lines.len() > MAX_LINES {
             lines.drain(..lines.len() - MAX_LINES);
         }
@@ -245,7 +252,7 @@ impl DevApiTarget {
                     pid: Some(child.id()),
                     alive: false,
                     exit_code: status.code(),
-                    signal_or_exception: exit_signal(&status),
+                    signal_or_exception: exit_signal(status),
                 },
                 Ok(None) => ProcessObservation {
                     pid: Some(child.id()),
@@ -532,12 +539,21 @@ fn read_appended(path: &Path, offset: &mut u64) -> Vec<String> {
 }
 
 #[cfg(unix)]
-fn exit_signal(status: &std::process::ExitStatus) -> Option<String> {
+fn exit_signal(status: std::process::ExitStatus) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
     status.signal().map(|signal| format!("signal {signal}"))
 }
 
 #[cfg(not(unix))]
-fn exit_signal(_status: &std::process::ExitStatus) -> Option<String> {
+fn exit_signal(_status: std::process::ExitStatus) -> Option<String> {
     None
+}
+
+impl std::fmt::Debug for DevApiTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DevApiTarget")
+            .field("run_id", &self.run_id)
+            .field("last_snapshot_revision", &self.last_snapshot_revision)
+            .finish_non_exhaustive()
+    }
 }

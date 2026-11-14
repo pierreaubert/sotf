@@ -6,6 +6,7 @@ use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct AllPluginsScenario {
     window_size: Size<Pixels>,
 }

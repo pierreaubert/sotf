@@ -1,9 +1,17 @@
-use super::*;
+use super::{
+    Alignment, App, Block, BorderType, Borders, Clear, Frame, Line, Modifier, Paragraph, Rect,
+    Span, Style,
+};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     // Create a centered dialog
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.5) as u16;
+    let dialog_width = (f32::from(area.width) * 0.5) as u16;
     let dialog_height = 10;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;
@@ -79,10 +87,16 @@ pub(crate) fn draw_scan_progress_dialog(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, inner);
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     // Create a centered dialog
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.5) as u16;
+    let dialog_width = (f32::from(area.width) * 0.5) as u16;
     let dialog_height = 10;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;
@@ -161,10 +175,16 @@ pub(crate) fn draw_maintenance_progress_dialog(f: &mut Frame, app: &App) {
     f.render_widget(paragraph, inner);
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_replay_gain_progress_dialog(f: &mut Frame, app: &App) {
     // Create a centered dialog
     let area = f.area();
-    let dialog_width = (area.width as f32 * 0.6) as u16;
+    let dialog_width = (f32::from(area.width) * 0.6) as u16;
     let dialog_height = 12;
     let dialog_x = (area.width - dialog_width) / 2;
     let dialog_y = (area.height - dialog_height) / 2;

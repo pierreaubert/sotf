@@ -4,6 +4,7 @@
 //! The realtime path receives only the prebuilt `ABComparePluginParams` produced
 //! by `AbTestSession::runtime_config_for_pending_cue`.
 
+use std::fmt::Write as _;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +26,7 @@ pub struct DecodedLevelMatchSegment {
     pub duration_ms: u64,
 }
 
+#[derive(Debug)]
 pub struct AbTestSessionPreparationRequest<'a> {
     pub session_id: &'a str,
     pub assignment_seed: u64,
@@ -43,6 +45,9 @@ pub struct AbTestSessionPreparationRequest<'a> {
 
 /// Decode one synchronized media segment, render both chains, level match them,
 /// and return a validated reproducible session ready for blind trials.
+///
+/// # Errors
+/// Returns an error if media access, decoding, chain rendering, level matching, or session validation fails.
 pub fn prepare_ab_test_session(
     request: AbTestSessionPreparationRequest<'_>,
 ) -> Result<(AbTestSession, LevelMatchPreparation), AbTestError> {
@@ -86,11 +91,14 @@ pub fn prepare_ab_test_session(
 }
 
 /// Return a stable content identity for reproducible listening-test media.
+///
+/// # Errors
+/// Returns an error if the media file cannot be opened or hashed.
 pub fn media_file_identity(path: impl AsRef<Path>) -> Result<String, AbTestError> {
     let mut file = std::fs::File::open(path.as_ref())
         .map_err(|error| AbTestError::SessionIo(error.to_string()))?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file
             .read(&mut buffer)
@@ -101,15 +109,17 @@ pub fn media_file_identity(path: impl AsRef<Path>) -> Result<String, AbTestError
         hasher.update(&buffer[..read]);
     }
     let digest = hasher.finalize();
-    let hex = digest
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<Vec<_>>()
-        .join("");
+    let hex = digest.iter().fold(String::new(), |mut output, byte| {
+        let _ = write!(output, "{byte:02x}");
+        output
+    });
     Ok(format!("sha256:{hex}"))
 }
 
 /// Resolve and verify the local file backing a saved listening-test segment.
+///
+/// # Errors
+/// Returns an error if the media is unavailable or its identity differs from the recorded identity.
 pub fn verify_media_segment(segment: &MediaSegment) -> Result<PathBuf, AbTestError> {
     let path = segment
         .media_path
@@ -127,6 +137,9 @@ pub fn verify_media_segment(segment: &MediaSegment) -> Result<PathBuf, AbTestErr
 }
 
 /// Decode an exact interleaved segment for offline, synchronized path rendering.
+///
+/// # Errors
+/// Returns an error if media access, decoding, chain rendering, level matching, or session validation fails.
 pub fn decode_level_match_segment(
     path: impl AsRef<Path>,
     start_ms: u64,
@@ -146,11 +159,11 @@ pub fn decode_level_match_segment(
     }
     let start_frame = ((u128::from(start_ms) * u128::from(spec.sample_rate)) / 1_000)
         .try_into()
-        .map_err(|_| AbTestError::InvalidLevelMatchInput)?;
+        .map_err(|_error| AbTestError::InvalidLevelMatchInput)?;
     let requested_frames: usize = ((u128::from(duration_ms) * u128::from(spec.sample_rate))
         / 1_000)
         .try_into()
-        .map_err(|_| AbTestError::InvalidLevelMatchInput)?;
+        .map_err(|_error| AbTestError::InvalidLevelMatchInput)?;
     if requested_frames == 0 {
         return Err(AbTestError::InvalidLevelMatchInput);
     }
@@ -158,11 +171,11 @@ pub fn decode_level_match_segment(
         .seek(start_frame)
         .map_err(|error| AbTestError::PathPreparation(error.to_string()))?;
 
-    let mut decoded = DecodedAudio::new(spec.clone());
+    let mut audio_buffer = DecodedAudio::new(spec.clone());
     let mut samples = Vec::with_capacity(requested_frames.saturating_mul(channels));
     while samples.len() < requested_frames.saturating_mul(channels) {
         let frames = decoder
-            .decode_into(&mut decoded)
+            .decode_into(&mut audio_buffer)
             .map_err(|error| AbTestError::PathPreparation(error.to_string()))?;
         if frames == 0 {
             break;
@@ -170,7 +183,8 @@ pub fn decode_level_match_segment(
         let remaining = requested_frames
             .saturating_mul(channels)
             .saturating_sub(samples.len());
-        samples.extend_from_slice(&decoded.samples[..decoded.samples.len().min(remaining)]);
+        samples
+            .extend_from_slice(&audio_buffer.samples[..audio_buffer.samples.len().min(remaining)]);
     }
     if samples.len() != requested_frames.saturating_mul(channels) {
         return Err(AbTestError::LevelMatchWindowTooShort);
@@ -182,7 +196,7 @@ pub fn decode_level_match_segment(
         channels,
         start_ms,
         duration_ms: (u64::try_from(requested_frames)
-            .map_err(|_| AbTestError::InvalidLevelMatchInput)?
+            .map_err(|_error| AbTestError::InvalidLevelMatchInput)?
             * 1_000)
             / u64::from(spec.sample_rate),
     })
@@ -216,6 +230,9 @@ pub struct LevelMatchPreparationRequest<'a> {
 /// This is intentionally a control-thread/offline operation. It instantiates
 /// fresh hosts so adaptive or history-dependent state from playback cannot
 /// influence a repeatable trial.
+///
+/// # Errors
+/// Returns an error if media access, decoding, chain rendering, level matching, or session validation fails.
 pub fn prepare_level_match(
     request: LevelMatchPreparationRequest<'_>,
 ) -> Result<LevelMatchPreparation, AbTestError> {
@@ -260,6 +277,9 @@ pub fn prepare_level_match(
 ///
 /// Pending blind assignments are omitted by the session's serialization
 /// contract, so saving cannot disclose an in-progress answer.
+///
+/// # Errors
+/// Returns an error if session validation, serialization, or file writing fails.
 pub fn save_ab_test_session(
     session: &AbTestSession,
     path: impl AsRef<Path>,
@@ -271,6 +291,9 @@ pub fn save_ab_test_session(
 }
 
 /// Load and validate a session before exposing it to a UI shell.
+///
+/// # Errors
+/// Returns an error if reading, decoding, or validating the saved session fails.
 pub fn load_ab_test_session(path: impl AsRef<Path>) -> Result<AbTestSession, AbTestError> {
     let json = std::fs::read(path).map_err(|error| AbTestError::SessionIo(error.to_string()))?;
     let session: AbTestSession = serde_json::from_slice(&json)
@@ -297,6 +320,10 @@ fn validate_segment(
     Ok(())
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "A/B preparation requires exactly matching integer sample rates without resampling "
+)]
 fn render_path(
     config: &PathConfig,
     sample_rate: u32,

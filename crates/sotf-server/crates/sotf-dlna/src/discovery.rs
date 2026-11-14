@@ -19,7 +19,7 @@ pub struct DiscoveredDevice {
     pub name: String,
     /// Location URL of the device description XML.
     pub location: String,
-    /// UPnP device type URN.
+    /// `UPnP` device type URN.
     pub device_type: String,
     /// Unique service name (UUID).
     pub usn: String,
@@ -28,22 +28,32 @@ pub struct DiscoveredDevice {
 }
 
 /// DLNA device discovery via SSDP.
+#[derive(Debug)]
 pub struct DlnaDiscovery;
 
 impl DlnaDiscovery {
-    /// Discover DLNA MediaRenderers on the local network.
+    /// Discover DLNA `MediaRenderers` on the local network.
     ///
     /// Sends an M-SEARCH multicast and collects responses for `timeout` duration.
+    ///
+    /// # Errors
+    /// Returns an error if the SSDP socket cannot be opened or a search cannot be sent.
     pub async fn discover_renderers(timeout: Duration) -> Result<Vec<DiscoveredDevice>, String> {
         Self::discover("urn:schemas-upnp-org:device:MediaRenderer:1", timeout).await
     }
 
-    /// Discover DLNA MediaServers on the local network.
+    /// Discover DLNA `MediaServers` on the local network.
+    ///
+    /// # Errors
+    /// Returns an error if the SSDP socket cannot be opened or a search cannot be sent.
     pub async fn discover_servers(timeout: Duration) -> Result<Vec<DiscoveredDevice>, String> {
         Self::discover("urn:schemas-upnp-org:device:MediaServer:1", timeout).await
     }
 
-    /// Discover all UPnP devices on the local network.
+    /// Discover all `UPnP` devices on the local network.
+    ///
+    /// # Errors
+    /// Returns an error if the SSDP socket cannot be opened or a search cannot be sent.
     pub async fn discover_all(timeout: Duration) -> Result<Vec<DiscoveredDevice>, String> {
         Self::discover("ssdp:all", timeout).await
     }
@@ -54,7 +64,7 @@ impl DlnaDiscovery {
     ) -> Result<Vec<DiscoveredDevice>, String> {
         let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
             .await
-            .map_err(|e| format!("Failed to bind discovery socket: {}", e))?;
+            .map_err(|e| format!("Failed to bind discovery socket: {e}"))?;
 
         let mx = timeout.as_secs().clamp(1, 5);
         let search = format!(
@@ -62,19 +72,17 @@ impl DlnaDiscovery {
              HOST: 239.255.255.250:1900\r\n\
              MAN: \"ssdp:discover\"\r\n\
              MX: {mx}\r\n\
-             ST: {st}\r\n\
+             ST: {search_target}\r\n\
              \r\n",
-            mx = mx,
-            st = search_target,
         );
 
         let target = SocketAddr::V4(SocketAddrV4::new(SSDP_MULTICAST, SSDP_PORT));
         socket
             .send_to(search.as_bytes(), target)
             .await
-            .map_err(|e| format!("Failed to send M-SEARCH: {}", e))?;
+            .map_err(|e| format!("Failed to send M-SEARCH: {e}"))?;
 
-        log::debug!("[DLNA Discovery] Sent M-SEARCH for {}", search_target);
+        log::debug!("[DLNA Discovery] Sent M-SEARCH for {search_target}");
 
         let mut devices = Vec::new();
         let mut buf = [0u8; 2048];
@@ -105,7 +113,7 @@ impl DlnaDiscovery {
                     }
                 }
                 Ok(Err(e)) => {
-                    log::debug!("[DLNA Discovery] Receive error: {}", e);
+                    log::debug!("[DLNA Discovery] Receive error: {e}");
                     break;
                 }
                 Err(_) => break, // Timeout

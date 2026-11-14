@@ -4,8 +4,11 @@ use crate::app::federation::test_federation_connection;
 use crate::app::i18n::FederationTranslations;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+#[cfg(feature = "tidal")]
+use gpui::MouseButton;
+
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{ClickEvent, FontWeight, SharedString, WeakEntity, div, relative, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Divider, HStack, Input, InputSize, StackSpacing, TabVariant,
     Tabs, Text, TextSize, VStack,
@@ -27,6 +30,10 @@ macro_rules! dev_track {
 
 impl PlayerView {
     /// Render federation sources settings content
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_federation_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -129,8 +136,9 @@ impl PlayerView {
                                     && let Some(state) = source_state.upgrade()
                                 {
                                     state.update(cx, |state, cx| {
-                                        state.app.federation.streaming_source_tab =
-                                            (*key).to_owned();
+                                        (*key).clone_into(
+                                            &mut state.app.federation.streaming_source_tab,
+                                        );
                                         state.app.settings.navigation.clear_setting_target();
                                         cx.notify();
                                     });
@@ -232,6 +240,10 @@ impl PlayerView {
         dev_track!(button, format!("settings.federation.add.{type_name}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_source_card(
         &self,
         source_idx: usize,
@@ -258,8 +270,7 @@ impl PlayerView {
             .cloned();
         let status_label = status
             .as_ref()
-            .map(|s| s.label().to_string())
-            .unwrap_or_else(|| "untested".to_string());
+            .map_or_else(|| "untested".to_string(), |s| s.label().to_string());
         let status_color = match &status {
             Some(ConnectionStatus::Connected { .. }) => theme.success,
             Some(ConnectionStatus::Error(_)) => theme.error,
@@ -440,7 +451,7 @@ impl PlayerView {
             // provider credentials so Login/Cancel/Logout stay reachable.
             .when_some(
                 self.render_service_login_section(source_idx, source, theme, cx),
-                |card, section| card.child(section),
+                gpui::ParentElement::child,
             )
             // Diagnostic steps (shown after a test with diagnostic results)
             .when_some(diagnostic, {
@@ -536,7 +547,7 @@ impl PlayerView {
                                                 .children(auth_options.iter().map(|option| {
                                                     let is_selected = value == *option;
                                                     Button::new(
-                                                        SharedString::from(format!("auth-{}-{}", source_idx, option)),
+                                                        SharedString::from(format!("auth-{source_idx}-{option}")),
                                                         *option,
                                                     )
                                                     .variant(if is_selected {
@@ -654,6 +665,10 @@ impl PlayerView {
     /// Tidal login controls: Login (device-code flow) / Logout plus, while a
     /// login runs, the verification URL (clickable) and user code (copyable).
     #[cfg(feature = "tidal")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_tidal_login_section(
         &self,
         source_idx: usize,
@@ -750,8 +765,8 @@ impl PlayerView {
                 .flex()
                 .items_center()
                 .gap(d.gap)
-                .when_some(action_button, |row, button| row.child(button))
-                .when_some(logout_button, |row, button| row.child(button))
+                .when_some(action_button, gpui::ParentElement::child)
+                .when_some(logout_button, gpui::ParentElement::child)
                 .child(
                     Text::new(if logged_in {
                         text.logged_in
@@ -840,6 +855,10 @@ impl PlayerView {
     /// Spotify login controls: Login (OAuth in the system browser) / Logout
     /// plus, while a login runs, the authorize URL as a clickable fallback.
     #[cfg(feature = "spotify")]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_spotify_login_section(
         &self,
         source_idx: usize,
@@ -859,9 +878,9 @@ impl PlayerView {
             .filter(|login| login.source_id == source_id)
             .map(|login| login.authorize_url.clone());
         let flow_active = active_login.is_some();
-        let logged_in = sotf_audio_player::service_login::spotify_cache_dir()
-            .map(|dir| sotf_audio_player::service_login::spotify_credentials_path(&dir).exists())
-            .unwrap_or(false);
+        let logged_in = sotf_audio_player::service_login::spotify_cache_dir().is_some_and(|dir| {
+            sotf_audio_player::service_login::spotify_credentials_path(&dir).exists()
+        });
 
         let action_button: gpui::AnyElement = if flow_active {
             Button::new(
@@ -918,7 +937,7 @@ impl PlayerView {
                 .items_center()
                 .gap(d.gap)
                 .child(action_button)
-                .when_some(logout_button, |row, button| row.child(button))
+                .when_some(logout_button, gpui::ParentElement::child)
                 .child(
                     Text::new(if logged_in {
                         text.logged_in
@@ -968,6 +987,14 @@ impl PlayerView {
 
     /// Render a single-line progress row for an active federation scan.
     /// Shown above the footer.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(crate) fn render_federation_scan_progress(
         &self,
         cx: &mut Context<Self>,

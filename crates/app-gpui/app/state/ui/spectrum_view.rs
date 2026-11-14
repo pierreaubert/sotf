@@ -29,7 +29,7 @@ impl SpectrumViewState {
         }
         if let Some(data) = data.filter(|frame| Self::frequency_range(frame).is_some()) {
             self.held_frame = Some(super::super::playback::HeldSpectrumFrame {
-                data: data.clone(),
+                data: std::sync::Arc::clone(data),
                 sample_rate,
             });
             self.hold = true;
@@ -38,6 +38,7 @@ impl SpectrumViewState {
 
     /// Display bands are equally spaced in log frequency. Recover their edges
     /// from published centers rather than assuming a fixed 20 Hz–20 kHz range.
+    #[must_use]
     pub fn frequency_range(data: &SpectrumData) -> Option<(f32, f32)> {
         let frequencies = &data.frequencies;
         if frequencies.len() < 2
@@ -59,6 +60,12 @@ impl SpectrumViewState {
 
     /// Optional five-band display smoothing, shared by the bars and inspection.
     /// This changes only the display and does not change audio or analyzer setup.
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub fn magnitudes(data: &SpectrumData, smoothed: bool) -> Arc<[f32]> {
         let display = Self::display_magnitudes(&data.magnitudes);
         if !smoothed || display.is_empty() {
@@ -77,6 +84,11 @@ impl SpectrumViewState {
     }
 
     /// Interpolate unmeasured log bands for display without changing band power.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub fn display_magnitudes(magnitudes: &Arc<[f32]>) -> Arc<[f32]> {
         if magnitudes
             .iter()
@@ -85,7 +97,7 @@ impl SpectrumViewState {
             return Arc::from([]);
         }
         if magnitudes.iter().all(|value| value.is_finite()) {
-            return magnitudes.clone();
+            return std::sync::Arc::clone(magnitudes);
         }
         let mut display = magnitudes.to_vec();
         let measured: Vec<_> = magnitudes
@@ -112,11 +124,22 @@ impl SpectrumViewState {
         display.into()
     }
 
+    #[must_use]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub fn inspected_band(&self, count: usize) -> Option<usize> {
         let fraction = self.cursor_fraction.filter(|f| f.is_finite())?;
         (count > 0).then(|| ((fraction.clamp(0.0, 1.0) * count as f32) as usize).min(count - 1))
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub fn inspect_frequency(&mut self, data: &SpectrumData, frequency_hz: f64) {
         if !frequency_hz.is_finite() || frequency_hz <= 0.0 {
             return;

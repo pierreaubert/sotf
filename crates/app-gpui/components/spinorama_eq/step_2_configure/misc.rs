@@ -7,7 +7,7 @@ use crate::components::design::Ds;
 use crate::components::graphs::common::{rgba_to_u32, theme_to_chart_theme};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{SharedString, div, px};
 use gpui_px::line;
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, Card, HStack, Progress, ProgressSize,
@@ -33,6 +33,14 @@ impl PlayerView {
     // Step 2: Configure
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn render_spinorama_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -286,7 +294,6 @@ impl PlayerView {
                             .spinorama_eq_state
                             .optimizer_config
                             .algorithm = match algo {
-                            "autoeq:cobyla" | "cobyla" => RoomEqAlgorithm::Cobyla,
                             "autoeq:de" => RoomEqAlgorithm::DifferentialEvolution,
                             "autoeq:bo" => RoomEqAlgorithm::BayesianOptimization,
                             "autoeq:cmaes" | "cma-es" => RoomEqAlgorithm::CmaEs,
@@ -724,7 +731,7 @@ impl PlayerView {
                             .measurement_state
                             .spinorama_eq_state
                             .optimizer_config
-                            .sample_rate = value as u32;
+                            .sample_rate = u32::try_from(value).unwrap_or(u32::MAX);
                         cx.notify();
                     });
                 }
@@ -869,7 +876,6 @@ impl PlayerView {
                     use sotf_audio_player::autoeq::DetailLevel;
                     state.update(cx, |state, cx| {
                         state.app.measurement_state.spinorama_eq_state.detail_level = match level {
-                            "simple" => DetailLevel::Simple,
                             "intermediate" => DetailLevel::Intermediate,
                             "expert" => DetailLevel::Expert,
                             _ => DetailLevel::Simple,
@@ -903,7 +909,7 @@ impl PlayerView {
                                 c.bo_initial_samples = params.bo_initial_samples;
                                 c.bo_batch_size = params.bo_batch_size;
                                 c.bo_posterior_std_threshold = params.bo_posterior_std_threshold;
-                                c.bo_acquisition = params.bo_acquisition.clone();
+                                c.bo_acquisition.clone_from(&params.bo_acquisition);
                                 c.bo_ehvi = params.bo_ehvi;
                                 c.refine = params.refine;
                                 c.smooth = params.smooth;
@@ -985,7 +991,7 @@ impl PlayerView {
                                     let mode_value = *mode;
 
                                     Button::new(
-                                        SharedString::from(format!("spinorama-mode-{:?}", mode)),
+                                        SharedString::from(format!("spinorama-mode-{mode:?}")),
                                         mode.as_str(),
                                     )
                                     .variant(if is_selected {
@@ -1051,8 +1057,7 @@ impl PlayerView {
 
                                                 Button::new(
                                                     SharedString::from(format!(
-                                                        "spinorama-curve-{:?}",
-                                                        curve
+                                                        "spinorama-curve-{curve:?}"
                                                     )),
                                                     curve.short_name(),
                                                 )
@@ -1272,12 +1277,12 @@ impl PlayerView {
                                         .weight(TextWeight::Semibold),
                                 )
                                 .child(
-                                    Text::new(format!("Current: {:.4}", current_loss))
+                                    Text::new(format!("Current: {current_loss:.4}"))
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
                                 .child(
-                                    Text::new(format!("Best: {:.4}", best_loss))
+                                    Text::new(format!("Best: {best_loss:.4}"))
                                         .size(TextSize::Xs)
                                         .color(theme.success),
                                 ),
@@ -1287,7 +1292,7 @@ impl PlayerView {
                                 .w(px(700.0)) // intentional: fixed chart canvas width
                                 .flex()
                                 .flex_col()
-                                .when_some(chart.ok(), |el, c| el.child(c)),
+                                .when_some(chart.ok(), gpui::ParentElement::child),
                         ),
                 )
             })

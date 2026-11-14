@@ -30,3 +30,10 @@ impl<'a> InteractionSimulator<'a> {
         self.cx.run_until_parked();
     }
 }
+
+impl std::fmt::Debug for InteractionSimulator<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InteractionSimulator")
+            .finish_non_exhaustive()
+    }
+}

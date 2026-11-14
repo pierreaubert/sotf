@@ -27,6 +27,7 @@ impl TakeReviewState {
         self.saved_inputs = Some(inputs);
     }
 
+    #[must_use]
     pub fn save_status(&self, inputs: &serde_json::Value) -> RecordingSaveStatus {
         if self.saved_to.is_none() {
             RecordingSaveStatus::NotSaved
@@ -77,12 +78,14 @@ impl TakeReviewState {
         true
     }
 
+    #[must_use]
     pub fn is_accepted(&self, take: &ChannelRecording) -> bool {
         take.state == ChannelRecordingState::Done
             && take.result.is_some()
             && self.accepted.contains(&Self::key(take))
     }
 
+    #[must_use]
     pub fn all_accepted(&self, takes: &[ChannelRecording]) -> bool {
         !takes.is_empty() && takes.iter().all(|take| self.is_accepted(take))
     }

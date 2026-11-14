@@ -66,7 +66,7 @@ pub enum Tool {
     AbTesting,
 }
 
-/// A discovered Cast device (Chromecast or AirPlay) on the local network.
+/// A discovered Cast device (Chromecast or `AirPlay`) on the local network.
 #[derive(Debug, Clone)]
 pub struct CastDeviceInfo {
     pub name: String,
@@ -226,6 +226,7 @@ pub enum LoudnessControlOperation {
 }
 
 impl LoudnessControlOperation {
+    #[must_use]
     pub fn parameter_name(self) -> &'static str {
         match self {
             Self::Start => "start",
@@ -235,6 +236,7 @@ impl LoudnessControlOperation {
         }
     }
 
+    #[must_use]
     pub fn help_label(self) -> &'static str {
         match self {
             Self::Start => "Start I/LRA",

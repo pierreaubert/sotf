@@ -6,6 +6,7 @@ use crate::PluginSettings;
 use std::path::PathBuf;
 
 /// Specification for a plugin parameter in the TUI
+#[derive(Debug)]
 pub struct TuiParamSpec {
     pub name: String,
     pub value: String,
@@ -20,6 +21,7 @@ pub enum TuiParamType {
     Choice { count: usize },
 }
 
+#[derive(Debug)]
 pub struct TuiParamDescriptor {
     pub name: String,
     pub param_type: TuiParamType,
@@ -29,6 +31,11 @@ pub struct TuiParamDescriptor {
 }
 
 impl TuiEditablePlugin for PluginSettings {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "TUI editing quantizes values within the parameter descriptor limits"
+    )]
     fn get_descriptors(&self) -> Vec<TuiParamDescriptor> {
         use sotf_plugins::param_specs;
         match self {
@@ -39,7 +46,7 @@ impl TuiEditablePlugin for PluginSettings {
                     let g = format!("Filter {}", i + 1);
                     for spec in param_specs::eq::BAND_TEMPLATE {
                         let mut d = spec_to_descriptor(spec);
-                        d.group = g.clone();
+                        d.group.clone_from(&g);
                         descs.push(d);
                     }
                 }
@@ -52,7 +59,7 @@ impl TuiEditablePlugin for PluginSettings {
                     let g = format!("Filter {}", i + 1);
                     for spec in param_specs::linear_phase_eq::BAND_TEMPLATE {
                         let mut d = spec_to_descriptor(spec);
-                        d.group = g.clone();
+                        d.group.clone_from(&g);
                         descs.push(d);
                     }
                 }
@@ -65,7 +72,7 @@ impl TuiEditablePlugin for PluginSettings {
                     let g = format!("Band {}", i + 1);
                     for spec in param_specs::multiband_compressor::BAND_TEMPLATE {
                         let mut d = spec_to_descriptor(spec);
-                        d.group = g.clone();
+                        d.group.clone_from(&g);
                         descs.push(d);
                     }
                 }
@@ -78,7 +85,7 @@ impl TuiEditablePlugin for PluginSettings {
                     let g = format!("Band {}", i + 1);
                     for spec in param_specs::multiband_expander::BAND_TEMPLATE {
                         let mut d = spec_to_descriptor(spec);
-                        d.group = g.clone();
+                        d.group.clone_from(&g);
                         descs.push(d);
                     }
                 }
@@ -93,7 +100,7 @@ impl TuiEditablePlugin for PluginSettings {
                             max: 32,
                             step: 1,
                         },
-                        unit: "".to_string(),
+                        unit: String::new(),
                         group: "Matrix".to_string(),
                         doc: "Number of input channels".to_string(),
                     },
@@ -104,7 +111,7 @@ impl TuiEditablePlugin for PluginSettings {
                             max: 32,
                             step: 1,
                         },
-                        unit: "".to_string(),
+                        unit: String::new(),
                         group: "Matrix".to_string(),
                         doc: "Number of output channels".to_string(),
                     },
@@ -128,6 +135,10 @@ impl TuiEditablePlugin for PluginSettings {
         params
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Exhaustive plugin parameter presentation and editing stay together for schema review"
+    )]
     fn get_value_as_string(&self, index: usize) -> String {
         use sotf_plugins::param_specs::ParamType;
         match self {
@@ -140,7 +151,7 @@ impl TuiEditablePlugin for PluginSettings {
                 let global_count = GLOBAL_PARAMS.len();
                 let band_params = BAND_TEMPLATE.len();
                 if index == 0 {
-                    return format!("{}", max_filters);
+                    return format!("{max_filters}");
                 }
                 if index < global_count {
                     // tdf2 / topology / auto_gain_enabled / oversampling
@@ -241,8 +252,8 @@ impl TuiEditablePlugin for PluginSettings {
                 let band_params = band_template.len();
                 if index < global_count {
                     let val = match index {
-                        0 => return format!("{}", num_bands),
-                        1 => return format!("{}", crossover_preset),
+                        0 => return format!("{num_bands}"),
+                        1 => return format!("{crossover_preset}"),
                         2 => *crossover_freq_1,
                         3 => *crossover_freq_2,
                         4 => *crossover_freq_3,
@@ -273,24 +284,15 @@ impl TuiEditablePlugin for PluginSettings {
                             1 => band_template[1].format_value(if band.bypass { 1.0 } else { 0.0 }),
                             2 => band
                                 .threshold_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
-                            3 => band
-                                .ratio
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.1}")),
+                            3 => band.ratio.map_or("Global".into(), |v| format!("{v:.1}")),
                             4 => band
                                 .attack_ms
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.1}")),
                             5 => band
                                 .release_ms
-                                .map(|v| format!("{:.0}", v))
-                                .unwrap_or("Global".into()),
-                            6 => band
-                                .knee_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.0}")),
+                            6 => band.knee_db.map_or("Global".into(), |v| format!("{v:.1}")),
                             7 => format!("{:.1}", band.makeup_gain_db),
                             _ => String::new(),
                         }
@@ -325,8 +327,8 @@ impl TuiEditablePlugin for PluginSettings {
                 let band_params = band_template.len();
                 if index < global_count {
                     let val = match index {
-                        0 => return format!("{}", num_bands),
-                        1 => return format!("{}", crossover_preset),
+                        0 => return format!("{num_bands}"),
+                        1 => return format!("{crossover_preset}"),
                         2 => *crossover_freq_1,
                         3 => *crossover_freq_2,
                         4 => *crossover_freq_3,
@@ -360,36 +362,20 @@ impl TuiEditablePlugin for PluginSettings {
                             1 => band_template[1].format_value(if band.bypass { 1.0 } else { 0.0 }),
                             2 => band
                                 .threshold_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
-                            3 => band
-                                .ratio
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.1}")),
+                            3 => band.ratio.map_or("Global".into(), |v| format!("{v:.1}")),
                             4 => band
                                 .attack_ms
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.1}")),
                             5 => band
                                 .release_ms
-                                .map(|v| format!("{:.0}", v))
-                                .unwrap_or("Global".into()),
-                            6 => band
-                                .range_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
-                            7 => band
-                                .knee_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.0}")),
+                            6 => band.range_db.map_or("Global".into(), |v| format!("{v:.1}")),
+                            7 => band.knee_db.map_or("Global".into(), |v| format!("{v:.1}")),
                             8 => band
                                 .hysteresis_db
-                                .map(|v| format!("{:.1}", v))
-                                .unwrap_or("Global".into()),
-                            9 => band
-                                .hold_ms
-                                .map(|v| format!("{:.0}", v))
-                                .unwrap_or("Global".into()),
+                                .map_or("Global".into(), |v| format!("{v:.1}")),
+                            9 => band.hold_ms.map_or("Global".into(), |v| format!("{v:.0}")),
                             _ => String::new(),
                         }
                     } else {
@@ -402,8 +388,8 @@ impl TuiEditablePlugin for PluginSettings {
                 output_channels,
                 ..
             } => match index {
-                0 => format!("{}", input_channels),
-                1 => format!("{}", output_channels),
+                0 => format!("{input_channels}"),
+                1 => format!("{output_channels}"),
                 _ => String::new(),
             },
             // Generic: all other plugins use ParamSpec
@@ -434,6 +420,17 @@ impl TuiEditablePlugin for PluginSettings {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "TUI editing quantizes values within the parameter descriptor limits"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Exhaustive plugin parameter presentation and editing stay together for schema review"
+    )]
     fn adjust_param(&mut self, index: usize, delta: f64) -> bool {
         use sotf_plugins::param_specs::ParamType;
         match self {
@@ -557,7 +554,7 @@ impl TuiEditablePlugin for PluginSettings {
                         }
                         1 => {
                             filter.frequency =
-                                (filter.frequency + delta * 10.0).clamp(20.0, 20000.0)
+                                (filter.frequency + delta * 10.0).clamp(20.0, 20000.0);
                         }
                         2 => filter.q = (filter.q + delta * 0.05).clamp(0.1, 10.0),
                         3 => filter.gain_db = (filter.gain_db + delta * 0.5).clamp(-24.0, 24.0),
@@ -906,25 +903,25 @@ impl TuiEditablePlugin for PluginSettings {
                         *num_bins = ((*num_bins as i64) + delta as i64).clamp(
                             pk(SP, "num_bins").min_f64() as i64,
                             pk(SP, "num_bins").max_f64() as i64,
-                        ) as usize
+                        ) as usize;
                     }
                     1 => {
                         *min_freq = (*min_freq + delta as f32).clamp(
                             pk(SP, "min_freq").min_f64() as f32,
                             pk(SP, "min_freq").max_f64() as f32,
-                        )
+                        );
                     }
                     2 => {
                         *max_freq = (*max_freq + delta as f32 * 100.0).clamp(
                             pk(SP, "max_freq").min_f64() as f32,
                             pk(SP, "max_freq").max_f64() as f32,
-                        )
+                        );
                     }
                     3 => {
                         *smoothing = (*smoothing + delta as f32 * 0.01).clamp(
                             pk(SP, "smoothing").min_f64() as f32,
                             pk(SP, "smoothing").max_f64() as f32,
-                        )
+                        );
                     }
                     4 => {
                         let modes = [
@@ -976,11 +973,11 @@ impl TuiEditablePlugin for PluginSettings {
                 match index {
                     0 => {
                         *input_channels =
-                            ((*input_channels as i64) + delta as i64).clamp(1, 32) as usize
+                            ((*input_channels as i64) + delta as i64).clamp(1, 32) as usize;
                     }
                     1 => {
                         *output_channels =
-                            ((*output_channels as i64) + delta as i64).clamp(1, 32) as usize
+                            ((*output_channels as i64) + delta as i64).clamp(1, 32) as usize;
                     }
                     _ => return false,
                 }
@@ -1018,14 +1015,14 @@ impl TuiEditablePlugin for PluginSettings {
                 *preset = presets[next];
                 let p = CrossfeedPluginParams::from_preset(*preset);
                 *mode = p.mode;
-                *bauer_fcut_hz = p.bauer_fcut_hz as f64;
-                *bauer_feed_db = p.bauer_feed_db as f64;
-                *meier_level = p.meier_level as f64;
-                *mb_low_freq_hz = p.mb_low_freq_hz as f64;
-                *mb_mid_high_freq_hz = p.mb_mid_high_freq_hz as f64;
-                *mb_low_feed_db = p.mb_low_feed_db as f64;
-                *mb_mid_feed_db = p.mb_mid_feed_db as f64;
-                *mb_high_feed_db = p.mb_high_feed_db as f64;
+                *bauer_fcut_hz = f64::from(p.bauer_fcut_hz);
+                *bauer_feed_db = f64::from(p.bauer_feed_db);
+                *meier_level = f64::from(p.meier_level);
+                *mb_low_freq_hz = f64::from(p.mb_low_freq_hz);
+                *mb_mid_high_freq_hz = f64::from(p.mb_mid_high_freq_hz);
+                *mb_low_feed_db = f64::from(p.mb_low_feed_db);
+                *mb_mid_feed_db = f64::from(p.mb_mid_feed_db);
+                *mb_high_feed_db = f64::from(p.mb_high_feed_db);
                 return true;
             }
             // Generic: all other plugins use ParamSpec
@@ -1059,14 +1056,18 @@ impl TuiEditablePlugin for PluginSettings {
                     return GLOBAL_PARAMS[index]
                         .choice_labels()
                         .iter()
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                         .collect();
                 }
                 let filter_offset = index - global_count;
                 let param_idx = filter_offset % band_params;
                 if param_idx == 3 && (filter_offset / band_params) < filters.len() {
                     let spec = &BAND_TEMPLATE[3];
-                    return spec.choice_labels().iter().map(|s| s.to_string()).collect();
+                    return spec
+                        .choice_labels()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 Vec::new()
             }
@@ -1080,7 +1081,11 @@ impl TuiEditablePlugin for PluginSettings {
                             sotf_plugins::param_specs::ParamType::Choice { .. }
                         )
                     {
-                        return spec.choice_labels().iter().map(|s| s.to_string()).collect();
+                        return spec
+                            .choice_labels()
+                            .iter()
+                            .map(std::string::ToString::to_string)
+                            .collect();
                     }
                     return Vec::new();
                 }
@@ -1090,7 +1095,11 @@ impl TuiEditablePlugin for PluginSettings {
                 let band_idx = band_offset / band_params;
                 if param_in_band == 0 && band_idx < filters.len() {
                     let spec = &sotf_plugins::param_specs::linear_phase_eq::BAND_TEMPLATE[0];
-                    return spec.choice_labels().iter().map(|s| s.to_string()).collect();
+                    return spec
+                        .choice_labels()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect();
                 }
                 Vec::new()
             }
@@ -1112,7 +1121,10 @@ impl TuiEditablePlugin for PluginSettings {
             _ => {
                 let specs = self.param_specs();
                 if let Some(spec) = specs.get(index) {
-                    spec.choice_labels().iter().map(|s| s.to_string()).collect()
+                    spec.choice_labels()
+                        .iter()
+                        .map(std::string::ToString::to_string)
+                        .collect()
                 } else {
                     Vec::new()
                 }

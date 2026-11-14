@@ -4,8 +4,8 @@ use crate::app::i18n::MultiCaptureTranslations;
 use crate::app::state::measurement::{CaptureAction, CapturePath};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
+use gpui::div;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{Button, ButtonVariant, Heading, Input, StackSpacing, Text, VStack};
 use sotf_audio_player::ui_models::capture::CaptureStage;
 use sotf_audio_player::ui_models::room_eq::RoomEqViewEvent;
@@ -57,6 +57,14 @@ impl PlayerView {
         )
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_multi_capture_panel(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -184,7 +192,7 @@ impl PlayerView {
                                         }
                                         Ok(None) => {}
                                         Err(error) => {
-                                            measurement.multi_capture.workflow.message = error
+                                            measurement.multi_capture.workflow.message = error;
                                         }
                                     }
                                 });

@@ -1,5 +1,11 @@
-use super::*;
+use super::{
+    Alignment, App, Constraint, Direction, Frame, Layout, Modifier, Paragraph, Rect, Style,
+};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_loading_screen(f: &mut Frame, app: &App) {
     let area = f.area();
 

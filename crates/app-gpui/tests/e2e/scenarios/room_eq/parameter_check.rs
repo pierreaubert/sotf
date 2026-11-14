@@ -5,6 +5,7 @@ use sotf_audio_player_gpui::app::types::{CrossoverType, RoomEqDataSource, Speake
 use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
+#[derive(Debug)]
 pub struct RoomEqParameterCheckScenario;
 
 impl TestScenario for RoomEqParameterCheckScenario {

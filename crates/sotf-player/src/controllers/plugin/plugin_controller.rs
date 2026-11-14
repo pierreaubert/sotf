@@ -1,3 +1,4 @@
+const PRESETS: &[f64] = &[0.4, 0.6, 0.8];
 use super::super::plugin_param_map::momentary_action_param;
 pub use super::super::plugin_param_map::param_index_to_engine_param;
 use super::adjust::adjust_plugin_param;
@@ -81,6 +82,10 @@ const LOUDNESS_MODE_IDX: usize = sotf_plugins::param_specs::index_of(
     "mode",
 );
 
+#[expect(
+    clippy::float_cmp,
+    reason = "These values encode exact integer parameter choices "
+)]
 fn rejects_parameter_transition(
     settings: &PluginSettings,
     param_idx: usize,
@@ -111,9 +116,7 @@ fn rejects_parameter_transition(
             ..
         } => {
             (param_idx == LOUDNESS_AUTO_CALIBRATED_IDX && value <= 0.5 && *mode == 2)
-                || (param_idx == LOUDNESS_MODE_IDX
-                    && value.round() as usize == 2
-                    && !auto_calibrated)
+                || (param_idx == LOUDNESS_MODE_IDX && value.round() == 2.0 && !auto_calibrated)
         }
         _ => false,
     }
@@ -199,6 +202,10 @@ fn add_eq_band_to(settings: &mut PluginSettings, target: EqEditTarget) -> Result
     Ok(())
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "The parameter schema bounds linear-phase filter counts to small integers"
+)]
 fn sync_linear_phase_eq_band_count(settings: &mut PluginSettings) {
     if let PluginSettings::LinearPhaseEq {
         num_filters,
@@ -212,12 +219,19 @@ fn sync_linear_phase_eq_band_count(settings: &mut PluginSettings) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The parameter schema supplies a small integral maximum band count "
+)]
 fn validate_linear_phase_eq_band_count(
     settings: &PluginSettings,
     change: isize,
 ) -> Result<(), String> {
     if let PluginSettings::LinearPhaseEq { filters, .. } = settings {
-        let next = filters.len() as isize + change;
+        let next = isize::try_from(filters.len())
+            .ok()
+            .and_then(|count| count.checked_add(change))
+            .ok_or("Linear Phase EQ band count is out of range")?;
         let maximum = sotf_plugins::param_specs::find_by_key(
             sotf_plugins::param_specs::linear_phase_eq::PARAMS,
             "num_filters",
@@ -260,7 +274,7 @@ fn copy_eq_global_to_channel_in_settings(
         .as_mut()
         .and_then(|channels| channels.get_mut(channel))
         .ok_or_else(|| "Selected EQ channel is unavailable".to_string())?;
-    *target = filters.clone();
+    target.clone_from(filters);
     Ok(())
 }
 
@@ -282,7 +296,7 @@ fn copy_eq_channel_to_all_in_settings(
         .cloned()
         .ok_or_else(|| "Selected EQ channel is unavailable".to_string())?;
     for filters in channels {
-        *filters = source.clone();
+        filters.clone_from(&source);
     }
     Ok(())
 }
@@ -306,6 +320,7 @@ fn cycle_eq_topology_in_settings(
     PluginUpdateEffect::Structural
 }
 
+#[must_use]
 pub fn eq_supports_svf(settings: &PluginSettings) -> bool {
     let PluginSettings::EQ {
         filters,
@@ -321,6 +336,14 @@ pub fn eq_supports_svf(settings: &PluginSettings) -> bool {
         .all(|filter| filter.order == 2)
 }
 
+/// Set eq global topology.
+///
+/// # Errors
+/// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
+#[expect(
+    clippy::float_cmp,
+    reason = "These values encode exact integer parameter choices "
+)]
 pub fn set_eq_global_topology(
     settings: &mut PluginSettings,
     value: f64,
@@ -341,6 +364,10 @@ pub fn set_eq_global_topology(
     Ok(PluginUpdateEffect::Structural)
 }
 
+#[expect(
+    clippy::float_cmp,
+    reason = "These values encode exact integer parameter choices "
+)]
 fn set_eq_order_in_settings(
     settings: &mut PluginSettings,
     target: EqEditTarget,
@@ -486,11 +513,13 @@ impl Default for PluginController {
 }
 
 impl PluginController {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Whether the plugin graph is a simple linear chain (rack view compatible).
+    #[must_use]
     pub fn is_linear(&self) -> bool {
         self.graph.is_linear()
     }
@@ -504,11 +533,7 @@ impl PluginController {
         match self.try_add_plugin(plugin_type) {
             Ok(effect) => effect,
             Err(err) => {
-                log::warn!(
-                    "[PluginController] Failed to insert {:?}: {}",
-                    plugin_type,
-                    err
-                );
+                log::warn!("[PluginController] Failed to insert {plugin_type:?}: {err}");
                 PluginUpdateEffect::None
             }
         }
@@ -530,6 +555,9 @@ impl PluginController {
 
     /// Add a plugin whose complete settings are already known. This preserves
     /// external descriptors and returns insertion failures to the UI.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn add_plugin_settings(
         &mut self,
         settings: PluginSettings,
@@ -542,12 +570,18 @@ impl PluginController {
 
     /// Toggle a plugin's enabled state. A rejected channel contract leaves the
     /// graph unchanged and is returned to the UI.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_plugin(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
         self.graph.toggle_plugin_by_index(index)?;
         Ok(PluginUpdateEffect::Structural)
     }
 
     /// Move a plugin up in the chain. Returns `Structural` if moved, `None` otherwise.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn move_plugin_up(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
         if self.graph.can_move_up_by_index(index) {
             self.graph.move_plugin(index, index - 1)?;
@@ -559,6 +593,9 @@ impl PluginController {
     }
 
     /// Move a plugin down in the chain. Returns `Structural` if moved, `None` otherwise.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn move_plugin_down(&mut self, index: usize) -> Result<PluginUpdateEffect, String> {
         if self.graph.can_move_down_by_index(index) {
             self.graph.move_plugin(index, index + 1)?;
@@ -604,6 +641,7 @@ impl PluginController {
     // ========================================================================
 
     /// Get the currently editing plugin (immutable).
+    #[must_use]
     pub fn get_editing_plugin(&self) -> Option<&Plugin> {
         self.editing_plugin_index
             .and_then(|idx| self.graph.get_plugin(idx))
@@ -616,6 +654,7 @@ impl PluginController {
     }
 
     /// Whether the chain has an enabled spectrum analyzer.
+    #[must_use]
     pub fn has_enabled_spectrum_analyzer(&self) -> bool {
         self.graph.has_enabled_spectrum_analyzer()
     }
@@ -714,16 +753,11 @@ impl PluginController {
         param_idx: usize,
         value: f64,
     ) -> PluginUpdateEffect {
-        if self
+        if let Some(key) = self
             .graph
             .get_plugin(plugin_idx)
-            .is_some_and(|plugin| momentary_action_param(&plugin.settings, param_idx).is_some())
+            .and_then(|plugin| momentary_action_param(&plugin.settings, param_idx))
         {
-            let key = momentary_action_param(
-                &self.graph.get_plugin(plugin_idx).unwrap().settings,
-                param_idx,
-            )
-            .unwrap();
             if key == "clear_profile" && value <= 0.5 {
                 return PluginUpdateEffect::None;
             }
@@ -926,6 +960,10 @@ impl PluginController {
         set_eq_topology_in_settings(&mut plugin.settings, target, band_idx, topology)
     }
 
+    /// Set eq filter order for target.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn set_eq_filter_order_for_target(
         &mut self,
         plugin_idx: usize,
@@ -940,6 +978,10 @@ impl PluginController {
         set_eq_order_in_settings(&mut plugin.settings, target, band_idx, order)
     }
 
+    /// Set eq filter order for target by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn set_eq_filter_order_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1008,7 +1050,6 @@ impl PluginController {
         // value (e.g. 0.5 or 0.55) snaps onto the next preset rather than
         // skipping a stop. Values past the last preset wrap back to None
         // (auto-Bark).
-        const PRESETS: &[f64] = &[0.4, 0.6, 0.8];
         let next = |current: Option<f64>| -> Option<f64> {
             match current {
                 None => Some(PRESETS[0]),
@@ -1134,7 +1175,10 @@ impl PluginController {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The operation accepts the complete plugin or scan context explicitly"
+    )]
     pub fn add_eq_kautz_section_for_target(
         &mut self,
         plugin_idx: usize,
@@ -1150,7 +1194,10 @@ impl PluginController {
         add_eq_kautz_section_in_settings(&mut plugin.settings, target, band_idx, pole_freq, q, gain)
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "The operation accepts the complete plugin or scan context explicitly"
+    )]
     pub fn add_eq_kautz_section_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1253,17 +1300,12 @@ impl PluginController {
         param_idx: usize,
         value: f64,
     ) -> PluginUpdateEffect {
-        if self
+        if let Some(key) = self
             .graph
             .nodes
             .get(&node_id)
-            .is_some_and(|node| momentary_action_param(&node.plugin.settings, param_idx).is_some())
+            .and_then(|node| momentary_action_param(&node.plugin.settings, param_idx))
         {
-            let key = momentary_action_param(
-                &self.graph.nodes.get(&node_id).unwrap().plugin.settings,
-                param_idx,
-            )
-            .unwrap();
             if key == "clear_profile" && value <= 0.5 {
                 return PluginUpdateEffect::None;
             }
@@ -1304,6 +1346,9 @@ impl PluginController {
     }
 
     /// Set a string parameter value for a plugin by node ID.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn set_plugin_param_string_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1407,6 +1452,9 @@ impl PluginController {
     /// File path parameters (IR file, SOFA file) are validated against
     /// path traversal before being accepted. AB Compare config strings
     /// are JSON and not validated as paths.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn set_plugin_param_string(
         &mut self,
         plugin_idx: usize,
@@ -1574,9 +1622,8 @@ impl PluginController {
         let Ok(default_settings) = PluginSettings::default_for(&plugin_type) else {
             return PluginUpdateEffect::None;
         };
-        let default_value = match default_settings.param_value(param_idx) {
-            Some(v) => v,
-            None => return PluginUpdateEffect::None,
+        let Some(default_value) = default_settings.param_value(param_idx) else {
+            return PluginUpdateEffect::None;
         };
         if self.graph.nodes.get(&node_id).is_some_and(|node| {
             rejects_parameter_transition(&node.plugin.settings, param_idx, default_value, false)
@@ -1649,9 +1696,8 @@ impl PluginController {
         let Ok(default_settings) = PluginSettings::default_for(&plugin_type) else {
             return PluginUpdateEffect::None;
         };
-        let default_value = match default_settings.param_value(param_idx) {
-            Some(v) => v,
-            None => return PluginUpdateEffect::None,
+        let Some(default_value) = default_settings.param_value(param_idx) else {
+            return PluginUpdateEffect::None;
         };
         if self.graph.get_plugin(plugin_idx).is_some_and(|plugin| {
             rejects_parameter_transition(&plugin.settings, param_idx, default_value, true)
@@ -1692,7 +1738,10 @@ impl PluginController {
     // EQ operations
     // ========================================================================
 
-    /// Load EQ filters from an APO file path. Works for both EQ and LinearPhaseEq.
+    /// Load EQ filters from an APO file path. Works for both EQ and `LinearPhaseEq`.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_apo_filters_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1713,14 +1762,23 @@ impl PluginController {
             .len();
         validate_linear_phase_eq_band_count(
             &node.plugin.settings,
-            new_filters.len() as isize - current_count as isize,
+            isize::try_from(new_filters.len()).map_err(|_error| "Too many EQ bands")?
+                - isize::try_from(current_count).map_err(|_error| "Too many EQ bands")?,
         )?;
-        let filters = node.plugin.settings.eq_global_filters_mut().unwrap();
+        let filters = node
+            .plugin
+            .settings
+            .eq_global_filters_mut()
+            .ok_or("Selected node is not an EQ")?;
         *filters = new_filters;
         sync_linear_phase_eq_band_count(&mut node.plugin.settings);
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Load sofa path by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_sofa_path_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1744,6 +1802,10 @@ impl PluginController {
         }
     }
 
+    /// Load apo filters.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_apo_filters(&mut self, path: &Path) -> Result<PluginUpdateEffect, String> {
         crate::security::validate_plugin_apo_file_path(path).map_err(|e| e.to_string())?;
         let new_filters = EQFilter::from_apo_file(path)?;
@@ -1757,7 +1819,8 @@ impl PluginController {
             .len();
         validate_linear_phase_eq_band_count(
             &plugin.settings,
-            new_filters.len() as isize - current_count as isize,
+            isize::try_from(new_filters.len()).map_err(|_error| "Too many EQ bands")?
+                - isize::try_from(current_count).map_err(|_error| "Too many EQ bands")?,
         )?;
         let filters = plugin
             .settings
@@ -1769,6 +1832,9 @@ impl PluginController {
     }
 
     /// Update SOFA file path for the currently editing binaural decoder plugin.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_sofa_path(&mut self, sofa_path: String) -> Result<PluginUpdateEffect, String> {
         if let Some(plugin) = self.get_editing_plugin() {
             if !matches!(plugin.settings, PluginSettings::BinauralDecoder { .. }) {
@@ -1798,7 +1864,10 @@ impl PluginController {
         }
     }
 
-    /// Add a new EQ band to the currently editing EQ or LinearPhaseEq plugin.
+    /// Add a new EQ band to the currently editing EQ or `LinearPhaseEq` plugin.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn add_eq_band_for_target(
         &mut self,
         plugin_idx: usize,
@@ -1812,6 +1881,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Add eq band for target by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn add_eq_band_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1826,6 +1899,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Add eq band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn add_eq_band(&mut self) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -1843,6 +1920,9 @@ impl PluginController {
     /// Add a new EQ band to a plugin addressed by graph node ID.
     /// Required when editing a node inside a non-linear graph (graph view),
     /// where `editing_plugin_index` is not set.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn add_eq_band_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1863,7 +1943,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Remove an EQ band from the currently editing EQ or LinearPhaseEq plugin.
+    /// Remove an EQ band from the currently editing EQ or `LinearPhaseEq` plugin.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn remove_eq_band_for_target(
         &mut self,
         plugin_idx: usize,
@@ -1878,6 +1961,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Remove eq band for target by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn remove_eq_band_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1893,6 +1980,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Remove eq band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn remove_eq_band(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -1911,6 +2002,9 @@ impl PluginController {
     }
 
     /// Remove an EQ band from a plugin addressed by graph node ID.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn remove_eq_band_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1935,7 +2029,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Toggle mute state for an EQ or LinearPhaseEq band.
+    /// Toggle mute state for an EQ or `LinearPhaseEq` band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_mute_for_target(
         &mut self,
         plugin_idx: usize,
@@ -1952,6 +2049,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Toggle eq band mute for target by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_mute_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -1969,6 +2070,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Toggle eq band mute.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -1985,6 +2090,9 @@ impl PluginController {
     }
 
     /// Toggle mute for an EQ band on a plugin addressed by graph node ID.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_mute_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -2007,7 +2115,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
-    /// Toggle solo state for an EQ or LinearPhaseEq band.
+    /// Toggle solo state for an EQ or `LinearPhaseEq` band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_solo_for_target(
         &mut self,
         plugin_idx: usize,
@@ -2024,6 +2135,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Toggle eq band solo for target by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_solo_for_target_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -2041,6 +2156,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Toggle eq band solo.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<PluginUpdateEffect, String> {
         let plugin = self
             .get_editing_plugin_mut()
@@ -2057,6 +2176,9 @@ impl PluginController {
     }
 
     /// Toggle solo for an EQ band on a plugin addressed by graph node ID.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn toggle_eq_band_solo_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -2111,6 +2233,9 @@ impl PluginController {
     }
 
     /// Replace one channel's bands with the global EQ bands.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn copy_eq_global_to_channel(
         &mut self,
         plugin_idx: usize,
@@ -2124,6 +2249,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Copy eq global to channel by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn copy_eq_global_to_channel_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -2139,6 +2268,9 @@ impl PluginController {
     }
 
     /// Replace every channel's bands with the selected channel's bands.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn copy_eq_channel_to_all(
         &mut self,
         plugin_idx: usize,
@@ -2152,6 +2284,10 @@ impl PluginController {
         Ok(PluginUpdateEffect::Structural)
     }
 
+    /// Copy eq channel to all by node id.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is unavailable or the requested change is invalid.
     pub fn copy_eq_channel_to_all_by_node_id(
         &mut self,
         node_id: crate::plugin_graph::GraphNodeId,
@@ -2196,16 +2332,22 @@ impl PluginController {
     }
 
     /// Save the plugin chain to a file. Returns the filename used.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn save_to_file(&mut self, presets_dir: &Path, filename: &str) -> Result<String, String> {
-        let filename_with_ext = if filename.ends_with(".json") {
+        let filename_with_ext = if std::path::Path::new(filename)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
             filename.to_string()
         } else {
-            format!("{}.json", filename)
+            format!("{filename}.json")
         };
 
         self.graph
             .save_to_file(presets_dir, filename)
-            .map_err(|e| format!("Error saving: {}", e))?;
+            .map_err(|e| format!("Error saving: {e}"))?;
 
         self.last_loaded_preset = Some(filename_with_ext.clone());
         self.refresh_presets();
@@ -2213,6 +2355,9 @@ impl PluginController {
     }
 
     /// Load a plugin chain from a file. Returns `Structural` effect on success.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_from_file(
         &mut self,
         presets_dir: &Path,
@@ -2221,14 +2366,17 @@ impl PluginController {
         let warnings = self
             .graph
             .load_from_file(presets_dir, filename)
-            .map_err(|e| format!("Error loading: {}", e))?;
+            .map_err(|e| format!("Error loading: {e}"))?;
 
         self.graph.update_channel_dependent_plugins();
 
-        let filename_with_ext = if filename.ends_with(".json") {
+        let filename_with_ext = if std::path::Path::new(filename)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
             filename.to_string()
         } else {
-            format!("{}.json", filename)
+            format!("{filename}.json")
         };
         self.last_loaded_preset = Some(filename_with_ext.clone());
 
@@ -2236,6 +2384,9 @@ impl PluginController {
     }
 
     /// Save the plugin chain to the selected preset file. Returns the filename used.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn save_selected_preset(&mut self, presets_dir: &Path) -> Result<String, String> {
         if self.available_presets.is_empty() {
             return Err("No presets available".to_string());
@@ -2249,7 +2400,7 @@ impl PluginController {
 
         self.graph
             .save_to_file(presets_dir, &preset_filename)
-            .map_err(|e| format!("Error saving: {}", e))?;
+            .map_err(|e| format!("Error saving: {e}"))?;
 
         self.last_loaded_preset = Some(preset_filename.clone());
         self.refresh_presets();
@@ -2258,6 +2409,9 @@ impl PluginController {
 
     /// Load the selected preset. Returns `Structural` effect, preset filename, plugin count,
     /// and any warnings about skipped plugins.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_selected_preset(
         &mut self,
         presets_dir: &Path,
@@ -2275,7 +2429,7 @@ impl PluginController {
         let warnings = self
             .graph
             .load_from_file(presets_dir, &preset_filename)
-            .map_err(|e| format!("Error loading preset: {}", e))?;
+            .map_err(|e| format!("Error loading preset: {e}"))?;
 
         self.graph.update_channel_dependent_plugins();
         self.last_loaded_preset = Some(preset_filename.clone());
@@ -2324,6 +2478,7 @@ impl PluginController {
 
     /// List available presets for a specific plugin type.
     /// Returns sorted list of preset names (without .json extension).
+    #[must_use]
     pub fn list_plugin_presets(plugin_type: &PluginType) -> Vec<String> {
         let Some(dir) = Self::plugin_preset_dir(plugin_type) else {
             return Vec::new();
@@ -2338,7 +2493,7 @@ impl PluginController {
                 if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("json") {
                     path.file_stem()
                         .and_then(|s| s.to_str())
-                        .map(|s| s.to_string())
+                        .map(std::string::ToString::to_string)
                 } else {
                     None
                 }
@@ -2350,6 +2505,9 @@ impl PluginController {
 
     /// Save a single plugin's settings as a preset.
     /// Path: `{config_dir}/plugins/{plugin_type_name}/{preset_name}.json`
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn save_plugin_preset(
         &self,
         plugin_idx: usize,
@@ -2358,21 +2516,21 @@ impl PluginController {
         let plugin = self
             .graph
             .get_plugin(plugin_idx)
-            .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
+            .ok_or_else(|| format!("Plugin index {plugin_idx} out of range"))?;
 
         let dir = Self::plugin_preset_dir(&plugin.plugin_type())
             .ok_or_else(|| "Could not determine config directory".to_string())?;
 
         std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Could not create preset directory: {}", e))?;
+            .map_err(|e| format!("Could not create preset directory: {e}"))?;
 
-        let filename = format!("{}.json", preset_name);
+        let filename = format!("{preset_name}.json");
         let full_path = dir.join(&filename);
 
         let json = serde_json::to_string_pretty(&plugin.settings)
-            .map_err(|e| format!("Serialization error: {}", e))?;
+            .map_err(|e| format!("Serialization error: {e}"))?;
         std::fs::write(&full_path, json)
-            .map_err(|e| format!("Could not write preset file: {}", e))?;
+            .map_err(|e| format!("Could not write preset file: {e}"))?;
 
         log::info!(
             "Saved plugin preset '{}' to {}",
@@ -2384,6 +2542,9 @@ impl PluginController {
 
     /// Load a preset into a specific plugin slot.
     /// Returns `Structural` effect since settings are fully replaced.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn load_plugin_preset(
         &mut self,
         plugin_idx: usize,
@@ -2392,23 +2553,26 @@ impl PluginController {
         let plugin = self
             .graph
             .get_plugin(plugin_idx)
-            .ok_or_else(|| format!("Plugin index {} out of range", plugin_idx))?;
+            .ok_or_else(|| format!("Plugin index {plugin_idx} out of range"))?;
 
         let dir = Self::plugin_preset_dir(&plugin.plugin_type())
             .ok_or_else(|| "Could not determine config directory".to_string())?;
 
-        let filename = if preset_name.ends_with(".json") {
+        let filename = if std::path::Path::new(preset_name)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
             preset_name.to_string()
         } else {
-            format!("{}.json", preset_name)
+            format!("{preset_name}.json")
         };
         let full_path = dir.join(&filename);
 
         let json = std::fs::read_to_string(&full_path)
-            .map_err(|e| format!("Could not read preset file: {}", e))?;
+            .map_err(|e| format!("Could not read preset file: {e}"))?;
 
         let settings: PluginSettings =
-            serde_json::from_str(&json).map_err(|e| format!("Invalid preset file: {}", e))?;
+            serde_json::from_str(&json).map_err(|e| format!("Invalid preset file: {e}"))?;
 
         // Verify the preset is for the same plugin type by creating a temp plugin
         // and comparing types
@@ -2436,29 +2600,31 @@ impl PluginController {
         }
         self.graph.update_channel_dependent_plugins();
 
-        log::info!(
-            "Loaded plugin preset '{}' into slot {}",
-            preset_name,
-            plugin_idx
-        );
+        log::info!("Loaded plugin preset '{preset_name}' into slot {plugin_idx}");
         Ok(PluginUpdateEffect::Structural)
     }
 
     /// Delete a preset for a specific plugin type.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin is incompatible, the path is invalid, or preset and filter file processing fails.
     pub fn delete_plugin_preset(plugin_type: &PluginType, preset_name: &str) -> Result<(), String> {
         let dir = Self::plugin_preset_dir(plugin_type)
             .ok_or_else(|| "Could not determine config directory".to_string())?;
 
-        let filename = if preset_name.ends_with(".json") {
+        let filename = if std::path::Path::new(preset_name)
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        {
             preset_name.to_string()
         } else {
-            format!("{}.json", preset_name)
+            format!("{preset_name}.json")
         };
         let full_path = dir.join(&filename);
 
-        std::fs::remove_file(&full_path).map_err(|e| format!("Could not delete preset: {}", e))?;
+        std::fs::remove_file(&full_path).map_err(|e| format!("Could not delete preset: {e}"))?;
 
-        log::info!("Deleted plugin preset '{}'", preset_name);
+        log::info!("Deleted plugin preset '{preset_name}'");
         Ok(())
     }
 
@@ -2520,6 +2686,7 @@ impl PluginController {
 
     // -- Channel conflict detection & suspension --
 
+    #[must_use]
     pub fn find_channel_conflicts(&self, input_channels: usize) -> Vec<ChannelConflict> {
         self.graph.find_channel_conflicts(input_channels)
     }
@@ -2538,6 +2705,7 @@ impl PluginController {
         self.graph.update_channel_dependent_plugins();
     }
 
+    #[must_use]
     pub fn has_suspensions(&self) -> bool {
         self.graph.has_suspensions()
     }

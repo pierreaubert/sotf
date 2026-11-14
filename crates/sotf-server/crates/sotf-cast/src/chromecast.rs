@@ -66,7 +66,17 @@ struct CastMessage {
     payload_utf8: String,
 }
 
+impl std::fmt::Debug for ChromecastSender {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChromecastSender")
+            .field("device", &self.device)
+            .field("state", &self.state)
+            .finish_non_exhaustive()
+    }
+}
+
 impl ChromecastSender {
+    #[must_use]
     pub fn new(device: CastDevice) -> Self {
         Self {
             device,
@@ -89,6 +99,9 @@ impl ChromecastSender {
     }
 
     /// Connect to Chromecast over CASTV2 TLS and launch the default media receiver.
+    ///
+    /// # Errors
+    /// Returns an error if TLS connection or receiver initialization fails.
     pub fn connect(&mut self, local_ip: Ipv4Addr) -> Result<(), String> {
         self.state = ChromecastState::Connecting;
         self.local_ip = Some(local_ip);
@@ -107,7 +120,7 @@ impl ChromecastSender {
             SOURCE_ID,
             RECEIVER_ID,
             NS_CONNECTION,
-            json!({"type": "CONNECT"}),
+            &json!({"type": "CONNECT"}),
         )?;
 
         self.state = ChromecastState::Launching;
@@ -117,7 +130,7 @@ impl ChromecastSender {
             SOURCE_ID,
             RECEIVER_ID,
             NS_RECEIVER,
-            json!({
+            &json!({
                 "type": "LAUNCH",
                 "appId": DEFAULT_MEDIA_RECEIVER,
                 "requestId": launch_request_id,
@@ -130,7 +143,7 @@ impl ChromecastSender {
             SOURCE_ID,
             &transport_id,
             NS_CONNECTION,
-            json!({"type": "CONNECT"}),
+            &json!({"type": "CONNECT"}),
         )?;
 
         self.transport_id = Some(transport_id);
@@ -146,6 +159,12 @@ impl ChromecastSender {
     }
 
     /// Start the local WAV stream and send a CASTV2 LOAD for it.
+    ///
+    /// # Errors
+    /// Returns an error if disconnected or the CASTV2 load request fails.
+    ///
+    /// # Panics
+    /// Panics if an internal audio-buffer or format mutex is poisoned.
     pub fn start_stream(&mut self, sample_rate: u32, channels: u16) -> Result<(), String> {
         let local_ip = self.local_ip.ok_or("Not connected")?;
         let http_port = self.http_port.ok_or("HTTP server not started")?;
@@ -167,16 +186,22 @@ impl ChromecastSender {
             SOURCE_ID,
             &transport_id,
             NS_MEDIA,
-            build_load_payload(request_id, &stream_url, sample_rate, channels),
+            &build_load_payload(request_id, &stream_url, sample_rate, channels),
         )?;
         self.media_session_id = read_media_session_id(stream).ok();
         self.state = ChromecastState::Streaming;
         self.streaming.store(true, Ordering::Release);
-        log::info!("[Chromecast] LOAD {}", stream_url);
+        log::info!("[Chromecast] LOAD {stream_url}");
         Ok(())
     }
 
     /// Write interleaved f32 audio samples to the HTTP stream buffer.
+    ///
+    /// # Errors
+    /// Returns an error if streaming has not started.
+    ///
+    /// # Panics
+    /// Panics if an internal audio-buffer or format mutex is poisoned.
     pub fn write_audio(&mut self, samples: &[f32]) -> Result<usize, String> {
         if !self.streaming.load(Ordering::Acquire) {
             return Err("Not streaming".to_string());
@@ -185,6 +210,10 @@ impl ChromecastSender {
         let mut pcm_bytes = Vec::with_capacity(samples.len() * 2);
         for &sample in samples {
             let clamped = (sample * self.volume).clamp(-1.0, 1.0);
+            #[expect(
+                clippy::cast_possible_truncation,
+                reason = "Clamping bounds PCM quantization to the i16 range"
+            )]
             let pcm16 = (clamped * 32767.0) as i16;
             pcm_bytes.extend_from_slice(&pcm16.to_le_bytes());
         }
@@ -234,7 +263,7 @@ impl ChromecastSender {
         let stop = Arc::clone(&self.http_stop);
         std::thread::Builder::new()
             .name("chromecast-http".to_string())
-            .spawn(move || run_http_stream_server(http_listener, buffer, audio_format, stop))
+            .spawn(move || run_http_stream_server(&http_listener, &buffer, &audio_format, &stop))
             .map_err(|e| format!("HTTP thread spawn failed: {e}"))?;
 
         Ok(())
@@ -306,10 +335,8 @@ fn connect_cast_tls_once(
     let addr = std::net::SocketAddr::V4(SocketAddrV4::new(device.address, device.port));
     let tcp = TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(5))
         .map_err(|e| format!("CASTV2 TCP connect failed: {e}"))?;
-    tcp.set_read_timeout(Some(std::time::Duration::from_secs(5)))
-        .ok();
-    tcp.set_write_timeout(Some(std::time::Duration::from_secs(5)))
-        .ok();
+    let _ = tcp.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+    let _ = tcp.set_write_timeout(Some(std::time::Duration::from_secs(5)));
 
     let store = sotf_tls::TofuStore::load(tofu_config_dir)?;
     let verifier = Arc::new(sotf_tls::client::TofuVerifier::with_port(
@@ -382,7 +409,7 @@ fn send_cast_json(
     source_id: &str,
     destination_id: &str,
     namespace: &str,
-    payload: Value,
+    payload: &Value,
 ) -> Result<(), String> {
     let message = CastMessage {
         source_id: source_id.to_string(),
@@ -391,7 +418,7 @@ fn send_cast_json(
         payload_utf8: payload.to_string(),
     };
     let encoded = encode_cast_message(&message);
-    let len = u32::try_from(encoded.len()).map_err(|_| "CASTV2 message too large")?;
+    let len = u32::try_from(encoded.len()).map_err(|_error| "CASTV2 message too large")?;
     stream
         .write_all(&len.to_be_bytes())
         .and_then(|()| stream.write_all(&encoded))
@@ -429,7 +456,8 @@ fn read_media_session_id(stream: &mut CastTlsStream) -> Result<u32, String> {
             .pointer("/status/0/mediaSessionId")
             .and_then(Value::as_u64)
         {
-            return u32::try_from(id).map_err(|_| "CASTV2 mediaSessionId overflow".to_string());
+            return u32::try_from(id)
+                .map_err(|_error| "CASTV2 mediaSessionId overflow".to_string());
         }
         if payload.get("type").and_then(Value::as_str) == Some("LOAD_FAILED") {
             return Err(format!("CASTV2 LOAD failed: {payload}"));
@@ -485,7 +513,8 @@ fn decode_cast_message(input: &[u8]) -> Result<CastMessage, String> {
                 let _ = read_varint(input, &mut pos)?;
             }
             (_, 2) => {
-                let len = read_varint(input, &mut pos)? as usize;
+                let len = usize::try_from(read_varint(input, &mut pos)?)
+                    .map_err(|_error| "CASTV2 protobuf length exceeds address space")?;
                 pos = pos
                     .checked_add(len)
                     .ok_or_else(|| "CASTV2 protobuf length overflow".to_string())?;
@@ -518,10 +547,10 @@ fn encode_varint_field(out: &mut Vec<u8>, field_number: u64, value: u64) {
 
 fn write_varint(out: &mut Vec<u8>, mut value: u64) {
     while value >= 0x80 {
-        out.push((value as u8) | 0x80);
+        out.push(value.to_le_bytes()[0] | 0x80);
         value >>= 7;
     }
-    out.push(value as u8);
+    out.push(value.to_le_bytes()[0]);
 }
 
 fn read_varint(input: &[u8], pos: &mut usize) -> Result<u64, String> {
@@ -544,7 +573,8 @@ fn read_varint(input: &[u8], pos: &mut usize) -> Result<u64, String> {
 }
 
 fn read_string(input: &[u8], pos: &mut usize) -> Result<String, String> {
-    let len = read_varint(input, pos)? as usize;
+    let len = usize::try_from(read_varint(input, pos)?)
+        .map_err(|_error| "CASTV2 string length exceeds address space")?;
     let end = pos
         .checked_add(len)
         .ok_or_else(|| "CASTV2 protobuf string length overflow".to_string())?;
@@ -556,22 +586,22 @@ fn read_string(input: &[u8], pos: &mut usize) -> Result<String, String> {
 }
 
 fn run_http_stream_server(
-    listener: TcpListener,
-    buffer: Arc<std::sync::Mutex<VecDeque<u8>>>,
-    audio_format: Arc<std::sync::Mutex<(u32, u16)>>,
-    stop: Arc<AtomicBool>,
+    listener: &TcpListener,
+    buffer: &Arc<std::sync::Mutex<VecDeque<u8>>>,
+    audio_format: &Arc<std::sync::Mutex<(u32, u16)>>,
+    stop: &Arc<AtomicBool>,
 ) {
-    listener.set_nonblocking(true).ok();
+    let _ = listener.set_nonblocking(true);
     while !stop.load(Ordering::Acquire) {
         match listener.accept() {
             Ok((stream, peer)) => {
                 log::debug!("[Chromecast HTTP] connection from {peer}");
-                let buf = Arc::clone(&buffer);
-                let audio_format = Arc::clone(&audio_format);
-                let stop = Arc::clone(&stop);
+                let buf = Arc::clone(buffer);
+                let audio_format = Arc::clone(audio_format);
+                let stop = Arc::clone(stop);
                 let _ = std::thread::Builder::new()
                     .name("chromecast-http-client".to_string())
-                    .spawn(move || handle_stream_request(stream, buf, audio_format, stop));
+                    .spawn(move || handle_stream_request(stream, &buf, &audio_format, &stop));
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 std::thread::sleep(std::time::Duration::from_millis(50));
@@ -586,9 +616,9 @@ fn run_http_stream_server(
 
 fn handle_stream_request(
     mut stream: TcpStream,
-    buffer: Arc<std::sync::Mutex<VecDeque<u8>>>,
-    audio_format: Arc<std::sync::Mutex<(u32, u16)>>,
-    stop: Arc<AtomicBool>,
+    buffer: &Arc<std::sync::Mutex<VecDeque<u8>>>,
+    audio_format: &Arc<std::sync::Mutex<(u32, u16)>>,
+    stop: &Arc<AtomicBool>,
 ) {
     let mut request_buf = [0u8; 1024];
     let _ = stream.read(&mut request_buf);
@@ -712,7 +742,7 @@ mod tests {
         source_id: &str,
         destination_id: &str,
         namespace: &str,
-        payload: Value,
+        payload: &Value,
     ) -> Result<(), String> {
         let message = CastMessage {
             source_id: source_id.to_string(),
@@ -721,7 +751,7 @@ mod tests {
             payload_utf8: payload.to_string(),
         };
         let encoded = encode_cast_message(&message);
-        let len = u32::try_from(encoded.len()).map_err(|_| "test CASTV2 message too large")?;
+        let len = u32::try_from(encoded.len()).map_err(|_error| "test CASTV2 message too large")?;
         stream
             .write_all(&len.to_be_bytes())
             .and_then(|()| stream.write_all(&encoded))
@@ -770,7 +800,7 @@ mod tests {
                     RECEIVER_ID,
                     SOURCE_ID,
                     NS_RECEIVER,
-                    json!({
+                    &json!({
                         "type": "RECEIVER_STATUS",
                         "status": {
                             "applications": [{
@@ -796,7 +826,7 @@ mod tests {
                     RECEIVER_ID,
                     SOURCE_ID,
                     NS_MEDIA,
-                    json!({
+                    &json!({
                         "type": "MEDIA_STATUS",
                         "status": [{
                             "mediaSessionId": 42,

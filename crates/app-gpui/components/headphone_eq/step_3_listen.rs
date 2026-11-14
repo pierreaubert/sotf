@@ -2,13 +2,17 @@ use crate::components::design::Ds;
 use crate::i18n::{HeadphoneEqTranslations, HeadphoneGraphTranslations};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, NumberInput, NumberInputSize, StackSpacing,
     Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_headphone_audition(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let headphone = &state.app.measurement_state.headphone_eq_state;
@@ -17,7 +21,8 @@ impl PlayerView {
             state.app.ui_state.language,
         );
         let session = headphone.audition.as_ref();
-        let pending = session.is_some_and(|session| session.is_pending());
+        let pending = session
+            .is_some_and(sotf_audio_player::controllers::eq_audition::EqAudition::is_pending);
         let enabled = headphone.result_is_current() && !pending;
         let d = Ds::from_cx(cx);
         div()
@@ -153,6 +158,10 @@ impl PlayerView {
     // Step 3: Listen
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_headphone_eq_listen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let audition = self.render_headphone_audition(cx).into_any_element();
@@ -227,7 +236,7 @@ impl PlayerView {
                                             ),
                                     )
                                     .child(
-                                        Text::new(format!("{} filters generated", num_filters))
+                                        Text::new(format!("{num_filters} filters generated"))
                                             .size(TextSize::Xs)
                                             .color(theme.text_secondary),
                                     ),
@@ -310,13 +319,13 @@ impl PlayerView {
                                                         div()
                                                             .text_size(d.text_xs)
                                                             .text_color(theme.text_primary)
-                                                            .child(format!("{:.0} Hz", freq)),
+                                                            .child(format!("{freq:.0} Hz")),
                                                     )
                                                     .child(
                                                         div()
                                                             .text_size(d.text_xs)
                                                             .text_color(theme.text_muted)
-                                                            .child(format!("Q {:.2}", q)),
+                                                            .child(format!("Q {q:.2}")),
                                                     )
                                                     .child(
                                                         div()
@@ -326,7 +335,7 @@ impl PlayerView {
                                                             } else {
                                                                 theme.error
                                                             })
-                                                            .child(format!("{:+.1} dB", gain)),
+                                                            .child(format!("{gain:+.1} dB")),
                                                     ),
                                             )
                                     })),

@@ -3,10 +3,10 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{FontWeight, Rgba, Window, div, px, rems};
 
 /// Drag information for plugin reordering
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PluginDragInfo {
     pub source_index: usize,
     pub name: String,

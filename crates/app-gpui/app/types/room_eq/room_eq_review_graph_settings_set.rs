@@ -12,6 +12,7 @@ pub struct RoomEqReviewGraphSettingsSet {
 }
 
 impl RoomEqReviewGraphSettingsSet {
+    #[must_use]
     pub fn get(&self, id: RoomEqReviewGraphId) -> &RoomEqReviewGraphSettings {
         match id {
             RoomEqReviewGraphId::OverviewOriginal => &self.overview_original,

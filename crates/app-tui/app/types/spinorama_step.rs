@@ -10,6 +10,7 @@ pub enum SpinoramaStep {
 }
 
 impl SpinoramaStep {
+    #[must_use]
     pub fn label(self) -> &'static str {
         match self {
             SpinoramaStep::Select => "Select",

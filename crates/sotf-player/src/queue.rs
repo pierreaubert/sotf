@@ -17,6 +17,7 @@ pub struct QueueItem {
 }
 
 impl QueueItem {
+    #[must_use]
     pub fn new(album: Album) -> Self {
         Self {
             album,
@@ -24,11 +25,13 @@ impl QueueItem {
         }
     }
 
+    #[must_use]
     pub fn current_track(&self) -> Option<&Track> {
         self.album.tracks.get(self.current_track_index)
     }
 
     /// Peek at the next track without advancing the index.
+    #[must_use]
     pub fn peek_next_track(&self) -> Option<&Track> {
         self.album.tracks.get(self.current_track_index + 1)
     }
@@ -98,6 +101,7 @@ impl<'a> IntoIterator for &'a mut Queue {
 }
 
 impl Queue {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -198,6 +202,7 @@ impl Queue {
     }
 
     /// Peek at the next track without mutating state. Crosses album boundaries.
+    #[must_use]
     pub fn peek_next_track(&self) -> Option<&Track> {
         let current_idx = self.current_index?;
         let item = self.items.get(current_idx)?;
@@ -228,7 +233,7 @@ impl Queue {
             self.items[current_idx + 1].current_track_index = 0;
             return self.items[current_idx + 1]
                 .current_track()
-                .map(|t| t.audio_source());
+                .map(crate::Track::audio_source);
         }
 
         // End of queue
@@ -251,7 +256,7 @@ impl Queue {
             self.current_index = Some(current_idx - 1);
             if let Some(prev_item) = self.items.get_mut(current_idx - 1) {
                 prev_item.current_track_index = prev_item.album.tracks.len().saturating_sub(1);
-                return prev_item.current_track().map(|t| t.audio_source());
+                return prev_item.current_track().map(crate::Track::audio_source);
             }
         }
 
@@ -259,20 +264,23 @@ impl Queue {
     }
 
     /// Get the audio source of the currently playing track.
+    #[must_use]
     pub fn current_track_source(&self) -> Option<AudioSource> {
         self.current_index
             .and_then(|idx| self.items.get(idx))
             .and_then(|item| item.current_track())
-            .map(|track| track.audio_source())
+            .map(crate::Track::audio_source)
     }
 
     /// Get the path of the currently playing track (convenience for local files).
+    #[must_use]
     pub fn current_track_path(&self) -> Option<PathBuf> {
         self.current_track_source()
-            .and_then(|s| s.as_path().map(|p| p.to_path_buf()))
+            .and_then(|s| s.as_path().map(std::path::Path::to_path_buf))
     }
 
     /// Get a reference to the currently playing track.
+    #[must_use]
     pub fn current_track(&self) -> Option<&Track> {
         self.current_index
             .and_then(|idx| self.items.get(idx))
@@ -280,11 +288,15 @@ impl Queue {
     }
 
     /// Get the duration of the current track in seconds.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Playback duration metadata is exposed as approximate floating-point seconds"
+    )]
     pub fn current_track_duration(&self) -> f64 {
         self.current_track()
             .and_then(|track| track.duration_secs)
-            .map(|d| d as f64)
-            .unwrap_or(0.0)
+            .map_or(0.0, |d| d as f64)
     }
 
     /// Jump to a specific album index and reset to its first track.

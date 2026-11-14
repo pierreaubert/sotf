@@ -8,7 +8,7 @@ use crate::app::types::{PreferencesSetting, Screen};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Div, ElementId, KeyDownEvent, SharedString, Stateful, Window, div, rems};
 use gpui_ui_kit::{
     AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, Button, ButtonSize,
     ButtonVariant, Text,
@@ -46,6 +46,10 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_release_channel_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -110,7 +114,7 @@ impl PlayerView {
                     .track_focus(&focus)
                     .track_focus_element(&focus)
                     .on_click(cx.listener(move |view, _, window, cx| {
-                        view.select_feature_availability(channel, window, cx)
+                        view.select_feature_availability(channel, window, cx);
                     }))
                     .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
                         if matches!(event.keystroke.key.as_str(), "enter" | "space") {
@@ -165,6 +169,14 @@ impl PlayerView {
             .child(self.render_feature_table(language, copy, text, &theme, d, compact))
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_feature_table(
         &self,
         language: crate::app::i18n::Language,
@@ -222,7 +234,7 @@ impl PlayerView {
                 let mut cells = div()
                     .flex()
                     .min_w_0()
-                    .when(compact, |cells| cells.w_full())
+                    .when(compact, gpui::Styled::w_full)
                     .when(!compact, |cells| cells.w(rems(15.0)).flex_shrink_0());
                 for (channel, label) in channels {
                     let available = channel.allows(row.maturity);
@@ -260,7 +272,7 @@ impl PlayerView {
                         .gap(d.grid)
                         .py(d.half_grid)
                         .min_w_0()
-                        .when(compact, |row| row.flex_col())
+                        .when(compact, gpui::Styled::flex_col)
                         .child(
                             div()
                                 .flex_1()

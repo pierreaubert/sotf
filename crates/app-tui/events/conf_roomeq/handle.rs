@@ -442,8 +442,7 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
         .delay_detection
         .results
         .as_ref()
-        .map(|r| r.channels.len())
-        .unwrap_or(0);
+        .map_or(0, |r| r.channels.len());
 
     match key.code {
         // j / k: navigate results table row cursor
@@ -469,12 +468,10 @@ fn handle_delay_detection_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCom
 mod tests {
     use super::*;
 
-    use crate::app::{FilePickerOrigin, InputMode, Screen};
+    use crate::app::Screen;
     use crate::events::tests::{key, make_app};
     use sotf_audio_player::recording_types::DelayProbeResults;
-    use sotf_audio_player::room_eq_types::{
-        OptimizationStatus, RoomEqEasyLayout, RoomEqStep, RoomEqWizardMode,
-    };
+    use sotf_audio_player::room_eq_types::RoomEqWizardMode;
 
     fn app_on_room_eq_content() -> App {
         let mut app = make_app();

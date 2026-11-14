@@ -34,11 +34,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_system_type_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             system_type_select = system_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_system_type_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             system_type_select =
                 system_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
         }
@@ -70,11 +70,11 @@
         .theme(theme.select_theme.clone());
 
     if let Some(ref h) = on_loss_type_toggle_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         loss_type_select = loss_type_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
     if let Some(ref h) = on_loss_type_change_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         loss_type_select =
             loss_type_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }
@@ -113,12 +113,12 @@
         .theme(theme.select_theme.clone());
 
     if let Some(ref h) = on_target_curve_change_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         target_curve_select =
             target_curve_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }
     if let Some(ref h) = on_target_curve_toggle_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         target_curve_select =
             target_curve_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
@@ -129,7 +129,7 @@
     if config.goals.target_curve == "custom"
         && let Some(ref handler) = on_edit_custom_target_rc
     {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         section = section.child(
             Button::new(
                 "edit-custom-target",

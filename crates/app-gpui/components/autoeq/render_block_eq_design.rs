@@ -54,7 +54,7 @@ if is_fir && eq_design_iir_before_fir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_min_db_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         min_db_input = min_db_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -72,7 +72,7 @@ if is_fir && eq_design_iir_before_fir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_max_db_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         max_db_input = max_db_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -85,8 +85,8 @@ if is_fir && eq_design_iir_before_fir {
                 .child(min_db_input)
                 .child(max_db_input),
         )
-    };
-}
+    }
+};
 
 // --- Q Range (IIR only) ---
 if is_iir {
@@ -104,7 +104,7 @@ if is_iir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_min_q_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         min_q_input = min_q_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -122,7 +122,7 @@ if is_iir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_max_q_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         max_q_input = max_q_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -154,7 +154,7 @@ if is_iir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_min_freq_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         min_freq_input = min_freq_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -172,7 +172,7 @@ if is_iir {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_max_freq_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         max_freq_input = max_freq_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -185,8 +185,8 @@ if is_iir {
                 .child(min_freq_input)
                 .child(max_freq_input),
         )
-    };
-}
+    }
+};
 
 // --- PEQ Model (IIR only) ---
 if is_iir {
@@ -205,12 +205,12 @@ if is_iir {
         .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_peq_model_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         peq_model_select = peq_model_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_peq_model_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         peq_model_select =
             peq_model_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }
@@ -234,7 +234,7 @@ if is_iir {
                 .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_spacing_weight_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             spacing_weight_input = spacing_weight_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -253,7 +253,7 @@ if is_iir {
                 .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_min_spacing_oct_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             min_spacing_oct_input =
                 min_spacing_oct_input.on_change(move |v, w, cx| h(v, w, cx));
         }

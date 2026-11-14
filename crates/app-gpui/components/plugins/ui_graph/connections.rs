@@ -1,10 +1,14 @@
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, SharedString, div, rems};
 use gpui_ui_kit::{Button, ButtonSize, Select, SelectOption};
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_routing_connection_form(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
@@ -26,7 +30,7 @@ impl PlayerView {
                         graph
                             .special_nodes
                             .get(id)
-                            .map(|node| node.display_name().to_string())
+                            .map(|node| node.display_name().clone())
                     })
                     .unwrap_or_default();
                 let channels = if side == 0 {
@@ -35,7 +39,7 @@ impl PlayerView {
                     graph.node_input_channels(*id)
                 };
                 for port in 0..channels {
-                    let plugin_id = graph.nodes.get(id).map(|node| node.plugin.id).unwrap_or(0);
+                    let plugin_id = graph.nodes.get(id).map_or(0, |node| node.plugin.id);
                     endpoints.push((
                         format!("{id}:{port}"),
                         format!("{name} · {} · {}", &id.to_string()[..8], port + 1),
@@ -139,7 +143,7 @@ impl PlayerView {
                                 Ok(_) => state.app.plugin_state.graph_state.workflow_canvas = None,
                                 Err(error) => {
                                     state.app.ui_state.toast_message =
-                                        Some(crate::app::ToastMessage::error(error))
+                                        Some(crate::app::ToastMessage::error(error));
                                 }
                             }
                             cx.notify();

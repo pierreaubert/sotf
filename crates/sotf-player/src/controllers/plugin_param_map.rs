@@ -9,6 +9,7 @@ use crate::PluginSettings;
 
 /// Momentary profile controls are named host commands, not persisted toggles.
 /// Their indexed DSP setters deliberately do not fire the action.
+#[must_use]
 pub fn momentary_action_param(settings: &PluginSettings, param_idx: usize) -> Option<&'static str> {
     match settings {
         PluginSettings::Denoiser { .. } => match param_idx {
@@ -27,6 +28,15 @@ pub fn momentary_action_param(settings: &PluginSettings, param_idx: usize) -> Op
 
 /// Map a UI parameter index to the engine parameter ID and formatted value string.
 /// Returns None if this parameter requires a Structural update (e.g., EQ, channel count changes).
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Parameter indices map bounded values to the engine single-precision interface"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exhaustive plugin parameter dispatch stays together for schema review"
+)]
 pub fn param_index_to_engine_param(
     settings: &PluginSettings,
     param_idx: usize,
@@ -95,7 +105,7 @@ pub fn param_index_to_engine_param(
                 _ => return None,
             };
 
-            let id = format!("band_{}_{}", band_zero_based, param_name);
+            let id = format!("band_{band_zero_based}_{param_name}");
 
             let inherited = sotf_plugins::BandCompressorParams::default();
             let band = bands.get(band_zero_based).unwrap_or(&inherited);
@@ -152,7 +162,7 @@ pub fn param_index_to_engine_param(
                 _ => return None,
             };
 
-            let id = format!("band_{}_{}", band_zero_based, param_name);
+            let id = format!("band_{band_zero_based}_{param_name}");
 
             let inherited = sotf_plugins::BandExpanderParams::default();
             let band = bands.get(band_zero_based).unwrap_or(&inherited);

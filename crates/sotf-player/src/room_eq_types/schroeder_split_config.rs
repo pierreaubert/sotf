@@ -7,7 +7,7 @@ pub struct SchroederSplitConfig {
     pub schroeder_freq: f64,
     pub low_freq_max_q: f64,
     pub low_freq_allow_boost: bool,
-    /// Maximum boost/cut in dB for below-Schroeder filters (None = use global max_db)
+    /// Maximum boost/cut in dB for below-Schroeder filters (None = use global `max_db`)
     #[serde(default)]
     pub low_freq_max_db: Option<f64>,
     pub high_freq_max_q: f64,

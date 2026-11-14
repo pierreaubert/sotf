@@ -9,13 +9,13 @@ use crate::theme::Theme;
 
 use gpui::prelude::*;
 
-use gpui::*;
+use gpui::{div, px};
 
 use gpui_px::{ColorScale, ScaleType, heatmap};
 
 /// Data grid for spectrum plotting (Frequency x Y-Axis).
 /// Y-Axis can be Time (Spectrogram) or Angle (Directivity).
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SpectrumGrid {
     pub x_values: Vec<f64>, // Frequency bins
     pub y_values: Vec<f64>, // Time frames or Angles
@@ -23,7 +23,7 @@ pub struct SpectrumGrid {
 }
 
 /// Configuration for spectrum heatmap
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SpectrumConfig {
     pub title: Option<String>,
     pub x_label: Option<String>,
@@ -55,6 +55,11 @@ impl Default for SpectrumConfig {
 }
 
 /// Render a spectrum heatmap
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_spectrum_heatmap(
     _d: Ds,
     data: SpectrumGrid,
@@ -142,7 +147,7 @@ pub fn render_spectrum_heatmap(
             .w(px(config.width))
             .h(px(config.height))
             .text_color(theme.error)
-            .child(format!("Error building chart: {}", e))
+            .child(format!("Error building chart: {e}"))
             .into_any_element(),
     }
 }

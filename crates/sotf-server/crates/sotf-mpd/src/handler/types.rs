@@ -1,6 +1,11 @@
 use super::mpd_play_state::MpdPlayState;
 
 /// Status snapshot returned by the adapter.
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent playback flags are part of the MPD status protocol"
+)]
 pub struct MpdStatus {
     pub volume: u8, // 0-100
     pub repeat: bool,
@@ -25,6 +30,7 @@ pub struct MpdStatus {
 }
 
 /// Directory entry for lsinfo.
+#[derive(Debug)]
 pub struct MpdDirEntry {
     pub is_directory: bool,
     pub path: String,

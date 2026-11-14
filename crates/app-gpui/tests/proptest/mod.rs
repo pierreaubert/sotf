@@ -1,4 +1,7 @@
-#![allow(clippy::duplicate_mod)]
+#![allow(
+    clippy::duplicate_mod,
+    reason = "The same fixture module is compiled in separate test harness contexts"
+)]
 //! Property-Based Tests for player-gpui
 //!
 //! Uses proptest to automatically generate test inputs and verify invariants

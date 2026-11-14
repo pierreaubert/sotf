@@ -13,9 +13,10 @@ pub(super) fn format_param_type(param: &ParamSpec) -> String {
 }
 
 pub(super) fn format_float(value: f64) -> String {
-    if !value.is_finite() {
-        panic!("non-finite float in docs generator: {value}");
-    }
+    assert!(
+        value.is_finite(),
+        "non-finite float in docs generator: {value}"
+    );
     let mut formatted = format!("{value:.6}");
     while formatted.contains('.') && formatted.ends_with('0') {
         formatted.pop();

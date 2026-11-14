@@ -45,7 +45,7 @@ pub(super) fn set_room_eq_field_from_string(app: &mut App) {
         }
         9 => {
             if let Ok(v) = buf.parse::<usize>() {
-                c.max_iter = v.clamp(1000, 100000);
+                c.max_iter = v.clamp(1000, 100_000);
             }
         }
         10 => {
@@ -89,6 +89,12 @@ pub(super) fn set_room_eq_field_from_string(app: &mut App) {
     app.room_eq.model.note_inputs_changed();
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
     use sotf_audio_player::room_eq_types::{MultiSpeakerMode, RoomEqOptimizationMode};
 
@@ -99,12 +105,12 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
             let n = c.num_filters as i32 + delta;
             c.num_filters = n.clamp(1, 30) as usize;
         }
-        1 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
-        2 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
-        3 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
-        4 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
-        5 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
-        6 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        1 => c.min_freq = (c.min_freq + f64::from(delta) * 10.0).clamp(20.0, 500.0),
+        2 => c.max_freq = (c.max_freq + f64::from(delta) * 500.0).clamp(1000.0, 20000.0),
+        3 => c.min_db = (c.min_db + f64::from(delta)).clamp(-24.0, 0.0),
+        4 => c.max_db = (c.max_db + f64::from(delta)).clamp(0.0, 12.0),
+        5 => c.min_q = (c.min_q + f64::from(delta) * 0.1).clamp(0.1, 2.0),
+        6 => c.max_q = (c.max_q + f64::from(delta) * 0.5).clamp(1.0, 20.0),
         7 => {
             c.peq_model = super::super::cycle_string(
                 &c.peq_model,
@@ -119,7 +125,7 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
         }
         9 => {
             let n = c.max_iter as i32 + delta * 1000;
-            c.max_iter = n.clamp(1000, 100000) as usize;
+            c.max_iter = n.clamp(1000, 100_000) as usize;
         }
         10 => {
             let n = c.population as i32 + delta * 10;
@@ -135,7 +141,7 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
         }
         13 => {
             c.bo_posterior_std_threshold =
-                (c.bo_posterior_std_threshold + delta as f64 * 0.001).clamp(0.0, 1.0);
+                (c.bo_posterior_std_threshold + f64::from(delta) * 0.001).clamp(0.0, 1.0);
         }
         14 => {
             c.bo_acquisition =
@@ -176,19 +182,19 @@ pub(super) fn adjust_room_eq_field(app: &mut App, delta: i32) {
         22 => c.target_response.enabled = !c.target_response.enabled,
         23 => {
             c.target_response.slope_db_per_octave =
-                (c.target_response.slope_db_per_octave + delta as f64 * 0.1).clamp(-3.0, 0.0)
+                (c.target_response.slope_db_per_octave + f64::from(delta) * 0.1).clamp(-3.0, 0.0);
         }
         // Excursion Protection
         24 => c.excursion_protection.enabled = !c.excursion_protection.enabled,
         25 => {
             c.excursion_protection.manual_f3_hz =
-                (c.excursion_protection.manual_f3_hz + delta as f64 * 5.0).clamp(20.0, 200.0)
+                (c.excursion_protection.manual_f3_hz + f64::from(delta) * 5.0).clamp(20.0, 200.0);
         }
         // Schroeder Split
         26 => c.schroeder_split.enabled = !c.schroeder_split.enabled,
         27 => {
             c.schroeder_split.schroeder_freq =
-                (c.schroeder_split.schroeder_freq + delta as f64 * 10.0).clamp(100.0, 1000.0)
+                (c.schroeder_split.schroeder_freq + f64::from(delta) * 10.0).clamp(100.0, 1000.0);
         }
         // Phase Alignment
         28 => c.phase_alignment.enabled = !c.phase_alignment.enabled,
@@ -293,7 +299,7 @@ pub(crate) fn load_room_eq_measurements(app: &mut App) {
             }
         },
         Err(e) => {
-            app.room_eq.load_error = Some(format!("Read error: {}", e));
+            app.room_eq.load_error = Some(format!("Read error: {e}"));
             app.room_eq.model.channel_measurements.clear();
             app.room_eq.model.ctc_measurements = None;
             app.room_eq.model.ctc_config = None;
@@ -329,8 +335,8 @@ fn attach_quality_sidecar(
                     let stimulus_config = sidecar
                         .and_then(|sidecar| sidecar.stimulus_for(&source))
                         .cloned();
-                    measurement.quality = quality.clone();
-                    measurement.stimulus_config = stimulus_config.clone();
+                    measurement.quality.clone_from(&quality);
+                    measurement.stimulus_config.clone_from(&stimulus_config);
                     let source_label = driver
                         .provenance
                         .get(measurement_index)
@@ -367,8 +373,8 @@ fn attach_quality_sidecar(
             let stimulus_config = sidecar
                 .and_then(|sidecar| sidecar.stimulus_for(&source))
                 .cloned();
-            measurement.quality = quality.clone();
-            measurement.stimulus_config = stimulus_config.clone();
+            measurement.quality.clone_from(&quality);
+            measurement.stimulus_config.clone_from(&stimulus_config);
             let source_label = channel
                 .provenance
                 .get(measurement_index)
@@ -384,6 +390,10 @@ fn attach_quality_sidecar(
     entries
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(crate) fn export_room_eq_results(app: &mut App) {
     if app.room_eq.export_path.is_empty() {
         app.room_eq.export_error = Some("No export path specified".to_string());

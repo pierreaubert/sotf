@@ -27,8 +27,7 @@ pub(super) fn write_stereo_wav_from_mono_wavs(
     let (right, right_sample_rate) = read_first_wav_channel_f32(right_path)?;
     if left_sample_rate != expected_sample_rate || right_sample_rate != expected_sample_rate {
         return Err(format!(
-            "CTC raw sweep sample-rate mismatch: left={}Hz, right={}Hz, expected={}Hz",
-            left_sample_rate, right_sample_rate, expected_sample_rate
+            "CTC raw sweep sample-rate mismatch: left={left_sample_rate}Hz, right={right_sample_rate}Hz, expected={expected_sample_rate}Hz"
         ));
     }
     write_stereo_ir_wav(path, &left, &right, expected_sample_rate)

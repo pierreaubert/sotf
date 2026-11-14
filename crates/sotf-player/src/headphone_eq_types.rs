@@ -13,6 +13,7 @@ pub enum HeadphoneMeasurementSource {
 }
 
 impl HeadphoneMeasurementSource {
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             Self::File => "Load from File",
@@ -20,6 +21,7 @@ impl HeadphoneMeasurementSource {
         }
     }
 
+    #[must_use]
     pub fn toggle(&self) -> Self {
         match self {
             Self::File => Self::Spinorama,
@@ -44,6 +46,7 @@ pub enum HeadphoneEqStep {
 
 impl HeadphoneEqStep {
     /// Get all steps in order
+    #[must_use]
     pub fn all() -> &'static [HeadphoneEqStep] {
         &[
             HeadphoneEqStep::MeasurementTarget,
@@ -54,6 +57,7 @@ impl HeadphoneEqStep {
     }
 
     /// Get step index (0-based)
+    #[must_use]
     pub fn index(&self) -> usize {
         match self {
             HeadphoneEqStep::MeasurementTarget => 0,
@@ -64,6 +68,7 @@ impl HeadphoneEqStep {
     }
 
     /// Get step label
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             HeadphoneEqStep::MeasurementTarget => "Measurement",
@@ -74,6 +79,7 @@ impl HeadphoneEqStep {
     }
 
     /// Get next step
+    #[must_use]
     pub fn next(&self) -> Option<HeadphoneEqStep> {
         match self {
             HeadphoneEqStep::MeasurementTarget => Some(HeadphoneEqStep::Optimization),
@@ -84,6 +90,7 @@ impl HeadphoneEqStep {
     }
 
     /// Get previous step
+    #[must_use]
     pub fn previous(&self) -> Option<HeadphoneEqStep> {
         match self {
             HeadphoneEqStep::MeasurementTarget => None,
@@ -112,7 +119,7 @@ fn default_bo_acquisition() -> String {
 /// Headphone EQ optimizer configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HeadphoneEqOptimizerConfig {
-    /// Optimization algorithm (uses same enum as room_eq_types)
+    /// Optimization algorithm (uses same enum as `room_eq_types`)
     pub algorithm: crate::room_eq_types::RoomEqAlgorithm,
     /// Number of PEQ filters
     pub num_filters: usize,

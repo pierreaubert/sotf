@@ -9,9 +9,10 @@ use sotf_audio_player::ui_params::TuiEditablePlugin;
 /// previously panicked *after* the save/load had already succeeded. Fall back
 /// to the `<stem>.json` preset name so a weird path can never crash a success.
 fn preset_file_label(path: &std::path::Path, file_stem: &str) -> String {
-    path.file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| format!("{file_stem}.json"))
+    path.file_name().map_or_else(
+        || format!("{file_stem}.json"),
+        |name| name.to_string_lossy().into_owned(),
+    )
 }
 
 impl App {
@@ -225,6 +226,12 @@ impl App {
 
     /// Adjust the selected matrix header parameter (input channels, output channels, or preset)
     /// Returns true if adjustment was made
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+    )]
     pub fn adjust_matrix_header(&mut self, delta: i32) -> bool {
         use sotf_audio_player::{PluginSettings, apply_matrix_preset, resize_matrix};
 
@@ -255,26 +262,26 @@ impl App {
                     // Input channels: 1-32
                     let old_in = *input_channels;
                     let new_in = (*input_channels as i32 + delta).clamp(1, 32) as usize;
-                    if new_in != old_in {
+                    if new_in == old_in {
+                        false
+                    } else {
                         resize_matrix(matrix, old_in, *output_channels, new_in, *output_channels);
                         *input_channels = new_in;
                         clamp_col_to = Some(new_in);
                         true
-                    } else {
-                        false
                     }
                 }
                 1 => {
                     // Output channels: 1-32
                     let old_out = *output_channels;
                     let new_out = (*output_channels as i32 + delta).clamp(1, 32) as usize;
-                    if new_out != old_out {
+                    if new_out == old_out {
+                        false
+                    } else {
                         resize_matrix(matrix, *input_channels, old_out, *input_channels, new_out);
                         *output_channels = new_out;
                         clamp_row_to = Some(new_out);
                         true
-                    } else {
-                        false
                     }
                 }
                 2 => {
@@ -396,7 +403,10 @@ impl App {
         }
 
         // Check if file exists and show warning if overwriting
-        let filename_with_ext = if self.plugin_rack.file_input.ends_with(".json") {
+        let filename_with_ext = if std::path::Path::new(&self.plugin_rack.file_input)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+        {
             self.plugin_rack.file_input.clone()
         } else {
             format!("{}.json", self.plugin_rack.file_input)
@@ -406,10 +416,9 @@ impl App {
             let full_path = presets_dir.join(&filename_with_ext);
             if full_path.exists() {
                 self.ui.status_message = Some(format!(
-                    "Warning: Overwriting existing preset: {}",
-                    filename_with_ext
+                    "Warning: Overwriting existing preset: {filename_with_ext}"
                 ));
-                log::warn!("Overwriting existing preset: {}", filename_with_ext);
+                log::warn!("Overwriting existing preset: {filename_with_ext}");
             }
         }
 
@@ -423,15 +432,15 @@ impl App {
             .graph
             .save_to_file(&presets_dir, &self.plugin_rack.file_input)
         {
-            Ok(_) => {
-                self.ui.status_message = Some(format!("Saved preset: {}", filename_with_ext));
+            Ok(()) => {
+                self.ui.status_message = Some(format!("Saved preset: {filename_with_ext}"));
                 self.plugin_rack.last_loaded_preset = Some(filename_with_ext);
                 // Refresh presets list
                 self.refresh_plugin_presets();
             }
             Err(e) => {
-                self.ui.status_message = Some(format!("Error saving: {}", e));
-                log::error!("Failed to save plugin chain: {}", e);
+                self.ui.status_message = Some(format!("Error saving: {e}"));
+                log::error!("Failed to save plugin chain: {e}");
             }
         }
     }
@@ -461,16 +470,15 @@ impl App {
                 .graph
                 .save_to_file(&presets_dir, &preset_filename)
             {
-                Ok(_) => {
-                    self.ui.status_message =
-                        Some(format!("Overwritten preset: {}", preset_filename));
+                Ok(()) => {
+                    self.ui.status_message = Some(format!("Overwritten preset: {preset_filename}"));
                     self.plugin_rack.last_loaded_preset = Some(preset_filename);
                     // Refresh presets list
                     self.refresh_plugin_presets();
                 }
                 Err(e) => {
-                    self.ui.status_message = Some(format!("Error saving: {}", e));
-                    log::error!("Failed to save plugin chain: {}", e);
+                    self.ui.status_message = Some(format!("Error saving: {e}"));
+                    log::error!("Failed to save plugin chain: {e}");
                 }
             }
         }
@@ -498,14 +506,17 @@ impl App {
                 self.plugin_rack.graph.update_channel_dependent_plugins();
 
                 // Get the final filename (with .json appended if needed)
-                let filename = if self.plugin_rack.file_input.ends_with(".json") {
+                let filename = if std::path::Path::new(&self.plugin_rack.file_input)
+                    .extension()
+                    .is_some_and(|ext| ext.eq_ignore_ascii_case("json"))
+                {
                     self.plugin_rack.file_input.clone()
                 } else {
                     format!("{}.json", self.plugin_rack.file_input)
                 };
 
                 if warnings.is_empty() {
-                    self.ui.status_message = Some(format!("Loaded preset: {}", filename));
+                    self.ui.status_message = Some(format!("Loaded preset: {filename}"));
                 } else {
                     self.ui.status_message = Some(format!(
                         "Loaded preset: {} ({} plugin(s) skipped)",
@@ -513,20 +524,23 @@ impl App {
                         warnings.len()
                     ));
                     for w in &warnings {
-                        log::warn!("{}", w);
+                        log::warn!("{w}");
                     }
                 }
                 self.request_plugin_update();
                 self.plugin_rack.last_loaded_preset = Some(filename);
             }
             Err(e) => {
-                self.ui.status_message = Some(format!("Error loading: {}", e));
-                log::error!("Failed to load plugin chain: {}", e);
+                self.ui.status_message = Some(format!("Error loading: {e}"));
+                log::error!("Failed to load plugin chain: {e}");
             }
         }
     }
 
     /// Save the current plugin chain to the given path.
+    ///
+    /// # Errors
+    /// Returns an error if the path is invalid or plugin preset serialization and file writing fail.
     pub fn save_plugins_to_path(&mut self, path: &std::path::Path) -> Result<(), String> {
         let dir = path.parent().ok_or("path has no parent")?;
         let file = path
@@ -543,6 +557,9 @@ impl App {
 
     /// Load a plugin chain from the given path.
     /// Returns any load warnings (skipped plugin descriptions).
+    ///
+    /// # Errors
+    /// Returns an error if preset reading, decoding, or graph validation fails.
     pub fn load_plugins_from_path(
         &mut self,
         path: &std::path::Path,
@@ -653,8 +670,7 @@ impl App {
                             preset_filename,
                             self.plugin_rack.graph.len()
                         );
-                        self.ui.status_message =
-                            Some(format!("Loaded preset: {}", preset_filename));
+                        self.ui.status_message = Some(format!("Loaded preset: {preset_filename}"));
                     } else {
                         log::warn!(
                             "Loaded preset: {} ({} plugins, {} skipped)",
@@ -663,7 +679,7 @@ impl App {
                             warnings.len()
                         );
                         for w in &warnings {
-                            log::warn!("  {}", w);
+                            log::warn!("  {w}");
                         }
                         self.ui.status_message = Some(format!(
                             "Loaded preset: {} ({} plugin(s) skipped)",
@@ -675,8 +691,8 @@ impl App {
                     self.plugin_rack.last_loaded_preset = Some(preset_filename);
                 }
                 Err(e) => {
-                    self.ui.status_message = Some(format!("Error loading preset: {}", e));
-                    log::error!("Failed to load preset {}: {}", preset_filename, e);
+                    self.ui.status_message = Some(format!("Error loading preset: {e}"));
+                    log::error!("Failed to load preset {preset_filename}: {e}");
                 }
             }
         } else {

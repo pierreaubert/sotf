@@ -53,6 +53,7 @@ pub struct SpinoramaCurves {
 
 impl SpinoramaCurves {
     /// Check if we have valid CEA2034 data to plot.
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         !self.frequencies.is_empty()
             && self.frequencies.len() == self.on_axis.len()
@@ -60,16 +61,19 @@ impl SpinoramaCurves {
     }
 
     /// Check if we have PIR data.
+    #[must_use]
     pub fn has_pir(&self) -> bool {
         !self.estimated_in_room.is_empty()
     }
 
     /// Check if we have horizontal directivity data.
+    #[must_use]
     pub fn has_horizontal(&self) -> bool {
         !self.horizontal_directivity.is_empty()
     }
 
     /// Check if we have vertical directivity data.
+    #[must_use]
     pub fn has_vertical(&self) -> bool {
         !self.vertical_directivity.is_empty()
     }
@@ -77,6 +81,10 @@ impl SpinoramaCurves {
 
 /// Domain state for the Spinorama EQ wizard, independent of any UI toolkit.
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent persisted options and status flags retain their existing schema "
+)]
 pub struct SpinoramaEqScreenModel {
     /// Current step in the workflow.
     pub step: SpinoramaStep,
@@ -116,7 +124,7 @@ pub struct SpinoramaEqScreenModel {
     pub cancel_requested: Arc<AtomicBool>,
     /// Progress (0.0 - 1.0).
     pub progress: f32,
-    /// Progress history for loss/score curves (iteration, loss, optional_score).
+    /// Progress history for loss/score curves (iteration, loss, `optional_score`).
     pub progress_history: Vec<(usize, f64, Option<f64>)>,
     /// Current iteration number reported by the optimizer.
     pub current_iteration: usize,
@@ -240,6 +248,7 @@ impl Default for SpinoramaEqScreenModel {
 
 impl SpinoramaEqScreenModel {
     /// Dataset and optimizer identity captured at dispatch, excluding view state.
+    #[must_use]
     pub fn optimization_input_snapshot(&self) -> serde_json::Value {
         serde_json::json!({
             "speaker": self.selected_speaker,
@@ -251,6 +260,7 @@ impl SpinoramaEqScreenModel {
     }
 
     /// Check if we can proceed from the current step.
+    #[must_use]
     pub fn can_advance(&self) -> bool {
         match self.step {
             SpinoramaStep::SelectSpeaker => self.selected_speaker.is_some(),
@@ -262,6 +272,7 @@ impl SpinoramaEqScreenModel {
     }
 
     /// Check if optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.optimization_status == OptimizationStatus::Running
     }
@@ -289,10 +300,12 @@ impl SpinoramaEqScreenModel {
         self.status_message = String::new();
     }
 
+    #[must_use]
     pub fn supported_eq_modes(&self) -> &'static [&'static str] {
         &["iir"]
     }
 
+    #[must_use]
     pub fn selected_eq_mode(&self) -> &'static str {
         "iir"
     }
@@ -317,9 +330,7 @@ impl SpinoramaEqScreenModel {
             .cloned()
             .collect();
 
-        if !exact_matches.is_empty() {
-            self.speaker_suggestions = exact_matches;
-        } else {
+        if exact_matches.is_empty() {
             let mut scored: Vec<(String, f64)> = self
                 .available_speakers
                 .iter()
@@ -330,6 +341,8 @@ impl SpinoramaEqScreenModel {
 
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             self.speaker_suggestions = scored.into_iter().map(|(s, _)| s).collect();
+        } else {
+            self.speaker_suggestions = exact_matches;
         }
 
         // Limit to reasonable number for UI.
@@ -337,6 +350,7 @@ impl SpinoramaEqScreenModel {
     }
 
     /// Check if speakers cache needs to be refreshed (older than 1 hour or not loaded).
+    #[must_use]
     pub fn needs_speaker_refresh(&self) -> bool {
         if self.available_speakers.is_empty() {
             return true;
@@ -351,6 +365,10 @@ impl SpinoramaEqScreenModel {
 /// Score how well a query matches a speaker name using fuzzy multi-word matching.
 /// Returns Some(score) if all query words match, None otherwise.
 /// Uses Jaro-Winkler similarity with a 0.8 threshold for typo tolerance.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Search ranking averages word-match scores"
+)]
 fn fuzzy_match_score(query: &str, speaker: &str) -> Option<f64> {
     let query_lower = query.to_lowercase();
     let speaker_lower = speaker.to_lowercase();

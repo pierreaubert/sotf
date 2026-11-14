@@ -14,6 +14,13 @@ use sotf_federation::{TidalProvider, TidalProviderConfig};
 
 /// Fetch albums from a federation source provider.
 /// Returns the provider albums or an error wrapped in `FederationScanResult`.
+///
+/// # Errors
+/// Returns a failed scan result if the source is unsupported or its library cannot be fetched.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Each source provider has a distinct setup and library retrieval branch"
+)]
 pub async fn fetch_source_albums(
     source: &FederationSourceEntry,
 ) -> Result<Vec<ProviderAlbum>, FederationScanResult> {

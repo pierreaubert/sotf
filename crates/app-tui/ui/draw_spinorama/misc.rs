@@ -1,9 +1,24 @@
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, BorderType, Borders, Cell, Constraint, Direction, Frame, Layout, Line,
+    List, ListItem, Modifier, Paragraph, Rect, Row, Span, Style, Table, draw_freq_response_chart,
+    draw_loss_chart,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::SpinoramaStep;
+
     use sotf_audio_player::room_eq_types::OptimizationStatus;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.spinorama_eq;
 
@@ -101,7 +116,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
             let search_title = if s.model.loading_speakers {
                 i18n.dynamic("Search Speaker (loading...)".to_string())
             } else if let Some(ref e) = s.speakers_error {
-                i18n.dynamic(format!("Error: {}", e))
+                i18n.dynamic(format!("Error: {e}"))
             } else {
                 i18n.dynamic("Search Speaker (type to filter, Enter to select)".to_string())
             };
@@ -135,7 +150,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     } else {
                         "  "
                     };
-                    ListItem::new(format!("{}{}", prefix, name)).style(style)
+                    ListItem::new(format!("{prefix}{name}")).style(style)
                 })
                 .collect();
 
@@ -156,7 +171,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
 
             // Hint bar
             let hint = i18n.dynamic(if let Some(ref sel) = s.model.selected_speaker {
-                format!(" Selected: {}  |  ←/→=step  Enter=confirm", sel)
+                format!(" Selected: {sel}  |  ←/→=step  Enter=confirm")
             } else {
                 " ←/→=step  ↑/↓=navigate  Enter=select  r=load speakers".to_string()
             });
@@ -173,12 +188,10 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .constraints([Constraint::Min(0), Constraint::Length(3)])
                 .split(content_area);
 
-            let speaker_name = s
-                .model
-                .selected_speaker
-                .as_deref()
-                .map(str::to_owned)
-                .unwrap_or_else(|| i18n.dynamic("(no speaker selected)".to_string()));
+            let speaker_name = s.model.selected_speaker.as_deref().map_or_else(
+                || i18n.dynamic("(no speaker selected)".to_string()),
+                str::to_owned,
+            );
 
             let bool_str = |b: bool| if b { "[ON]" } else { "[OFF]" };
 
@@ -300,7 +313,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                                 format!("{:<20}", i18n.dynamic((*label).to_string())),
                                 label_style,
                             ),
-                            Span::styled(format!(" {}", display_value), value_style),
+                            Span::styled(format!(" {display_value}"), value_style),
                         ]));
                     }
                 }
@@ -561,8 +574,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 .model
                 .selected_speaker
                 .as_deref()
-                .map(str::to_owned)
-                .unwrap_or_else(|| i18n.dynamic("(none)".to_string()));
+                .map_or_else(|| i18n.dynamic("(none)".to_string()), str::to_owned);
 
             let mut lines = vec![
                 Line::from(""),
@@ -628,8 +640,7 @@ pub(crate) fn draw_spinorama_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     if let Some((slot, count)) = s.update_existing_eq_info {
                         lines.push(Line::from(vec![Span::styled(
                             i18n.dynamic(format!(
-                                "  Existing EQ in slot {} has {} filter(s).",
-                                slot, count
+                                "  Existing EQ in slot {slot} has {count} filter(s)."
                             )),
                             Style::default().fg(app.theme.accent_warning),
                         )]));

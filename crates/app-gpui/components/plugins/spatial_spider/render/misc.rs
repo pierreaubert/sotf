@@ -1,7 +1,10 @@
 use super::super::SpatialSpiderSnapshot;
 #[cfg(feature = "gpu-3d")]
 use d3rs::gpu3d::Lines3DState;
-use gpui::*;
+#[cfg(feature = "gpu-3d")]
+use gpui::{Div, InteractiveElement, MouseButton, ScrollDelta, Stateful};
+
+use gpui::Rgba;
 use sotf_plugins::speaker_config::{
     SpeakerConfig, get_speaker_config, get_speaker_config_by_channels,
 };
@@ -52,11 +55,11 @@ pub(super) fn attach_orbit_handlers(
     container: Stateful<Div>,
     state: Rc<RefCell<Lines3DState>>,
 ) -> Stateful<Div> {
-    let s_down_l = state.clone();
-    let s_down_m = state.clone();
-    let s_move = state.clone();
-    let s_up_l = state.clone();
-    let s_up_m = state.clone();
+    let s_down_l = std::rc::Rc::clone(&state);
+    let s_down_m = std::rc::Rc::clone(&state);
+    let s_move = std::rc::Rc::clone(&state);
+    let s_up_l = std::rc::Rc::clone(&state);
+    let s_up_m = std::rc::Rc::clone(&state);
     let s_scroll = state;
 
     container

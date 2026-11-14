@@ -1,5 +1,6 @@
 use crate::driver::AppDriver;
 
+#[derive(Debug)]
 pub struct QueuePage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

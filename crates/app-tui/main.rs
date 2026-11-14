@@ -6,6 +6,7 @@ use crossterm::terminal::{
     EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode,
 };
 use ratatui::Terminal;
+use sotf_audio_player::MusicLibrary;
 use sotf_audio_player::Player;
 use sotf_audio_player_tui::app::{App, Screen};
 use sotf_audio_player_tui::media_controls::TuiMediaControls;
@@ -32,6 +33,10 @@ use types::Args;
 use types::DevApiRx;
 use types::run_app;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep application startup, event dispatch, and shutdown ordering together"
+)]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Parse CLI args before touching the terminal. Server mode and clap's
     // help/error output must run in a normal terminal, not raw alt-screen mode.
@@ -79,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match sotf_audio_player::server::run_server_mode() {
             Ok(()) => std::process::exit(0),
             Err(e) => {
-                eprintln!("Server error: {}", e);
+                eprintln!("Server error: {e}");
                 std::process::exit(1);
             }
         }
@@ -151,8 +156,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut player = Player::new();
 
     // Load music library (asynchronously if requested)
-    use sotf_audio_player::MusicLibrary;
-    let db_is_empty = if !args.scan {
+    let db_is_empty = if args.scan {
+        false // Explicit scan requested
+    } else {
         // Take the library (with its DB connection) for background loading
         let mut library = std::mem::replace(&mut app.library, MusicLibrary::new());
         let (tx, rx) = mpsc::channel();
@@ -172,11 +178,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 Ok((loaded_library, result)) => {
                     app.library = loaded_library;
                     if let Err(e) = &result {
-                        log::warn!("Failed to load library from database: {}", e);
+                        log::warn!("Failed to load library from database: {e}");
                         db_empty = true;
                     } else {
                         let album_count = app.library.albums.len();
-                        log::info!("Loaded library from database: {} albums", album_count);
+                        log::info!("Loaded library from database: {album_count} albums");
                         app.rebuild_artist_tree();
                         app.update_directory_scan_times();
                         app.request_filter_update();
@@ -187,7 +193,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             // excessive concurrent memory usage from parallel
                             // full-file decodings.
                             if let Err(e) = app.start_waveform_scan() {
-                                log::warn!("Failed to start waveform scan: {}", e);
+                                log::warn!("Failed to start waveform scan: {e}");
                             }
                         }
                         db_empty = album_count == 0;
@@ -211,14 +217,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::thread::sleep(Duration::from_millis(40));
         }
         db_empty
-    } else {
-        false // Explicit scan requested
     };
 
     // Load saved configuration
     let t0 = std::time::Instant::now();
     if let Err(e) = app.load_config() {
-        log::warn!("Could not load saved configuration: {}", e);
+        log::warn!("Could not load saved configuration: {e}");
     }
     log::info!(
         "[startup] load_config: {:.1}ms",
@@ -245,15 +249,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Transition from loading screen to the appropriate initial screen
-    if !app.queue.is_empty() {
+    if app.queue.is_empty() {
+        app.current_screen = Screen::Library;
+        log::info!("Starting with Library view (queue is empty)");
+    } else {
         app.current_screen = Screen::Queue;
         log::info!(
             "Starting with Queue view (queue has {} items)",
             app.queue.len()
         );
-    } else {
-        app.current_screen = Screen::Library;
-        log::info!("Starting with Library view (queue is empty)");
     }
 
     // Initialize media controls (best-effort: works without them on headless servers)
@@ -264,10 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some(mc)
         }
         Err(e) => {
-            log::warn!(
-                "Media controls unavailable: {}. Continuing without them.",
-                e
-            );
+            log::warn!("Media controls unavailable: {e}. Continuing without them.");
             None
         }
     };
@@ -301,7 +302,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !app.read_only
         && let Err(e) = app.save_config()
     {
-        log::error!("Failed to save configuration: {}", e);
+        log::error!("Failed to save configuration: {e}");
     }
 
     // Restore terminal
@@ -328,5 +329,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Force exit — audio engine threads (decoder, processing, playback) use blocking
     // channel operations that can deadlock during sequential shutdown. The OS will
     // clean up all threads. Config is already saved and terminal is restored above.
-    std::process::exit(if result.is_ok() { 0 } else { 1 });
+    std::process::exit(i32::from(result.is_err()));
 }

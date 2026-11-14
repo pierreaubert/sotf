@@ -8,12 +8,20 @@ use crate::components::design::Ds;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{App, Entity, SharedString, div};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Text};
 
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::{DevElementState, DevTrackExt};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_loudness_monitor_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -180,6 +188,10 @@ pub fn render_loudness_monitor_plugin(
     panel
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn loudness_control_status(
     request: Option<&LoudnessControlUiRequest>,
     runtime_id: Option<u64>,
@@ -215,7 +227,6 @@ fn loudness_control_status(
     }
     if let Some(request) = request {
         let operation = match request.operation {
-            "start" => text.loudness_start,
             "pause" => text.loudness_pause,
             "continue" => text.loudness_continue,
             "reset" => text.loudness_reset,
@@ -247,6 +258,10 @@ fn loudness_control_retry_enabled(
         && loudness.integrated_control_request_id < request.request_id
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn submit_loudness_control(
     entity: &Entity<AppState>,
     graph_plugin_id: usize,

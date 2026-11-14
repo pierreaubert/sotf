@@ -15,7 +15,7 @@ use crate::eq_layout::narrow_graph_width;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, FocusHandle, FontWeight, MouseButton, div, px, rems};
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use sotf_audio_player::EQFilter;
 
@@ -26,7 +26,14 @@ const COMPACT_GRAPH_HEIGHT: f32 = 200.0;
 const MEDIUM_GRAPH_HEIGHT: f32 = 160.0;
 
 /// Medium layout: full-width graph with a horizontal band strip and property strip.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(crate) fn render_eq_bottom_strip(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -114,7 +121,14 @@ pub(crate) fn render_eq_bottom_strip(
 }
 
 /// Narrow layout: selected-band drawer plus a compact chip carousel.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(crate) fn render_eq_inspector(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -195,6 +209,10 @@ pub(crate) fn render_eq_inspector(
     root
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub(crate) fn render_narrow_band_strip(
     d: &Ds,
     entity: Entity<AppState>,
@@ -327,7 +345,7 @@ fn render_add_band_button(
             entity.update(cx, |state, cx| {
                 state.app.plugin_state.editing_plugin_index = Some(plugin_idx);
                 if let Err(e) = state.app.add_eq_band() {
-                    log::warn!("Failed to add EQ band: {}", e);
+                    log::warn!("Failed to add EQ band: {e}");
                 }
                 cx.notify();
             });

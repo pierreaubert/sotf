@@ -72,6 +72,9 @@ pub fn spotify_credentials_path(cache_dir: &Path) -> PathBuf {
 
 /// Delete the cached Spotify credentials (logout). Returns `Ok(false)` when
 /// no credentials were cached; other I/O errors are propagated.
+///
+/// # Errors
+/// Returns an error if cached credentials exist but cannot be removed.
 pub fn clear_spotify_cached_credentials(cache_dir: &Path) -> std::io::Result<bool> {
     match std::fs::remove_file(spotify_credentials_path(cache_dir)) {
         Ok(()) => Ok(true),
@@ -89,6 +92,9 @@ pub fn clear_spotify_cached_credentials(cache_dir: &Path) -> std::io::Result<boo
 /// mocks). Anything else (`file://`, scheme-less, ...) is rejected with
 /// [`std::io::ErrorKind::InvalidInput`] instead of being handed to the OS
 /// handler.
+///
+/// # Errors
+/// Returns an error if the platform browser command cannot be launched or fails.
 pub fn open_url_in_browser(url: &str) -> std::io::Result<()> {
     if !is_browser_openable_url(url) {
         return Err(std::io::Error::new(
@@ -97,9 +103,7 @@ pub fn open_url_in_browser(url: &str) -> std::io::Result<()> {
         ));
     }
     #[cfg(target_os = "macos")]
-    {
-        std::process::Command::new("open").arg(url).spawn()?;
-    }
+    std::process::Command::new("open").arg(url).spawn()?;
     #[cfg(target_os = "windows")]
     {
         // rundll32 + ShellExecute avoids cmd.exe quoting pitfalls (`start`
@@ -115,7 +119,7 @@ pub fn open_url_in_browser(url: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-/// `https://` anything, or `http://` to a loopback host (127.0.0.1, ::1,
+/// `https://` anything, or `http://` to a loopback host (127.0.0.1, `::1`,
 /// localhost) — everything else is refused.
 fn is_browser_openable_url(url: &str) -> bool {
     if url.starts_with("https://") {

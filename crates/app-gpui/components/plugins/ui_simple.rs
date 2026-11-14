@@ -10,7 +10,7 @@ use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Empty, Entity, SharedString, div, px};
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, Column, SelectionMode, Table, TableTheme,
 };
@@ -46,6 +46,14 @@ pub(super) fn supports_parameter_views(settings: &PluginSettings) -> bool {
 }
 
 /// Render a simple table-based parameter list for any plugin
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_simple_plugin_view(
     d: &Ds,
     entity: Entity<AppState>,
@@ -177,7 +185,7 @@ pub fn render_simple_plugin_view(
         let theme_for_value = theme.clone();
 
         let mut table = Table::new(
-            SharedString::from(format!("simple-params-{}", group_name)),
+            SharedString::from(format!("simple-params-{group_name}")),
             rows,
         )
         .column(
@@ -364,6 +372,15 @@ pub fn render_simple_plugin_view(
 }
 
 /// Render short choices without repeating the table's name-column label.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_table_choices(
     entity: Entity<AppState>,
     plugin_idx: usize,

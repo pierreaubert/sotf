@@ -11,7 +11,10 @@ use crate::components::plugins::editing::PluginEditingManager;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, ClickEvent, FontWeight, MouseButton, MouseUpEvent, ObjectFit, Pixels, Rems, Result,
+    SharedString, WeakEntity, Window, div, img, px, rems,
+};
 use gpui_ui_kit::{
     Badge, BadgeVariant, Button, ButtonSize, ButtonVariant, CommandItem, CommandPalette, Dialog,
     DialogSize, HStack, Heading, Input, InputSize, StackAlign, StackJustify, StackSize,
@@ -128,6 +131,10 @@ impl PlayerView {
             .footer(Text::caption(text.press_escape_or_question_to_close))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_about_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -248,6 +255,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_external_link(
         &self,
         icon: &str,
@@ -338,6 +349,10 @@ impl PlayerView {
     }
 
     /// Render modal for empty library prompt shown on startup
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_empty_library_prompt(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -469,6 +484,10 @@ impl PlayerView {
             .footer(Text::caption(file_text.press_escape_to_skip))
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_keybinding_row(
         &self,
         key: &str,
@@ -489,7 +508,14 @@ impl PlayerView {
             )
     }
 
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(crate) fn render_keybinding(
         &self,
         key: &str,
@@ -507,7 +533,7 @@ impl PlayerView {
                     .text_size(d.text_sm)
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.info)
-                    .child(format!("  {}", key)),
+                    .child(format!("  {key}")),
             )
             .child(
                 div()
@@ -517,6 +543,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_toast(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -668,6 +698,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_context_menu(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -790,8 +824,7 @@ impl PlayerView {
                                             QueuePlaybackEffect::Stop => {
                                                 if let Err(e) = state.player.stop() {
                                                     log::warn!(
-                                                        "[ContextMenu] Failed to stop player after queue removal: {}",
-                                                        e
+                                                        "[ContextMenu] Failed to stop player after queue removal: {e}"
                                                     );
                                                 }
                                             }
@@ -834,6 +867,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_metadata_editor_dialog(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -848,9 +885,10 @@ impl PlayerView {
         let preview = editor.preview.clone();
         let unsupported_count = preview
             .as_ref()
-            .map(|preview| preview.unsupported_writes.len())
-            .unwrap_or(0);
-        let can_apply = preview.as_ref().is_some_and(|preview| preview.can_apply());
+            .map_or(0, |preview| preview.unsupported_writes.len());
+        let can_apply = preview
+            .as_ref()
+            .is_some_and(sotf_audio_player::MetadataEditPreview::can_apply);
         let button_theme = theme.to_button_theme();
 
         Dialog::new("metadata-editor-dialog")
@@ -989,15 +1027,10 @@ impl PlayerView {
                                 )))
                                 .children(
                                     preview.unsupported_writes.iter().take(3).map(|file| {
-                                        let reason = file
-                                            .reason
-                                            .as_deref()
-                                            .map(|reason| {
-                                                runtime_text.translate(reason).into_owned()
-                                            })
-                                            .unwrap_or_else(|| {
-                                                metadata_text.tag_writing_unsupported.to_string()
-                                            });
+                                        let reason = file.reason.as_deref().map_or_else(
+                                            || metadata_text.tag_writing_unsupported.to_string(),
+                                            |reason| runtime_text.translate(reason).into_owned(),
+                                        );
                                         Text::caption(format!(
                                             "{}: {}",
                                             file.path.display(),
@@ -1094,10 +1127,10 @@ impl PlayerView {
                                             .as_deref()
                                             .or(candidate.artist.as_deref())
                                             .unwrap_or(metadata_text.unknown),
-                                        candidate
-                                            .year
-                                            .map(|year| year.to_string())
-                                            .unwrap_or_else(|| metadata_text.unknown.to_string())
+                                        candidate.year.map_or_else(
+                                            || metadata_text.unknown.to_string(),
+                                            |year| year.to_string()
+                                        )
                                     );
                                     Button::new(
                                         SharedString::from(format!("metadata-candidate-{idx}")),
@@ -1211,14 +1244,14 @@ impl PlayerView {
                                     "title" => editor.fields.title = value.to_string(),
                                     "artist" => editor.fields.artist = value.to_string(),
                                     "album_artist" => {
-                                        editor.fields.album_artist = value.to_string()
+                                        editor.fields.album_artist = value.to_string();
                                     }
                                     "year" => editor.fields.year = value.to_string(),
                                     "genre" => editor.fields.genre = value.to_string(),
                                     "composer" => editor.fields.composer = value.to_string(),
                                     "disc_number" => editor.fields.disc_number = value.to_string(),
                                     "track_number" => {
-                                        editor.fields.track_number = value.to_string()
+                                        editor.fields.track_number = value.to_string();
                                     }
                                     "conductor" => editor.fields.conductor = value.to_string(),
                                     "performer" => editor.fields.performer = value.to_string(),
@@ -1338,17 +1371,17 @@ impl PlayerView {
                 .find(|provider| provider.provider_id == "musicbrainz")
                 .cloned()
                 .unwrap_or_default();
-            let result = if !provider_config.enabled {
-                Err(sotf_audio_player::MetadataError::Provider(
-                    "MusicBrainz is disabled in Metadata settings".to_string(),
-                ))
-            } else {
+            let result = if provider_config.enabled {
                 run_musicbrainz_search_on_tokio(
                     scope,
-                    query,
+                    &query,
                     provider_config.endpoint,
                     config.user_agent,
                 )
+            } else {
+                Err(sotf_audio_player::MetadataError::Provider(
+                    "MusicBrainz is disabled in Metadata settings".to_string(),
+                ))
             };
             let _ = tx.send_blocking(result);
         });
@@ -1479,7 +1512,7 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.accent)
-                            .child(Text::new(format!("{}█", input)).size(TextSize::Xs)),
+                            .child(Text::new(format!("{input}█")).size(TextSize::Xs)),
                     )
                     // Show existing presets if available
                     .when(!presets.is_empty(), |el| {
@@ -1547,7 +1580,7 @@ impl PlayerView {
                             .bg(theme.surface)
                             .border_1()
                             .border_color(theme.success)
-                            .child(Text::new(format!("{}█", input)).size(TextSize::Xs)),
+                            .child(Text::new(format!("{input}█")).size(TextSize::Xs)),
                     )
                     // Show existing presets
                     .when(!presets.is_empty(), |el| {
@@ -1606,7 +1639,7 @@ impl PlayerView {
 
 fn run_musicbrainz_search_on_tokio(
     scope: crate::app::MetadataEditorScope,
-    query: String,
+    query: &str,
     endpoint: String,
     user_agent: String,
 ) -> Result<Vec<sotf_audio_player::MetadataImportCandidate>, sotf_audio_player::MetadataError> {
@@ -1618,8 +1651,8 @@ fn run_musicbrainz_search_on_tokio(
 
     runtime.block_on(async {
         match scope {
-            crate::app::MetadataEditorScope::Album => provider.search_album(None, &query).await,
-            crate::app::MetadataEditorScope::Track => provider.search_track(None, &query).await,
+            crate::app::MetadataEditorScope::Album => provider.search_album(None, query).await,
+            crate::app::MetadataEditorScope::Track => provider.search_track(None, query).await,
         }
     })
 }
@@ -1698,6 +1731,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_shortcut_section(
         &self,
         title: &str,
@@ -1726,6 +1763,10 @@ impl PlayerView {
             .min_w(rems(16.25))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_channel_conflict_dialog(
         &self,
         cx: &mut Context<Self>,
@@ -1772,14 +1813,13 @@ impl PlayerView {
                     .spacing(StackSpacing::Sm)
                     .child(
                         Text::new(format!(
-                            "This track has {} channels but the following plugins are incompatible:",
-                            track_channels
+                            "This track has {track_channels} channels but the following plugins are incompatible:"
                         ))
                         .size(TextSize::Sm)
                         .color(theme.text_primary),
                     )
                     .children(conflict_names.iter().map(|name| {
-                        Text::new(format!("  {}", name))
+                        Text::new(format!("  {name}"))
                             .size(TextSize::Sm)
                             .color(theme.warning)
                             .into_any_element()
@@ -1854,11 +1894,11 @@ impl PlayerView {
                                                     conflicts.iter().map(|c| c.index).collect();
                                                 indices.sort_unstable_by(|a, b| b.cmp(a));
                                                 for idx in &indices {
-                                                    state
+                                                    let _ = state
                                                         .app
                                                         .plugin_state
                                                         .graph
-                                                        .remove_plugin_by_index(*idx).ok();
+                                                        .remove_plugin_by_index(*idx);
                                                 }
                                                 state.app.ui_state.input_mode =
                                                     crate::app::InputMode::Normal;

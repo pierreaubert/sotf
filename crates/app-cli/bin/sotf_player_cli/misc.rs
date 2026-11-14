@@ -4,36 +4,33 @@ pub(super) fn get_speaker_config_channels(config: &str) -> Result<usize, String>
         "2.0" => Ok(2),
         "5.0" => Ok(5),
         "5.1" => Ok(6),
-        "7.1" => Ok(8),
-        "5.1.2" => Ok(8),
-        "5.1.4" => Ok(10),
-        "7.1.2" => Ok(10),
+        "7.1" | "5.1.2" => Ok(8),
+        "5.1.4" | "7.1.2" => Ok(10),
         "7.1.4" => Ok(12),
         "9.1.4" => Ok(14),
         "9.1.6" => Ok(16),
         _ => Err(format!(
-            "Invalid speaker configuration '{}'. Valid options: 2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6",
-            config
+            "Invalid speaker configuration '{config}'. Valid options: 2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6"
         )),
     }
 }
 
 pub(super) fn list_devices() -> Result<(), String> {
     let msg = "Enumerating audio devices...\n";
-    log::info!("{}", msg);
-    println!("{}", msg);
+    log::info!("{msg}");
+    println!("{msg}");
 
     let devices = sotf_audio::devices::get_audio_devices()
-        .map_err(|e| format!("Failed to get devices: {}", e))?;
+        .map_err(|e| format!("Failed to get devices: {e}"))?;
 
     // Print input devices
     if let Some(input_devices) = devices.get("input") {
         let title = "Input Devices:";
         let separator = "=".repeat(80);
-        log::info!("{}", title);
-        log::info!("{}", separator);
-        println!("{}", title);
-        println!("{}", separator);
+        log::info!("{title}");
+        log::info!("{separator}");
+        println!("{title}");
+        println!("{separator}");
 
         for (idx, device) in input_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
@@ -60,12 +57,12 @@ pub(super) fn list_devices() -> Result<(), String> {
                     config.sample_rate,
                     config.sample_format
                 );
-                log::info!("{}", line);
-                println!("{}", line);
+                log::info!("{line}");
+                println!("{line}");
             } else {
                 let line = format!("  [{}] {}{}", idx + 1, device.name, default_marker);
-                log::info!("{}", line);
-                println!("{}", line);
+                log::info!("{line}");
+                println!("{line}");
             }
         }
         log::info!("");
@@ -76,10 +73,10 @@ pub(super) fn list_devices() -> Result<(), String> {
     if let Some(output_devices) = devices.get("output") {
         let title = "Output Devices:";
         let separator = "=".repeat(80);
-        log::info!("{}", title);
-        log::info!("{}", separator);
-        println!("{}", title);
-        println!("{}", separator);
+        log::info!("{title}");
+        log::info!("{separator}");
+        println!("{title}");
+        println!("{separator}");
 
         for (idx, device) in output_devices.iter().enumerate() {
             let default_marker = if device.is_default { " (Default)" } else { "" };
@@ -106,12 +103,12 @@ pub(super) fn list_devices() -> Result<(), String> {
                     config.sample_rate,
                     config.sample_format
                 );
-                log::info!("{}", line);
-                println!("{}", line);
+                log::info!("{line}");
+                println!("{line}");
             } else {
                 let line = format!("  [{}] {}{}", idx + 1, device.name, default_marker);
-                log::info!("{}", line);
-                println!("{}", line);
+                log::info!("{line}");
+                println!("{line}");
             }
         }
         log::info!("");

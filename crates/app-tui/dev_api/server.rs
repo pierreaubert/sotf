@@ -50,16 +50,22 @@ pub fn start(port: u16) -> mpsc::Receiver<DevCommand> {
             ) {
                 Ok(handle) => {
                     let endpoint = handle.endpoint();
-                    std::thread::Builder::new()
+                    let owner = std::thread::Builder::new()
                         .name("sotf-tui-dev-api-owner".into())
                         .spawn(move || {
                             loop {
                                 std::hint::black_box(&handle);
                                 std::thread::park_timeout(Duration::from_secs(3600));
                             }
-                        })
-                        .expect("failed to retain TUI dev-api server handle");
-                    log::info!("TUI dev-api protocol v2 listening on http://{endpoint}");
+                        });
+                    match owner {
+                        Ok(_) => {
+                            log::info!("TUI dev-api protocol v2 listening on http://{endpoint}");
+                        }
+                        Err(error) => {
+                            log::error!("Failed to retain TUI dev-api server handle: {error}");
+                        }
+                    }
                 }
                 Err(error) => log::error!("TUI dev-api listener failed: {error}"),
             }
@@ -74,6 +80,10 @@ pub fn start(port: u16) -> mpsc::Receiver<DevCommand> {
     rx
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
 fn capabilities() -> Capabilities {
     let mut capabilities = Capabilities::new("tui", "sotf-tui");
     capabilities.build_version = env!("CARGO_PKG_VERSION").into();
@@ -359,10 +369,10 @@ fn get_query(raw_query: &str, tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQu
         path,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
@@ -412,11 +422,11 @@ fn post_action(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevRepl
         payload: payload.payload,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
 
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
@@ -433,10 +443,10 @@ fn post_key(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> 
         keystroke: payload.keystroke,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
@@ -455,38 +465,38 @@ fn post_text(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply>
         text: payload.text,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))
+        .map_err(|_error| anyhow!("dev-api reply timeout"))
 }
 
 fn get_health(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Health { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
 fn get_snapshot(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Snapshot { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api snapshot reply timeout"))
+        .map_err(|_error| anyhow!("dev-api snapshot reply timeout"))
 }
 
 fn post_quit(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Quit { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
@@ -503,10 +513,10 @@ fn post_qa_seed(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevRep
         library_dirs: payload.library_dirs,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
@@ -525,10 +535,10 @@ fn post_qa_virtual_capture(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Re
         output_directory: payload.output_directory,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))
+        .map_err(|_error| anyhow!("dev-api reply timeout"))
 }
 
 fn post_qa_room_eq_fixture(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
@@ -550,10 +560,10 @@ fn post_qa_room_eq_fixture(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Re
         fixture_dir: payload.fixture_dir,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))
+        .map_err(|_error| anyhow!("dev-api reply timeout"))
 }
 
 fn post_qa_playback_output(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Result<DevReply> {
@@ -568,10 +578,10 @@ fn post_qa_playback_output(body: &[u8], tx: &mpsc::SyncSender<DevCommand>) -> Re
         enabled: payload.enabled,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))
+        .map_err(|_error| anyhow!("dev-api reply timeout"))
 }
 
 fn http_response(status: u16, body: &str) -> String {

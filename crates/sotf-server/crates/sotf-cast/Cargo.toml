@@ -25,3 +25,4 @@ env_logger = { workspace = true }
 tempfile = { workspace = true }
 
 [lints]
+workspace = true

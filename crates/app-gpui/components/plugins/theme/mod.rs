@@ -2,7 +2,7 @@
 //!
 //! Two unrelated concerns coexist here:
 //!
-//! - **Meter / LUFS / TruePeak styling** ([`meter`]) derives from the global
+//! - **Meter / LUFS / `TruePeak` styling** ([`meter`]) derives from the global
 //!   app [`crate::theme::Theme`]. Used by every plugin that draws meters or
 //!   level bars; semantic colors (warning / clip / info) follow the global
 //!   palette so they remain consistent app-wide.

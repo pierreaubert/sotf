@@ -12,13 +12,24 @@ use crate::app::dev_api::{DevElementState, DevTrackExt};
 use crate::app::i18n::PluginCommonTranslations;
 use crate::components::design::Ds;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, Entity, FontWeight, div, rems};
 #[cfg(feature = "gpu-3d")]
 use gpui_ui_kit::{Button, ButtonSize, ButtonVariant};
 use gpui_ui_kit::{Select, SelectOption, SelectSize, Toggle, ToggleStyle};
 use sotf_plugins::speaker_config::SpeakerConfig;
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(super) fn build_header(
     d: &Ds,
     entity: Entity<AppState>,
@@ -214,7 +225,22 @@ pub(super) fn build_header(
         .into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the channel selector and its deferred interaction handlers together"
+)]
 pub(super) fn build_ref_channel_select(
     d: &Ds,
     entity: Entity<AppState>,
@@ -228,9 +254,8 @@ pub(super) fn build_ref_channel_select(
     theme: &crate::theme::Theme,
 ) -> AnyElement {
     let active = matches!(spider_mode, SpiderMode::CorrelationFromRef { .. });
-    let cfg = match cfg_opt {
-        Some(c) => c,
-        None => return div().w(rems(0.0)).into_any_element(),
+    let Some(cfg) = cfg_opt else {
+        return div().w(rems(0.0)).into_any_element();
     };
     let options: Vec<SelectOption> = cfg
         .speakers
@@ -242,14 +267,15 @@ pub(super) fn build_ref_channel_select(
         .speakers
         .iter()
         .find(|s| s.channel == ref_channel && !s.is_lfe)
-        .map(|s| s.label.to_string())
-        .unwrap_or_else(|| {
-            cfg.speakers
-                .iter()
-                .find(|s| !s.is_lfe)
-                .map(|s| s.label.to_string())
-                .unwrap_or_default()
-        });
+        .map_or_else(
+            || {
+                cfg.speakers
+                    .iter()
+                    .find(|s| !s.is_lfe)
+                    .map_or_default(|s| s.label.to_string())
+            },
+            |s| s.label.to_string(),
+        );
 
     let selected_index = options
         .iter()
@@ -295,8 +321,7 @@ pub(super) fn build_ref_channel_select(
                     .speakers
                     .iter()
                     .find(|s| s.label == value.as_ref() && !s.is_lfe)
-                    .map(|s| s.channel)
-                    .unwrap_or(0);
+                    .map_or(0, |s| s.channel);
                 entity.update(cx, |st, cx| {
                     st.app.plugin_ui.spatial_spider.correlation_ref_channel = picked;
                     if let SpiderMode::CorrelationFromRef { .. } =
@@ -336,6 +361,14 @@ pub(super) fn build_ref_channel_select(
         .into_any_element()
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(super) fn build_body(
     d: &Ds,
     snapshot: &SpatialSpiderSnapshot,
@@ -346,23 +379,20 @@ pub(super) fn build_body(
     text: PluginCommonTranslations,
     theme: &crate::theme::Theme,
 ) -> AnyElement {
-    let cfg = match cfg_opt {
-        None => {
-            return div()
-                .h(rems(17.5))
-                .w_full()
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .text_size(d.text_xs)
-                        .text_color(theme.text_muted)
-                        .child(text.spatial.no_layout),
-                )
-                .into_any_element();
-        }
-        Some(c) => c,
+    let Some(cfg) = cfg_opt else {
+        return div()
+            .h(rems(17.5))
+            .w_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(
+                div()
+                    .text_size(d.text_xs)
+                    .text_color(theme.text_muted)
+                    .child(text.spatial.no_layout),
+            )
+            .into_any_element();
     };
     let loudness = snapshot.loudness.as_deref();
     let n = cfg.total_channels;
@@ -423,9 +453,10 @@ pub(super) fn build_body(
 
     // SPL buffer.
     let metric_buf: Vec<f64> = match spider_mode {
-        SpiderMode::Spl => loudness
-            .map(|li| li.true_peaks_dbtp.iter().copied().collect())
-            .unwrap_or_else(|| vec![f64::NEG_INFINITY; n]),
+        SpiderMode::Spl => loudness.map_or_else(
+            || vec![f64::NEG_INFINITY; n],
+            |li| li.true_peaks_dbtp.iter().copied().collect(),
+        ),
         SpiderMode::CorrelationFromRef { .. } => Vec::new(),
     };
     // Correlation row.
@@ -462,14 +493,17 @@ pub(super) fn build_body(
             // Wrap the 3D element in an interactive container so mouse
             // events drive the OrbitControls. State is shared via Rc so
             // every event handler mutates the same camera.
-            let camera_state = snapshot.ui.camera_3d.clone();
-            attach_orbit_handlers(container().id("spider-3d-viewport"), camera_state.clone())
-                .child(
-                    SpiderView3D::new(cfg, metric, camera_state)
-                        .colors(palette)
-                        .vertical_color(theme.warning),
-                )
-                .into_any_element()
+            let camera_state = std::rc::Rc::clone(&snapshot.ui.camera_3d);
+            attach_orbit_handlers(
+                container().id("spider-3d-viewport"),
+                std::rc::Rc::clone(&camera_state),
+            )
+            .child(
+                SpiderView3D::new(cfg, metric, camera_state)
+                    .colors(palette)
+                    .vertical_color(theme.warning),
+            )
+            .into_any_element()
         }
         #[cfg(not(feature = "gpu-3d"))]
         SpiderViewMode::View3D => container()

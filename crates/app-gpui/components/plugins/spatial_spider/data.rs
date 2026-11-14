@@ -81,6 +81,10 @@ pub enum ChannelMetric<'a> {
 }
 
 impl ChannelMetric<'_> {
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     fn radius_and_signed(self, channel: usize) -> (f32, f32) {
         match self {
             ChannelMetric::Spl(dbtp) => {
@@ -103,6 +107,7 @@ impl ChannelMetric<'_> {
 /// matches the speaker layout. Invalid or incomplete matrices are not useful
 /// to the visualizer: treating them as an all-zero row would make the spider
 /// look like a valid silent measurement.
+#[must_use]
 pub fn correlation_row(matrix: &[f32], channel_count: usize, ref_channel: usize) -> Option<&[f32]> {
     if channel_count == 0 || ref_channel >= channel_count {
         return None;
@@ -127,6 +132,7 @@ const HEIGHT_ELEVATION_THRESHOLD_DEG: f32 = 5.0;
 ///
 /// LFE speakers are excluded (they have no azimuth).
 /// Height speakers are excluded — they belong on the vertical plane.
+#[must_use]
 pub fn compute_polygon_2d(config: &SpeakerConfig, metric: ChannelMetric) -> Vec<SpeakerVertex> {
     let mut out: Vec<SpeakerVertex> = config
         .speakers
@@ -154,6 +160,7 @@ pub fn compute_polygon_2d(config: &SpeakerConfig, metric: ChannelMetric) -> Vec<
 /// the centre speaker (azimuth 0, elevation 0) as a shared anchor with the
 /// horizontal plane, sorted by their "vertical angle"
 /// `atan2(direction_z, direction_y)` so the polygon is well-formed.
+#[must_use]
 pub fn compute_polygon_3d(config: &SpeakerConfig, metric: ChannelMetric) -> SpiderPolygon {
     let mut horizontal = Vec::new();
     let mut vertical = Vec::new();

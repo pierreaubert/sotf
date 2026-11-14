@@ -1,20 +1,20 @@
 use super::misc::compute_combined_scale;
 
-/// Album card width in rems (~140px at default 16px rem). Used in album_card.rs grid rendering
-/// and recalculate_pagination column estimation.
+/// Album card width in rems (~140px at default 16px rem). Used in `album_card.rs` grid rendering
+/// and `recalculate_pagination` column estimation.
 pub(crate) const ALBUM_CARD_WIDTH_REMS: f32 = 8.75;
 
 /// Album card height in rems (~180px at 16px rem, thumbnail + text below).
 pub(crate) const ALBUM_CARD_HEIGHT_REMS: f32 = 11.25;
 
-/// Gap between album cards in rems (matches gap_4 = 1rem in library.rs grid).
+/// Gap between album cards in rems (matches `gap_4` = 1rem in library.rs grid).
 pub(crate) const ALBUM_CARD_GAP_REMS: f32 = 1.0;
 
 /// Footer height in rems (~100px at 16px rem). Used for footer sizing and positioning
 /// popups (device popup, studio menu) above the footer.
 pub(crate) const FOOTER_HEIGHT_REMS: f32 = 6.25;
 
-/// Total vertical chrome height in rems, used by recalculate_pagination to estimate the
+/// Total vertical chrome height in rems, used by `recalculate_pagination` to estimate the
 /// available grid area. Breakdown:
 ///   Header ~2.5rem + Stats ~6.25rem + Filter ~2.5rem + Pagination ~3.125rem + Footer ~3.625rem
 pub(crate) const CHROME_HEIGHT_REMS: f32 = 18.0;
@@ -23,6 +23,12 @@ pub(crate) const CHROME_HEIGHT_REMS: f32 = 18.0;
 ///
 /// This is the pure computation behind `recalculate_pagination` — extracted so it can be
 /// unit-tested without constructing a full `PlayerView`.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub fn estimate_grid_dimensions(
     window_width: f32,
     window_height: f32,
@@ -66,6 +72,7 @@ pub const DEFAULT_MAX_FONT_SIZE_PX: f32 = 32.0;
 
 /// Convert min/max font size in pixels to combined scale bounds.
 /// Uses defaults when `None` is provided.
+#[must_use]
 pub fn combined_scale_bounds(min_px: Option<f32>, max_px: Option<f32>) -> (f32, f32) {
     let min = min_px
         .filter(|value| value.is_finite())

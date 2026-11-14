@@ -32,7 +32,7 @@ use crate::components::graphs::response_graphs::{
 use crate::components::plugins::editing::PluginEditingManager;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Action, AnyElement, AppContext, Div, SharedString, Window, canvas, div, rems};
 use gpui_ui_kit::workflow::{Position, WorkflowCanvas, WorkflowGraph, WorkflowNodeData};
 use gpui_ui_kit::{
     Accordion, AccordionItem, Button, ButtonSize, ButtonVariant, Input, InputSize, NumberInput,
@@ -77,6 +77,10 @@ enum EqConfigField {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_listening_test_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let (theme, translations, surface, show_listening_guide, show_break_prompt) = {
@@ -140,10 +144,10 @@ impl PlayerView {
                                 state.app.plugin_state.plugin_ui_state.listening_width =
                                     Some(width);
                                 cx.notify();
-                            })
+                            });
                         });
                     },
-                    |_, _, _, _| {},
+                    |_, (), _, _| {},
                 )
                 .absolute()
                 .size_full(),
@@ -155,7 +159,7 @@ impl PlayerView {
                     .id("ear-training-header")
                     .min_h_0()
                     .overflow_y_scroll()
-                    .when(show_listening_guide, |header| header.flex_1())
+                    .when(show_listening_guide, gpui::Styled::flex_1)
                     .p(d.pad_y)
                     .border_b_1()
                     .border_color(theme.border)
@@ -285,7 +289,7 @@ impl PlayerView {
                                             view.set_ear_training_surface(
                                                 EarTrainingSurface::Courses,
                                                 cx,
-                                            )
+                                            );
                                         })),
                                     "listening.eq.nav.courses"
                                 ))
@@ -302,7 +306,7 @@ impl PlayerView {
                                             view.set_ear_training_surface(
                                                 EarTrainingSurface::Progress,
                                                 cx,
-                                            )
+                                            );
                                         })),
                                     "listening.eq.nav.progress"
                                 )),
@@ -400,6 +404,15 @@ impl PlayerView {
         .into_any_element()
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn render_listening_break_prompt(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let (theme, text, interval, completed_trials) = {
@@ -551,6 +564,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_eq_progress(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -568,10 +585,9 @@ impl PlayerView {
                     || exercise.to_owned(),
                     |course| format!("{} · {exercise}", course_text.title(course)),
                 );
-                let details = session
-                    .config
-                    .as_ref()
-                    .map(|config| {
+                let details = session.config.as_ref().map_or_else(
+                    || history_text.unavailable.to_owned(),
+                    |config| {
                         let gain = if config.exercise == EqTrainingExercise::GainIdentification {
                             sotf_audio_player::ear_training::GAIN_CHOICES_DB
                                 .iter()
@@ -594,8 +610,8 @@ impl PlayerView {
                             config.max_frequency_hz,
                             config.q
                         )
-                    })
-                    .unwrap_or_else(|| history_text.unavailable.to_owned());
+                    },
+                );
                 list.child(dev_track!(
                     div()
                         .id(("listening-history-session", index))
@@ -727,6 +743,19 @@ impl PlayerView {
         .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn render_blind_comparison_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let phase = {
             let state = self.state.read(cx);
@@ -743,7 +772,7 @@ impl PlayerView {
                         .listening_test_state
                         .ab_test
                         .session()
-                        .and_then(|session| session.pending_mode()),
+                        .and_then(sotf_audio_player::AbTestSession::pending_mode),
                     view.completed_trials,
                 )
         };
@@ -1281,7 +1310,7 @@ impl PlayerView {
                                     )
                             }),
                     )
-                    .when_some(prepared_evidence, |panel, evidence| panel.child(evidence)),
+                    .when_some(prepared_evidence, gpui::ParentElement::child),
             )
             .child(
                 div()
@@ -1363,6 +1392,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_eq_training_workbench(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let ui_state = &self.state.read(cx).app.ui_state;
@@ -1447,8 +1480,10 @@ impl PlayerView {
                 session
                     .and_then(|session| session.current_question.as_ref())
                     .filter(|_| answered)
-                    .map(|question| question.preview_curve(160))
-                    .unwrap_or_else(|| vec![(20.0, 0.0), (20_000.0, 0.0)]),
+                    .map_or_else(
+                        || vec![(20.0, 0.0), (20_000.0, 0.0)],
+                        |question| question.preview_curve(160),
+                    ),
                 session
                     .and_then(|session| session.trials.last())
                     .filter(|_| answered)
@@ -1651,7 +1686,7 @@ impl PlayerView {
                                     .variant(ButtonVariant::Secondary)
                                     .theme(theme.to_button_theme())
                                     .on_click_event(cx.listener(|view, _, _, cx| {
-                                        view.cycle_eq_training_exercise(cx)
+                                        view.cycle_eq_training_exercise(cx);
                                     }))
                                     .map(|button| dev_track!(button, "listening.eq.exercise")),
                                 )
@@ -1669,7 +1704,7 @@ impl PlayerView {
                                     .theme(theme.to_button_theme())
                                     .on_click_event(
                                         cx.listener(|view, _, _, cx| {
-                                            view.toggle_eq_training_adaptive(cx)
+                                            view.toggle_eq_training_adaptive(cx);
                                         }),
                                     ),
                                 )
@@ -1922,10 +1957,10 @@ impl PlayerView {
                                             )
                                             .disabled(locked)
                                             .size(ButtonSize::Sm)
-                                            .variant(if !eq_filtered {
-                                                ButtonVariant::Primary
-                                            } else {
+                                            .variant(if eq_filtered {
                                                 ButtonVariant::Secondary
+                                            } else {
+                                                ButtonVariant::Primary
                                             })
                                             .theme(theme.to_button_theme())
                                             .on_click_event(cx.listener(|view, _, _, cx| {
@@ -2187,6 +2222,17 @@ impl PlayerView {
         )
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[cfg_attr(
+        not(feature = "dev-api"),
+        expect(
+            unused_variables,
+            reason = "Selector identifiers are read by optional developer instrumentation"
+        )
+    )]
     fn render_eq_config_row(
         &self,
         label: &'static str,
@@ -2196,7 +2242,7 @@ impl PlayerView {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
         let config = &state.app.plugin_state.listening_test_state.eq_config;
-        let (value, min, max, step, decimals, unit, _key) = match field {
+        let (value, min, max, step, decimals, unit, key) = match field {
             EqConfigField::Bands => (config.band_count as f64, 2.0, 25.0, 1.0, 0, "", "bands"),
             EqConfigField::Gain => (config.gain_db, 1.0, 15.0, 0.5, 1, "dB", "gain"),
             EqConfigField::Q => (config.q, 0.2, 10.0, 0.1, 1, "", "q"),
@@ -2243,7 +2289,7 @@ impl PlayerView {
             .justify_between()
             .gap(d.gap)
             .child(Text::label(label))
-            .child(dev_track!(input, format!("listening.eq.config.{_key}")))
+            .child(dev_track!(input, format!("listening.eq.config.{key}")))
     }
 
     fn ensure_listening_path_canvas(&self, target: ListeningPathTarget, cx: &mut Context<Self>) {
@@ -2319,6 +2365,10 @@ impl PlayerView {
         });
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_listening_path_card(
         &self,
         target: ListeningPathTarget,
@@ -2411,7 +2461,7 @@ impl PlayerView {
                     .flex_wrap()
                     .items_center()
                     .justify_between()
-                    .child(Text::new(label.to_owned()).weight(TextWeight::Semibold))
+                    .child(Text::new(label.clone()).weight(TextWeight::Semibold))
                     .child(Text::caption(summary)),
             )
             .child(
@@ -2563,7 +2613,7 @@ impl PlayerView {
                     let use_expert_editor = node_plugin_type
                         .as_deref()
                         .and_then(sotf_plugins::param_specs::for_plugin_type)
-                        .is_none_or(|specs| specs.is_empty());
+                        .is_none_or(<[sotf_audio_player::param_specs::ParamSpec]>::is_empty);
                     let editor_label = translations.parameter_editor(use_expert_editor);
                     card.child(
                         div()
@@ -2579,7 +2629,7 @@ impl PlayerView {
                                     .flex_wrap()
                                     .items_center()
                                     .justify_between()
-                                    .child(Text::caption(format!("{node_id} · {}", editor_label)))
+                                    .child(Text::caption(format!("{node_id} · {editor_label}")))
                                     .child(
                                         Button::new(
                                             SharedString::from(format!(
@@ -2675,7 +2725,7 @@ impl PlayerView {
                                         node_plugin_type
                                             .as_deref()
                                             .and_then(sotf_plugins::param_specs::for_plugin_type)
-                                            .is_none_or(|specs| specs.is_empty()),
+                                            .is_none_or(<[sotf_audio_player::param_specs::ParamSpec]>::is_empty),
                                         |editor| {
                                             editor.child(
                                                 Input::new(SharedString::from(format!(
@@ -2776,6 +2826,18 @@ impl PlayerView {
         menu
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn render_listening_parameter_editor(
         &self,
         editor_id: &str,
@@ -2956,6 +3018,10 @@ impl PlayerView {
         controls
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_listening_rack_row(
         &self,
         target: ListeningPathTarget,
@@ -2995,7 +3061,7 @@ impl PlayerView {
         let plugin_type = plugin.plugin_type.clone();
         let parameter_editor_id = format!("{suffix}-rack-{index}");
         let use_expert_editor = sotf_plugins::param_specs::for_plugin_type(&plugin_type)
-            .is_none_or(|specs| specs.is_empty());
+            .is_none_or(<[sotf_audio_player::param_specs::ParamSpec]>::is_empty);
         let editor_label = state
             .app
             .ui_state
@@ -3161,28 +3227,33 @@ impl PlayerView {
                             reset_label,
                             cx,
                         ))
-                        .when(specs.is_none_or(|specs| specs.is_empty()), |editor| {
-                            editor.child(
-                                Input::new(SharedString::from(format!(
-                                    "listening-{suffix}-params-{index}"
-                                )))
-                                .value(edit_value)
-                                .placeholder(r#"{"parameter": "value"}"#)
-                                .size(InputSize::Sm)
-                                .on_text_change(
-                                    move |value, _window, cx| {
-                                        state_for_edit.update(cx, |state, _| {
-                                            stage_listening_rack_parameters(
-                                                state,
-                                                target,
-                                                index,
-                                                value.to_string(),
-                                            );
-                                        });
-                                    },
-                                ),
-                            )
-                        }),
+                        .when(
+                            specs.is_none_or(
+                                <[sotf_audio_player::param_specs::ParamSpec]>::is_empty,
+                            ),
+                            |editor| {
+                                editor.child(
+                                    Input::new(SharedString::from(format!(
+                                        "listening-{suffix}-params-{index}"
+                                    )))
+                                    .value(edit_value)
+                                    .placeholder(r#"{"parameter": "value"}"#)
+                                    .size(InputSize::Sm)
+                                    .on_text_change(
+                                        move |value, _window, cx| {
+                                            state_for_edit.update(cx, |state, _| {
+                                                stage_listening_rack_parameters(
+                                                    state,
+                                                    target,
+                                                    index,
+                                                    value.to_string(),
+                                                );
+                                            });
+                                        },
+                                    ),
+                                )
+                            },
+                        ),
                 )
             })
     }
@@ -3480,6 +3551,11 @@ impl PlayerView {
         )
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn render_listening_trial_metadata(&self, cx: &mut Context<Self>) -> Div {
         let d = Ds::from_cx(cx);
         let theme = self.state.read(cx).app.ui_state.theme.clone();
@@ -3756,6 +3832,10 @@ fn clear_listening_canvas(
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 fn build_listening_workflow_graph(
     nodes: &[GraphNodeConfig],
     edges: &[GraphEdgeConfig],
@@ -3884,8 +3964,8 @@ fn stage_listening_node_parameters(
         .status
         .clone();
     let listening = &mut state.app.plugin_state.listening_test_state;
-    listening.editing_path_parameters = value.clone();
-    match serde_json::from_str::<serde_json::Value>(&value) {
+    listening.editing_path_parameters = value;
+    match serde_json::from_str::<serde_json::Value>(&listening.editing_path_parameters) {
         Ok(parameters) if parameters.is_object() => listening.status.clear(),
         Ok(_) => listening.status = localized.params_object.into(),
         Err(error) => listening.status = format!("{}: {error}", localized.params_invalid),
@@ -3906,18 +3986,19 @@ fn update_listening_node_parameters(
         .status
         .clone();
     let listening = &mut state.app.plugin_state.listening_test_state;
-    listening.editing_path_parameters = value.clone();
-    let parameters = match serde_json::from_str::<serde_json::Value>(&value) {
-        Ok(parameters) if parameters.is_object() => parameters,
-        Ok(_) => {
-            listening.status = localized.params_object.into();
-            return;
-        }
-        Err(error) => {
-            listening.status = format!("{}: {error}", localized.params_invalid);
-            return;
-        }
-    };
+    listening.editing_path_parameters = value;
+    let parameters =
+        match serde_json::from_str::<serde_json::Value>(&listening.editing_path_parameters) {
+            Ok(parameters) if parameters.is_object() => parameters,
+            Ok(_) => {
+                listening.status = localized.params_object.into();
+                return;
+            }
+            Err(error) => {
+                listening.status = format!("{}: {error}", localized.params_invalid);
+                return;
+            }
+        };
     let Some(PathConfig::Graph { nodes, .. }) = listening_path_config_mut(listening, target) else {
         return;
     };
@@ -3943,8 +4024,8 @@ fn stage_listening_rack_parameters(
         .status
         .clone();
     let listening = &mut state.app.plugin_state.listening_test_state;
-    listening.editing_path_parameters = value.clone();
-    match serde_json::from_str::<serde_json::Value>(&value) {
+    listening.editing_path_parameters = value;
+    match serde_json::from_str::<serde_json::Value>(&listening.editing_path_parameters) {
         Ok(parameters) if parameters.is_object() => listening.status.clear(),
         Ok(_) => listening.status = localized.params_object.into(),
         Err(error) => listening.status = format!("{}: {error}", localized.params_invalid),
@@ -3985,18 +4066,19 @@ fn update_listening_rack_parameters(
         .status
         .clone();
     let listening = &mut state.app.plugin_state.listening_test_state;
-    listening.editing_path_parameters = value.clone();
-    let parameters = match serde_json::from_str::<serde_json::Value>(&value) {
-        Ok(parameters) if parameters.is_object() => parameters,
-        Ok(_) => {
-            listening.status = localized.params_object.into();
-            return;
-        }
-        Err(error) => {
-            listening.status = format!("{}: {error}", localized.params_invalid);
-            return;
-        }
-    };
+    listening.editing_path_parameters = value;
+    let parameters =
+        match serde_json::from_str::<serde_json::Value>(&listening.editing_path_parameters) {
+            Ok(parameters) if parameters.is_object() => parameters,
+            Ok(_) => {
+                listening.status = localized.params_object.into();
+                return;
+            }
+            Err(error) => {
+                listening.status = format!("{}: {error}", localized.params_invalid);
+                return;
+            }
+        };
     let Some(config) = listening_path_config_mut(listening, target) else {
         return;
     };

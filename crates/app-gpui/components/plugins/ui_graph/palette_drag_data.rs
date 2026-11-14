@@ -1,7 +1,7 @@
 use super::types::PaletteItemType;
 use crate::components::design::Ds;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Rgba, Window, div};
 
 /// Drag data for palette items
 #[derive(Clone)]

@@ -1,4 +1,4 @@
-//! Labels for opening and saving the shared AutoEQ report.
+//! Labels for opening and saving the shared `AutoEQ` report.
 
 // Rust guideline compliant 2026-02-21
 

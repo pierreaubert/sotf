@@ -7,6 +7,6 @@ pub struct MpdProviderConfig {
     pub port: u16,
     pub password: Option<String>,
     /// Port for MPD's httpd streaming output.
-    /// SOTF tells MPD to play a track, then streams from http://host:httpd_port/
+    /// SOTF tells MPD to play a track, then streams from `http://host:httpd_port`/
     pub httpd_port: u16,
 }

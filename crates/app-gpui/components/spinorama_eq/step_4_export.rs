@@ -1,6 +1,6 @@
 use crate::ui::PlayerView;
+use gpui::SharedString;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
@@ -25,6 +25,10 @@ impl PlayerView {
     // Step 4: Export
     // ========================================================================
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_spinorama_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -110,8 +114,7 @@ impl PlayerView {
                                                     dev_track!(
                                                         Button::new(
                                                             SharedString::from(format!(
-                                                                "spinorama-export-format-{}",
-                                                                value
+                                                                "spinorama-export-format-{value}"
                                                             )),
                                                             *label,
                                                         )
@@ -131,8 +134,10 @@ impl PlayerView {
                                                                             .app
                                                                             .measurement_state
                                                                             .spinorama_eq_state
-                                                                            .export_format =
-                                                                            selected_format.clone();
+                                                                            .export_format
+                                                                            .clone_from(
+                                                                                &selected_format,
+                                                                            );
                                                                     },
                                                                 );
                                                                 cx.notify();

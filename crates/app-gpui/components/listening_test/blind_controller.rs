@@ -60,9 +60,9 @@ impl BlindComparisonSnapshot {
             trial_ready: session
                 .is_some_and(|session| session.setup.level_match.within_tolerance()),
             paths_ready: listening.path_a.is_some() && listening.path_b.is_some(),
-            pending_mode: session.and_then(|session| session.pending_mode()),
+            pending_mode: session.and_then(sotf_audio_player::AbTestSession::pending_mode),
             trial_count: session.map_or(0, |session| session.trials.len()),
-            score: session.map(|session| session.abx_score()),
+            score: session.map(sotf_audio_player::AbTestSession::abx_score),
             segment_start_ms: listening.segment_start_ms,
             level_match: listening.level_match_config,
             status: listening.status.clone(),
@@ -72,6 +72,11 @@ impl BlindComparisonSnapshot {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn use_current_listening_position(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _| {
             let start_ms = (state.app.playback.position_secs.max(0.0) * 1_000.0).round() as u64;
@@ -82,6 +87,10 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     pub(super) fn load_listening_session_media(&mut self, cx: &mut Context<Self>) {
         let request = {
             let state = self.state.read(cx);
@@ -298,6 +307,14 @@ impl PlayerView {
         cx.notify();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn prepare_current_listening_session(&mut self, cx: &mut Context<Self>) {
         if self.comparison_setup_locked(cx) {
             return;
@@ -528,7 +545,7 @@ impl PlayerView {
                     .plugin_state
                     .commit_ab_test_answer(answer, confidence, Some(notes));
             match result {
-                Ok(_) => {
+                Ok(()) => {
                     state
                         .app
                         .plugin_state
@@ -547,7 +564,7 @@ impl PlayerView {
                         listening.notes.clear();
                         listening.confidence = None;
                         listening.status = answer_committed.into();
-                    }
+                    };
                     let tutorial = &mut state.app.tutorial;
                     if completed_trials >= tutorial.listening_break_interval
                         && completed_trials % tutorial.listening_break_interval == 0
@@ -636,6 +653,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(super) fn pick_listening_session_file(&mut self, load: bool, cx: &mut Context<Self>) {
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         {
@@ -696,7 +717,7 @@ impl PlayerView {
                 let result = if load {
                     load_ab_test_session(&path).map(Some)
                 } else if let Some(session) = session.as_ref() {
-                    save_ab_test_session(session, &path).map(|_| None)
+                    save_ab_test_session(session, &path).map(|()| None)
                 } else {
                     return;
                 };
@@ -825,7 +846,7 @@ impl PlayerView {
             .listening_test_state
             .ab_test
             .session()
-            .and_then(|session| session.pending_mode());
+            .and_then(sotf_audio_player::AbTestSession::pending_mode);
         if let Some(cue) = listening_cue_for_position(mode, position) {
             self.activate_listening_cue(cue, cx);
         }
@@ -874,7 +895,7 @@ impl PlayerView {
             .listening_test_state
             .ab_test
             .session()
-            .and_then(|session| session.pending_mode());
+            .and_then(sotf_audio_player::AbTestSession::pending_mode);
         if let Some(answer) = listening_answer_for_position(mode, position) {
             self.commit_listening_answer(answer, cx);
         }

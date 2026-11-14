@@ -3,7 +3,7 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, ObjectFit, Window, div, img, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
 };
@@ -123,6 +123,14 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(crate) fn render_album_detail(&self, cx: &mut Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
@@ -183,8 +191,7 @@ impl PlayerView {
                     "{} · {} {} · {}:{:02}",
                     album
                         .year
-                        .map(|year| year.to_string())
-                        .unwrap_or_else(|| "—".into()),
+                        .map_or_else(|| "—".into(), |year| year.to_string()),
                     album.tracks.len(),
                     text[6],
                     duration / 60,
@@ -218,7 +225,7 @@ impl PlayerView {
                 .aria_label(label)
                 .on_click_event(move |_, _, cx| {
                     action_state.update(cx, |state, _| {
-                        Self::apply_album_action(state, &album, None, action)
+                        Self::apply_album_action(state, &album, None, action);
                     });
                     action_view.update(cx, |_view, cx| cx.notify());
                 }),
@@ -260,10 +267,10 @@ impl PlayerView {
                     .to_string_lossy()
                     .into_owned()
             });
-            let duration = track
-                .duration_secs
-                .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
-                .unwrap_or_else(|| "—".into());
+            let duration = track.duration_secs.map_or_else(
+                || "—".into(),
+                |seconds| format!("{}:{:02}", seconds / 60, seconds % 60),
+            );
             let play_album = Arc::clone(&album);
             let add_album = Arc::clone(&album);
             let row = div()
@@ -297,7 +304,7 @@ impl PlayerView {
                                             &play_album,
                                             Some(index),
                                             AlbumAction::Play,
-                                        )
+                                        );
                                     });
                                     cx.notify();
                                 })),
@@ -325,7 +332,7 @@ impl PlayerView {
                                     &add_album,
                                     Some(index),
                                     AlbumAction::Append,
-                                )
+                                );
                             });
                             track_view.update(cx, |_view, cx| cx.notify());
                         })

@@ -4,7 +4,7 @@
 //
 // Manages configured library providers, their priorities, and availability.
 
-use crate::provider::*;
+use crate::provider::{LibraryProvider, SourceId, SourceType};
 use std::collections::HashMap;
 
 /// Stored source configuration (mirrors the `library_sources` database table).
@@ -21,13 +21,14 @@ pub struct SourceConfig {
 
 /// Manages registered library providers and their configuration.
 pub struct SourceRegistry {
-    /// Registered providers, keyed by source_id.
+    /// Registered providers, keyed by `source_id`.
     providers: HashMap<String, Box<dyn LibraryProvider>>,
     /// Configuration for each source (persisted in database).
     configs: HashMap<String, SourceConfig>,
 }
 
 impl SourceRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self {
             providers: HashMap::new(),
@@ -42,23 +43,27 @@ impl SourceRegistry {
         self.providers.insert(key, provider);
     }
 
-    /// Unregister a provider by source_id.
+    /// Unregister a provider by `source_id`.
     pub fn unregister(&mut self, source_id: &str) -> Option<Box<dyn LibraryProvider>> {
         self.configs.remove(source_id);
         self.providers.remove(source_id)
     }
 
-    /// Get a provider by source_id.
+    /// Get a provider by `source_id`.
+    #[must_use]
     pub fn get(&self, source_id: &str) -> Option<&dyn LibraryProvider> {
-        self.providers.get(source_id).map(|p| p.as_ref())
+        self.providers
+            .get(source_id)
+            .map(std::convert::AsRef::as_ref)
     }
 
     /// Get configuration for a source.
+    #[must_use]
     pub fn get_config(&self, source_id: &str) -> Option<&SourceConfig> {
         self.configs.get(source_id)
     }
 
-    /// Update the last_sync_at timestamp for a source.
+    /// Update the `last_sync_at` timestamp for a source.
     pub fn update_last_sync(&mut self, source_id: &str, timestamp: u64) {
         if let Some(config) = self.configs.get_mut(source_id) {
             config.last_sync_at = Some(timestamp);
@@ -66,17 +71,16 @@ impl SourceRegistry {
     }
 
     /// Get all enabled providers, sorted by priority (highest first).
+    #[must_use]
     pub fn enabled_providers(&self) -> Vec<(&str, &dyn LibraryProvider, i32)> {
         let mut result: Vec<_> = self
             .providers
             .iter()
             .filter_map(|(key, provider)| {
                 self.configs.get(key).and_then(|config| {
-                    if config.is_enabled {
-                        Some((key.as_str(), provider.as_ref(), config.priority))
-                    } else {
-                        None
-                    }
+                    config
+                        .is_enabled
+                        .then(|| (key.as_str(), provider.as_ref(), config.priority))
                 })
             })
             .collect();
@@ -85,25 +89,33 @@ impl SourceRegistry {
     }
 
     /// Get all registered source IDs.
+    #[must_use]
     pub fn source_ids(&self) -> Vec<&str> {
-        self.providers.keys().map(|k| k.as_str()).collect()
+        self.providers
+            .keys()
+            .map(std::string::String::as_str)
+            .collect()
     }
 
     /// Check if a source is registered.
+    #[must_use]
     pub fn contains(&self, source_id: &str) -> bool {
         self.providers.contains_key(source_id)
     }
 
     /// Get the priority for a source (higher = preferred for metadata conflicts).
+    #[must_use]
     pub fn priority(&self, source_id: &str) -> Option<i32> {
         self.configs.get(source_id).map(|c| c.priority)
     }
 
     /// Number of registered providers.
+    #[must_use]
     pub fn len(&self) -> usize {
         self.providers.len()
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.providers.is_empty()
     }
@@ -112,6 +124,14 @@ impl SourceRegistry {
 impl Default for SourceRegistry {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for SourceRegistry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SourceRegistry")
+            .field("source_ids", &self.providers.keys().collect::<Vec<_>>())
+            .finish_non_exhaustive()
     }
 }
 

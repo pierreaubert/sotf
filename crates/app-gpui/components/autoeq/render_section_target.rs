@@ -112,7 +112,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_tilt_slope_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         slope_input = slope_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -132,7 +132,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_tilt_reference_freq_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         ref_freq_input = ref_freq_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -149,7 +149,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_tilt_bass_shelf_db_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         shelf_db_input = shelf_db_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -166,7 +166,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_tilt_bass_shelf_freq_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         shelf_freq_input = shelf_freq_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 

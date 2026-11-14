@@ -39,11 +39,7 @@ pub(super) fn find_album_art(dir: &Path) -> Option<PathBuf> {
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.is_file() && is_image_file(&path) {
-                    Some(path)
-                } else {
-                    None
-                }
+                (path.is_file() && is_image_file(&path)).then_some(path)
             })
             .collect();
 
@@ -106,11 +102,7 @@ pub(super) fn find_album_art_in_subdir(dir: &Path) -> Option<PathBuf> {
             .flatten()
             .filter_map(|entry| {
                 let path = entry.path();
-                if path.is_file() && is_image_file(&path) {
-                    Some(path)
-                } else {
-                    None
-                }
+                (path.is_file() && is_image_file(&path)).then_some(path)
             })
             .collect();
 

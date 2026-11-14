@@ -4,6 +4,7 @@
 
 use anyhow::Context;
 use sha2::{Digest, Sha256};
+use std::fmt::Write as _;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{
@@ -33,10 +34,10 @@ impl ReportServer {
         let address = listener.local_addr()?;
         let path = format!("/{}/index.html", uuid::Uuid::new_v4());
         let url = url::Url::parse(&format!("http://{address}{path}"))?;
-        let report_id = Sha256::digest(html.as_bytes())
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let mut report_id = String::with_capacity(64);
+        for byte in Sha256::digest(html.as_bytes()) {
+            write!(report_id, "{byte:02x}")?;
+        }
         let stop = Arc::new(AtomicBool::new(false));
         let worker_stop = Arc::clone(&stop);
         let worker = std::thread::Builder::new()
@@ -76,16 +77,19 @@ impl ReportServer {
     }
 
     /// The only navigable document URL.
+    #[must_use]
     pub fn url(&self) -> &str {
         self.url.as_str()
     }
 
     /// Immutable content identity used to bind viewer interactions.
+    #[must_use]
     pub fn report_id(&self) -> &str {
         &self.report_id
     }
 
     /// Whether a navigation stays on this report's document.
+    #[must_use]
     pub fn permits_navigation(&self, candidate: &str) -> bool {
         let Ok(mut candidate) = url::Url::parse(candidate) else {
             return false;

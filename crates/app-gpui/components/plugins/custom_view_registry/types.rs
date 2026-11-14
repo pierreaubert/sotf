@@ -2,7 +2,7 @@ use crate::app::AppState;
 use crate::components::plugins::theme::PluginTheme;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
-use gpui::*;
+use gpui::{AnyElement, Context, Entity, FocusHandle, ScrollHandle};
 use sotf_audio_player::{PluginGraph, PluginSettings};
 use sotf_audio_player_midi::mapping::MidiOverlay;
 use std::sync::Arc;
@@ -34,8 +34,8 @@ pub struct CustomViewRenderContext<'a> {
     pub spectrum_reference_select_open: bool,
     pub plugin_graph: &'a PluginGraph,
     pub midi_overlay: Option<&'a MidiOverlay>,
-    /// Stable chart focus target supplied by the owning PlayerView. Renderers
-    /// must not re-read PlayerView while it is already rendering.
+    /// Stable chart focus target supplied by the owning `PlayerView`. Renderers
+    /// must not re-read `PlayerView` while it is already rendering.
     pub eq_chart_focus_handle: FocusHandle,
     /// Stable focus target for the one selected plugin parameter exact editor.
     /// Only one selected knob renders its exact editor at a time.
@@ -49,3 +49,13 @@ pub struct CustomViewRenderContext<'a> {
 /// Function signature for custom view renderers.
 pub type CustomViewRenderFn =
     fn(ctx: &CustomViewRenderContext, cx: &mut Context<PlayerView>) -> AnyElement;
+
+impl std::fmt::Debug for CustomViewRenderContext<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CustomViewRenderContext")
+            .field("plugin_idx", &self.plugin_idx)
+            .field("is_editing", &self.is_editing)
+            .field("available_width", &self.available_width)
+            .finish_non_exhaustive()
+    }
+}

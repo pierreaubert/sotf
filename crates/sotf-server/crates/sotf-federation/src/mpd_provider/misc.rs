@@ -1,3 +1,4 @@
+use std::fmt::Write as _;
 use std::time::Duration;
 
 /// Default timeout for establishing a TCP connection to MPD.
@@ -20,6 +21,7 @@ pub const MPD_READ_TIMEOUT: Duration = Duration::from_secs(30);
 ///
 /// Use [`validate_mpd_token`] when you want to *reject* inputs that contain
 /// control characters rather than escape them.
+#[must_use]
 pub fn escape_mpd_string(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -40,6 +42,8 @@ pub fn escape_mpd_string(s: &str) -> String {
 ///
 /// We reject embedded NUL, CR, and LF — any of which could otherwise be used
 /// to smuggle in a second MPD command after our closing quote.
+/// # Errors
+/// Returns an error if the token contains line breaks or null bytes.
 pub fn validate_mpd_token(s: &str) -> Result<(), &'static str> {
     if s.contains('\0') {
         return Err("contains NUL byte");
@@ -74,6 +78,7 @@ pub fn build_mpd_stream_url(host: &str, port: u16, httpd_port: u16, file: &str) 
 /// Kept exposed even though in-tree code no longer embeds passwords in URLs,
 /// to provide defence in depth against accidental future regressions and
 /// externally-supplied URLs that happen to carry credentials.
+#[must_use]
 pub fn redact_mpd_url(url: &str) -> String {
     let Some((base, query)) = url.split_once('?') else {
         return url.to_string();
@@ -81,7 +86,7 @@ pub fn redact_mpd_url(url: &str) -> String {
     let filtered: Vec<&str> = query
         .split('&')
         .filter(|kv| {
-            let key = kv.split_once('=').map(|(k, _)| k).unwrap_or(kv);
+            let key = kv.split_once('=').map_or(*kv, |(k, _)| k);
             !key.eq_ignore_ascii_case("password")
         })
         .collect();
@@ -101,7 +106,7 @@ fn percent_encode_segment(s: &str) -> String {
                 result.push(b as char);
             }
             _ => {
-                result.push_str(&format!("%{:02X}", b));
+                let _ = write!(result, "%{b:02X}");
             }
         }
     }

@@ -68,14 +68,12 @@ fn safe_canonicalize(path: &Path) -> Option<PathBuf> {
 /// This function canonicalizes both paths to prevent path traversal attacks.
 fn is_path_within_dir(path: &Path, allowed_dir: &Path) -> bool {
     // Canonicalize both paths
-    let canonical_path = match safe_canonicalize(path) {
-        Some(p) => p,
-        None => return false,
+    let Some(canonical_path) = safe_canonicalize(path) else {
+        return false;
     };
 
-    let canonical_allowed = match allowed_dir.canonicalize() {
-        Ok(p) => p,
-        Err(_) => return false,
+    let Ok(canonical_allowed) = allowed_dir.canonicalize() else {
+        return false;
     };
 
     // Check if the path starts with the allowed directory
@@ -84,16 +82,16 @@ fn is_path_within_dir(path: &Path, allowed_dir: &Path) -> bool {
 
 /// Validate that a path is within the configuration directory.
 /// This should be used for all write operations.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_write_path(path: &Path) -> Result<PathBuf, SecurityError> {
-    let config_dir = match crate::config::get_app_config_dir() {
-        Some(dir) => dir,
-        None => {
-            return Err(SecurityError {
-                message: "Could not determine config directory".to_string(),
-                path: path.to_path_buf(),
-                allowed_dirs: vec![],
-            });
-        }
+    let Some(config_dir) = crate::config::get_app_config_dir() else {
+        return Err(SecurityError {
+            message: "Could not determine config directory".to_string(),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        });
     };
 
     if is_path_within_dir(path, &config_dir) {
@@ -112,6 +110,9 @@ pub fn validate_write_path(path: &Path) -> Result<PathBuf, SecurityError> {
 /// Allowed directories include:
 /// - The configuration directory (for config files, database, presets)
 /// - Any registered music directories
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_read_path(
     path: &Path,
     music_directories: &[PathBuf],
@@ -140,16 +141,16 @@ pub fn validate_read_path(
 
 /// Validate that a path is within the configuration directory for reading.
 /// Use this for reading config files, database, presets, etc.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_config_read_path(path: &Path) -> Result<PathBuf, SecurityError> {
-    let config_dir = match crate::config::get_app_config_dir() {
-        Some(dir) => dir,
-        None => {
-            return Err(SecurityError {
-                message: "Could not determine config directory".to_string(),
-                path: path.to_path_buf(),
-                allowed_dirs: vec![],
-            });
-        }
+    let Some(config_dir) = crate::config::get_app_config_dir() else {
+        return Err(SecurityError {
+            message: "Could not determine config directory".to_string(),
+            path: path.to_path_buf(),
+            allowed_dirs: vec![],
+        });
     };
 
     if is_path_within_dir(path, &config_dir) {
@@ -168,6 +169,9 @@ pub fn validate_config_read_path(path: &Path) -> Result<PathBuf, SecurityError> 
 /// Rejects paths that contain traversal components (`..`), ensuring the
 /// resolved path matches what the user sees. This prevents a malicious
 /// preset from reading arbitrary files like `../../.ssh/id_rsa`.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_plugin_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
     // Reject empty paths
     if path.as_os_str().is_empty() {
@@ -202,6 +206,9 @@ pub fn validate_plugin_file_path(path: &Path) -> Result<PathBuf, SecurityError> 
 }
 
 /// Validate a plugin file path and require an expected extension.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_plugin_file_path_with_extensions(
     path: &Path,
     allowed_extensions: &[&str],
@@ -239,11 +246,17 @@ pub fn validate_plugin_file_path_with_extensions(
 }
 
 /// Validate a SOFA/HRTF file path supplied to spatial plugins.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_plugin_sofa_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
     validate_plugin_file_path_with_extensions(path, &["sofa"], "SOFA")
 }
 
 /// Validate an impulse-response audio file path supplied to convolution plugins.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_plugin_ir_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
     validate_plugin_file_path_with_extensions(
         path,
@@ -253,11 +266,17 @@ pub fn validate_plugin_ir_file_path(path: &Path) -> Result<PathBuf, SecurityErro
 }
 
 /// Validate an EqualizerAPO-style filter file path.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_plugin_apo_file_path(path: &Path) -> Result<PathBuf, SecurityError> {
     validate_plugin_file_path_with_extensions(path, &["txt", "apo"], "EqualizerAPO")
 }
 
 /// Validate that a path is within a music directory for reading audio files.
+///
+/// # Errors
+/// Returns an error if the path is inaccessible, has a disallowed extension, or falls outside permitted directories.
 pub fn validate_music_read_path(
     path: &Path,
     music_directories: &[PathBuf],

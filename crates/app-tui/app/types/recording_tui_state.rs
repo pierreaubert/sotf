@@ -30,6 +30,10 @@ pub struct RecordingSaveTuiState {
 }
 
 #[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RecordingTuiState {
     pub multi_capture: MultiCaptureTuiState,
     /// Shared, UI-agnostic Recording wizard domain model.
@@ -70,7 +74,7 @@ pub struct RecordingTuiState {
 
     // Step 4: save (TUI UI-only fields)
     pub editing_save_name: bool,
-    /// Cursor within the save-step form. 0 = save_name, 1..=3 = room
+    /// Cursor within the save-step form. 0 = `save_name`, 1..=3 = room
     /// width/depth/height, 4 = unit toggle, 5 = setup description,
     /// 6..6+N-1 = per-channel speaker entries (N = channel count).
     pub selected_save_field: usize,
@@ -116,6 +120,7 @@ impl Default for RecordingTuiState {
 
 impl RecordingTuiState {
     /// Currently-active mic-calibration path string (read-only).
+    #[must_use]
     pub fn active_mic_cal_path(&self) -> &str {
         self.model.active_mic_cal_path(self.editing_mic_cal_channel)
     }
@@ -144,17 +149,20 @@ impl RecordingTuiState {
     }
 
     /// Build the canonical-metric `RoomDimensions` to persist.
+    #[must_use]
     pub fn room_dimensions_for_save(&self) -> Option<roomeq_model::RoomDimensions> {
         self.model.room_dimensions_for_save()
     }
 
     /// Build the channel-name → "brand model" map persisted in
     /// `RecordingConfiguration`.
+    #[must_use]
     pub fn channel_speakers_map_for_save(&self) -> Option<HashMap<String, String>> {
         self.model.channel_speakers_map_for_save()
     }
 
     /// How many fields are in the Save-step form given the current channel list.
+    #[must_use]
     pub fn save_field_count(&self) -> usize {
         self.model.save_field_count()
     }

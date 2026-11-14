@@ -20,6 +20,7 @@
 //
 // Failing to do so re-introduces XXE on a network-facing port.
 
+use std::fmt::Write as _;
 /// Decode the limited set of XML entities that may legitimately appear in
 /// SOAP argument text: `&amp; &lt; &gt; &quot; &apos;` and numeric character
 /// references `&#NN;` / `&#xHH;`. Unknown entities are passed through
@@ -56,7 +57,7 @@ pub fn xml_decode(s: &str) -> String {
             out.push('&');
             i += 1;
         } else {
-            let next = s[i..].find('&').map(|d| i + d).unwrap_or(s.len());
+            let next = s[i..].find('&').map_or(s.len(), |d| i + d);
             out.push_str(&s[i..next]);
             i = next;
         }
@@ -185,9 +186,9 @@ fn parse_action_element(inner: &str) -> Option<(String, Vec<(String, String)>)> 
             return Some((local, Vec::new()));
         }
         let inner_start = lt + 1 + tag_end_rel + 1;
-        let close_needle_a = format!("</{}>", qname);
+        let close_needle_a = format!("</{qname}>");
         let close_rel = inner[inner_start..].find(&close_needle_a).or_else(|| {
-            let close_needle_b = format!("</{}", qname);
+            let close_needle_b = format!("</{qname}");
             inner[inner_start..].find(&close_needle_b).and_then(|p| {
                 let after_close = &inner[inner_start + p + close_needle_b.len()..];
                 after_close.find('>').map(|q| p + close_needle_b.len() + q)
@@ -231,7 +232,7 @@ fn parse_action_element(inner: &str) -> Option<(String, Vec<(String, String)>)> 
             continue;
         }
         let value_start = lt + 1 + tag_end_rel + 1;
-        let close_needle = format!("</{}>", qname);
+        let close_needle = format!("</{qname}>");
         let value_end_rel = action_inner[value_start..].find(&close_needle)?;
         let raw_value = &action_inner[value_start..value_start + value_end_rel];
         args.push((arg_local, xml_decode(raw_value)));
@@ -244,7 +245,7 @@ fn parse_action_element(inner: &str) -> Option<(String, Vec<(String, String)>)> 
 pub fn soap_response(action: &str, service_type: &str, args: &[(&str, &str)]) -> String {
     let mut body = String::new();
     for (key, value) in args {
-        body.push_str(&format!("      <{}>{}</{}>\n", key, value, key));
+        let _ = writeln!(body, "      <{key}>{value}</{key}>");
     }
 
     format!(
@@ -255,9 +256,6 @@ pub fn soap_response(action: &str, service_type: &str, args: &[(&str, &str)]) ->
 {body}    </u:{action}Response>
   </s:Body>
 </s:Envelope>"#,
-        action = action,
-        service_type = service_type,
-        body = body,
     )
 }
 

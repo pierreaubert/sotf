@@ -25,7 +25,7 @@ pub(super) fn assert_clean_logs(scenario_dir: &Path, allowed_patterns: &[String]
             // stdout/stderr scanned; do not hide that original failure behind
             // a missing optional structured-log file.
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(error) => return Err(error).with_context(|| format!("reading {path:?}")),
+            Err(error) => return Err(error).with_context(|| format!("reading {}", path.display())),
         };
         for (line_number, line) in String::from_utf8_lossy(&contents).lines().enumerate() {
             if is_unexpected_log(line, allowed_patterns) {

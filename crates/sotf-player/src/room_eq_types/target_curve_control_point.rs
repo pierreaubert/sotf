@@ -8,6 +8,7 @@ pub struct TargetCurveControlPoint {
 }
 
 impl TargetCurveControlPoint {
+    #[must_use]
     pub fn new(frequency: f64, level_db: f64) -> Self {
         Self {
             frequency,

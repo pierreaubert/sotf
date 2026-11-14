@@ -8,22 +8,34 @@ use std::path::{Path, PathBuf};
 
 impl MusicDatabase {
     /// Get the file modification time for a track by path
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_track_mtime(&self, path: &Path) -> SqlResult<Option<u64>> {
         let path_str = path.to_string_lossy();
         let mut stmt = self
             .conn
             .prepare("SELECT file_mtime FROM tracks WHERE path = ?1")?;
 
-        let result = stmt.query_row(params![path_str.as_ref()], |row| row.get::<_, i64>(0));
+        let result = stmt.query_row(params![path_str.as_ref()], |row| {
+            crate::database::misc::row_unsigned::<u64>(row, 0)
+        });
 
         match result {
-            Ok(mtime) => Ok(Some(mtime as u64)),
+            Ok(mtime) => Ok(Some(mtime)),
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
     }
 
     /// Load all albums and tracks from database
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Library rows and their related tables are loaded or saved in one coherent database operation"
+    )]
     pub fn load_library(&self) -> SqlResult<Vec<Album>> {
         let t0 = std::time::Instant::now();
 
@@ -40,7 +52,7 @@ impl MusicDatabase {
             Ok((
                 row.get::<_, i64>(0)?,             // id
                 row.get::<_, String>(1)?,          // title
-                row.get::<_, Option<i64>>(2)?,     // year
+                row.get::<_, Option<u32>>(2)?,     // year
                 row.get::<_, Option<String>>(3)?,  // album_art_path
                 row.get::<_, Option<Vec<u8>>>(4)?, // album_art_thumbnail
                 row.get::<_, i64>(5)?,             // is_favorite
@@ -105,11 +117,11 @@ impl MusicDatabase {
                         path: PathBuf::from(path_str),
                         title: row.get::<_, Option<String>>(1)?,
                         artist: row.get::<_, Option<String>>(2)?,
-                        track_number: row.get::<_, Option<i64>>(3)?.map(|n| n as u32),
-                        duration_secs: row.get::<_, Option<i64>>(4)?.map(|n| n as u64),
-                        channels: row.get::<_, Option<i64>>(5)?.map(|n| n as u32),
-                        sample_rate: row.get::<_, Option<i64>>(6)?.map(|n| n as u32),
-                        bit_depth: row.get::<_, Option<i64>>(7)?.map(|n| n as u32),
+                        track_number: row.get::<_, Option<u32>>(3)?,
+                        duration_secs: crate::database::misc::row_optional_unsigned::<u64>(row, 4)?,
+                        channels: row.get::<_, Option<u32>>(5)?,
+                        sample_rate: row.get::<_, Option<u32>>(6)?,
+                        bit_depth: row.get::<_, Option<u32>>(7)?,
                         replay_gain: row.get::<_, Option<f64>>(8)?,
                         replay_peak: row.get::<_, Option<f64>>(9)?,
                         album_gain: row.get::<_, Option<f64>>(10)?,
@@ -117,7 +129,7 @@ impl MusicDatabase {
                         waveform,
                         genre: row.get::<_, Option<String>>(13)?,
                         composer: row.get::<_, Option<String>>(14)?,
-                        disc_number: row.get::<_, Option<i64>>(15)?.map(|n| n as u32),
+                        disc_number: row.get::<_, Option<u32>>(15)?,
                         conductor: row.get::<_, Option<String>>(16)?,
                         performer: row.get::<_, Option<String>>(17)?,
                         isrc: row.get::<_, Option<String>>(18)?,
@@ -139,7 +151,7 @@ impl MusicDatabase {
             albums.push(Album {
                 id: Some(album_id),
                 title,
-                year: year.map(|y| y as u32),
+                year,
                 tracks,
                 album_art_path: album_art_path.map(PathBuf::from),
                 album_art_thumbnail,
@@ -164,6 +176,9 @@ impl MusicDatabase {
     }
 
     /// Save albums and tracks to database
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn save_albums(&mut self, albums: &[Album]) -> SqlResult<()> {
         self.save_albums_inner(albums, None).map(|_| ())
     }
@@ -172,6 +187,9 @@ impl MusicDatabase {
     ///
     /// `albums` must be the complete post-scan library so the album row for
     /// each changed track is written with up-to-date album metadata.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn save_album_changes(
         &mut self,
         albums: &[Album],
@@ -184,6 +202,10 @@ impl MusicDatabase {
         self.save_albums_inner(albums, Some(changed_paths))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Library rows and their related tables are loaded or saved in one coherent database operation"
+    )]
     fn save_albums_inner(
         &mut self,
         albums: &[Album],
@@ -235,7 +257,7 @@ impl MusicDatabase {
                 params![
                     &album_artist,
                     &album.title,
-                    album.year.map(|y| y as i64),
+                    album.year.map(i64::from),
                     album
                         .album_art_path
                         .as_ref()
@@ -299,19 +321,19 @@ impl MusicDatabase {
                         &path_str,
                         track.title,
                         track.artist,
-                        track.track_number.map(|n| n as i64),
-                        track.duration_secs.map(|n| n as i64),
-                        track.channels.map(|n| n as i64),
-                        track.sample_rate.map(|n| n as i64),
-                        track.bit_depth.map(|n| n as i64),
-                        file_mtime as i64,
+                        track.track_number.map(i64::from),
+                        track.duration_secs.map(crate::database::misc::sql_integer).transpose()?,
+                        track.channels.map(i64::from),
+                        track.sample_rate.map(i64::from),
+                        track.bit_depth.map(i64::from),
+                        crate::database::misc::sql_integer(file_mtime)?,
                         now,
                         now,
                         now,
                         waveform,
                         track.genre,
                         track.composer,
-                        track.disc_number.map(|n| n as i64),
+                        track.disc_number.map(i64::from),
                         track.conductor,
                         track.performer,
                         track.isrc,
@@ -440,6 +462,9 @@ impl MusicDatabase {
     }
 
     /// Record a scan in the scan history
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn record_scan(
         &self,
         directory: &Path,
@@ -453,14 +478,17 @@ impl MusicDatabase {
             params![
                 directory.to_string_lossy().to_string(),
                 now,
-                tracks_found as i64,
-                albums_found as i64,
+                crate::database::misc::sql_integer(tracks_found)?,
+                crate::database::misc::sql_integer(albums_found)?,
             ],
         )?;
         Ok(())
     }
 
     /// Get the last scan time for a directory (or any parent/child)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_last_scan_time(&self, directory: &Path) -> SqlResult<Option<u64>> {
         let dir_str = directory.to_string_lossy();
 
@@ -474,11 +502,20 @@ impl MusicDatabase {
             row.get::<_, Option<i64>>(0)
         })?;
 
-        Ok(result.map(|t| t as u64))
+        result.map(u64::try_from).transpose().map_err(|error| {
+            rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Integer,
+                Box::new(error),
+            )
+        })
     }
 
     /// Get all scanned directories with their latest scan statistics
-    /// Returns (directory_path, tracks_found, albums_found, last_scanned_at)
+    /// Returns (`directory_path`, `tracks_found`, `albums_found`, `last_scanned_at`)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_scanned_directories(&self) -> SqlResult<Vec<(PathBuf, usize, usize, u64)>> {
         // Get the most recent scan for each unique directory
         let mut stmt = self.conn.prepare(
@@ -496,9 +533,9 @@ impl MusicDatabase {
             .query_map([], |row| {
                 Ok((
                     PathBuf::from(row.get::<_, String>(0)?),
-                    row.get::<_, i64>(1)? as usize,
-                    row.get::<_, i64>(2)? as usize,
-                    row.get::<_, i64>(3)? as u64,
+                    crate::database::misc::row_unsigned::<usize>(row, 1)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 2)?,
+                    crate::database::misc::row_unsigned::<u64>(row, 3)?,
                 ))
             })?
             .collect::<SqlResult<Vec<_>>>()?;
@@ -507,7 +544,10 @@ impl MusicDatabase {
     }
 
     /// Get aggregate scanner statistics across all tracks.
-    /// Returns (total, rg_done, rg_errors, wf_done, wf_errors, bliss_done, bliss_errors).
+    /// Returns (total, `rg_done`, `rg_errors`, `wf_done`, `wf_errors`, `bliss_done`, `bliss_errors`).
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_scanner_stats(
         &self,
     ) -> SqlResult<(usize, usize, usize, usize, usize, usize, usize)> {
@@ -523,24 +563,30 @@ impl MusicDatabase {
             [],
             |row| {
                 Ok((
-                    row.get::<_, i64>(0)? as usize,
-                    row.get::<_, i64>(1)? as usize,
-                    row.get::<_, i64>(2)? as usize,
-                    row.get::<_, i64>(3)? as usize,
-                    row.get::<_, i64>(4)? as usize,
-                    row.get::<_, i64>(5)? as usize,
-                    row.get::<_, i64>(6)? as usize,
+                    crate::database::misc::row_unsigned::<usize>(row, 0)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 1)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 2)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 3)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 4)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 5)?,
+                    crate::database::misc::row_unsigned::<usize>(row, 6)?,
                 ))
             },
         )
     }
 
     /// Remove tracks that no longer exist on disk
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clean_missing_files(&mut self) -> SqlResult<usize> {
         self.clean_missing_files_with_progress(|_, _| {})
     }
 
     /// Remove tracks whose file extension is no longer supported by the scanner.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clean_unsupported_extensions(
         &mut self,
         supported_extensions: &[&str],
@@ -584,6 +630,10 @@ impl MusicDatabase {
         Ok(count)
     }
 
+    /// Clean missing files with progress.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clean_missing_files_with_progress<F>(
         &mut self,
         mut progress_callback: F,
@@ -643,6 +693,9 @@ impl MusicDatabase {
     /// forward directory walk. For paths that do not match exactly, it falls
     /// back to `path.exists()` to avoid deleting tracks whose stored path
     /// differs from the walked path (symlinks, mount-point aliases, etc.).
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clean_missing_files_against_paths(
         &mut self,
         discovered_paths: &HashSet<PathBuf>,
@@ -669,8 +722,7 @@ impl MusicDatabase {
                 path_mismatches += 1;
                 if logged_mismatches < 5 {
                     log::warn!(
-                        "[scan] path mismatch: db path '{}' was not found in discovered set but still exists on disk",
-                        path_str
+                        "[scan] path mismatch: db path '{path_str}' was not found in discovered set but still exists on disk"
                     );
                     logged_mismatches += 1;
                 }
@@ -706,10 +758,15 @@ impl MusicDatabase {
 
     /// Clear all local library content while preserving app configuration and
     /// saved connection/source records.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn clear_library_content(&mut self) -> SqlResult<usize> {
-        let count: i64 = self
+        let count: usize = self
             .conn
-            .query_row("SELECT COUNT(*) FROM tracks", [], |row| row.get(0))?;
+            .query_row("SELECT COUNT(*) FROM tracks", [], |row| {
+                crate::database::misc::row_unsigned::<usize>(row, 0)
+            })?;
 
         let tx = self
             .conn
@@ -729,22 +786,25 @@ impl MusicDatabase {
         tx.execute("DELETE FROM scan_history", [])?;
 
         tx.commit()?;
-        Ok(count as usize)
+        Ok(count)
     }
 
     /// Remove all tracks from a specific directory path (and its subdirectories)
     /// This is used when removing a directory from the library
     /// Returns the number of tracks removed
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_tracks_from_directory(&mut self, directory: &Path) -> SqlResult<usize> {
         let dir_str = directory.to_string_lossy();
         // SQLite LIKE pattern: path starts with directory path
-        let pattern = format!("{}%", dir_str);
+        let pattern = format!("{dir_str}%");
 
         // First, count how many tracks will be deleted
-        let count: i64 = self.conn.query_row(
+        let count: usize = self.conn.query_row(
             "SELECT COUNT(*) FROM tracks WHERE path LIKE ?1",
             params![pattern],
-            |row| row.get(0),
+            |row| crate::database::misc::row_unsigned::<usize>(row, 0),
         )?;
 
         if count > 0 {
@@ -765,11 +825,17 @@ impl MusicDatabase {
             );
         }
 
-        Ok(count as usize)
+        Ok(count)
     }
 
-    /// Get all library sources (id, source_id, source_type, display_name, priority, is_enabled)
-    #[allow(clippy::type_complexity)]
+    /// Get all library sources (id, `source_id`, `source_type`, `display_name`, priority, `is_enabled`)
+    #[allow(
+        clippy::type_complexity,
+        reason = "The query returns a fixed database row schema"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_library_sources(&self) -> SqlResult<Vec<(i64, String, String, String, i64, bool)>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, source_id, source_type, display_name, priority, is_enabled FROM library_sources ORDER BY priority DESC",
@@ -788,7 +854,10 @@ impl MusicDatabase {
         rows.collect()
     }
 
-    /// Count track_sources entries for a given library source
+    /// Count `track_sources` entries for a given library source
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn count_track_sources(&self, source_id: i64) -> SqlResult<i64> {
         self.conn.query_row(
             "SELECT COUNT(*) FROM track_sources WHERE source_id = ?1",
@@ -797,7 +866,10 @@ impl MusicDatabase {
         )
     }
 
-    /// Count album_sources entries for a given library source
+    /// Count `album_sources` entries for a given library source
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn count_album_sources(&self, source_id: i64) -> SqlResult<i64> {
         self.conn.query_row(
             "SELECT COUNT(*) FROM album_sources WHERE source_id = ?1",
@@ -807,6 +879,9 @@ impl MusicDatabase {
     }
 
     /// Set the UUID for an album
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn set_album_uuid(&self, album_id: i64, uuid: &str) -> SqlResult<()> {
         self.conn.execute(
             "UPDATE albums SET uuid = ?1 WHERE id = ?2",
@@ -816,6 +891,9 @@ impl MusicDatabase {
     }
 
     /// Set the UUID for a track by its path
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn set_track_uuid(&self, track_path: &str, uuid: &str) -> SqlResult<()> {
         self.conn.execute(
             "UPDATE tracks SET uuid = ?1 WHERE path = ?2",

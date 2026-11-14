@@ -35,8 +35,7 @@ pub(super) fn wait_for_health(
                         return Ok(());
                     }
                     last = format!(
-                        "matching dev-api health; waiting for {:?} responsiveness window",
-                        HEALTH_STABILITY_WINDOW
+                        "matching dev-api health; waiting for {HEALTH_STABILITY_WINDOW:?} responsiveness window"
                     );
                 }
                 Ok(json) => {

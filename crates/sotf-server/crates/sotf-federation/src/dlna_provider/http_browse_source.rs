@@ -83,7 +83,7 @@ pub(super) fn fetch_all_albums_blocking(
     Ok(all_albums)
 }
 
-/// HTTP-backed BrowseSource that hits a live ContentDirectory.
+/// HTTP-backed `BrowseSource` that hits a live `ContentDirectory`.
 pub(super) struct HttpBrowseSource {
     pub(super) control_url: String,
     pub(super) object_id: String,

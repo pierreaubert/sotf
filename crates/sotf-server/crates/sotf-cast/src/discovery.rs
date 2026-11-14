@@ -32,13 +32,13 @@ impl std::fmt::Display for CastDeviceType {
 /// A discovered cast device on the network.
 #[derive(Debug, Clone)]
 pub struct CastDevice {
-    /// Device type (AirPlay or Chromecast).
+    /// Device type (`AirPlay` or Chromecast).
     pub device_type: CastDeviceType,
-    /// Human-readable device name (e.g. "Living Room HomePod").
+    /// Human-readable device name (e.g. "Living Room `HomePod`").
     pub name: String,
     /// IP address of the device.
     pub address: Ipv4Addr,
-    /// Service port (AirPlay: typically 7000, Chromecast: 8009).
+    /// Service port (`AirPlay`: typically 7000, Chromecast: 8009).
     pub port: u16,
     /// mDNS instance name (the full service name).
     pub instance_name: String,
@@ -47,17 +47,20 @@ pub struct CastDevice {
 }
 
 impl CastDevice {
-    /// For AirPlay devices: the device model string from TXT records.
+    /// For `AirPlay` devices: the device model string from TXT records.
+    #[must_use]
     pub fn model(&self) -> Option<&str> {
-        self.txt_records.get("am").map(|s| s.as_str())
+        self.txt_records.get("am").map(std::string::String::as_str)
     }
 
     /// For Chromecast: the device model from TXT records.
+    #[must_use]
     pub fn chromecast_model(&self) -> Option<&str> {
-        self.txt_records.get("md").map(|s| s.as_str())
+        self.txt_records.get("md").map(std::string::String::as_str)
     }
 
-    /// For AirPlay: supported features bitmask.
+    /// For `AirPlay`: supported features bitmask.
+    #[must_use]
     pub fn airplay_features(&self) -> Option<u64> {
         self.txt_records
             .get("ft")
@@ -66,15 +69,22 @@ impl CastDevice {
 }
 
 /// mDNS-based device discovery.
+#[derive(Debug)]
 pub struct CastDiscovery;
 
 impl CastDiscovery {
-    /// Discover AirPlay receivers on the local network.
+    /// Discover `AirPlay` receivers on the local network.
+    ///
+    /// # Errors
+    /// Returns an error if the discovery socket cannot be opened or configured.
     pub async fn discover_airplay(timeout: Duration) -> Result<Vec<CastDevice>, String> {
         Self::discover("_raop._tcp.local", CastDeviceType::AirPlay, timeout).await
     }
 
     /// Discover Chromecast devices on the local network.
+    ///
+    /// # Errors
+    /// Returns an error if the discovery socket cannot be opened or configured.
     pub async fn discover_chromecast(timeout: Duration) -> Result<Vec<CastDevice>, String> {
         Self::discover(
             "_googlecast._tcp.local",
@@ -84,7 +94,10 @@ impl CastDiscovery {
         .await
     }
 
-    /// Discover all cast devices (AirPlay + Chromecast).
+    /// Discover all cast devices (`AirPlay` + Chromecast).
+    ///
+    /// # Errors
+    /// Individual discovery failures are ignored; this method returns the available devices.
     pub async fn discover_all(timeout: Duration) -> Result<Vec<CastDevice>, String> {
         let (airplay, chromecast) = tokio::join!(
             Self::discover_airplay(timeout),
@@ -103,7 +116,7 @@ impl CastDiscovery {
     ) -> Result<Vec<CastDevice>, String> {
         let socket = UdpSocket::bind(SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, 0))
             .await
-            .map_err(|e| format!("Failed to bind mDNS socket: {}", e))?;
+            .map_err(|e| format!("Failed to bind mDNS socket: {e}"))?;
 
         // Build mDNS query packet
         let query = build_mdns_query(service_type);
@@ -112,9 +125,9 @@ impl CastDiscovery {
         socket
             .send_to(&query, target)
             .await
-            .map_err(|e| format!("Failed to send mDNS query: {}", e))?;
+            .map_err(|e| format!("Failed to send mDNS query: {e}"))?;
 
-        log::debug!("[Cast Discovery] Sent mDNS query for {}", service_type);
+        log::debug!("[Cast Discovery] Sent mDNS query for {service_type}");
 
         let mut devices = Vec::new();
         let mut buf = [0u8; 4096];
@@ -144,7 +157,7 @@ impl CastDiscovery {
                     }
                 }
                 Ok(Err(e)) => {
-                    log::debug!("[Cast Discovery] Receive error: {}", e);
+                    log::debug!("[Cast Discovery] Receive error: {e}");
                     break;
                 }
                 Err(_) => break, // Timeout
@@ -190,7 +203,7 @@ fn build_mdns_query(service_name: &str) -> Vec<u8> {
 
 fn encode_dns_name(packet: &mut Vec<u8>, name: &str) {
     for label in name.split('.') {
-        let len = label.len() as u8;
+        let len = u8::try_from(label.len()).expect("static DNS service label fits in one byte");
         packet.push(len);
         packet.extend_from_slice(label.as_bytes());
     }
@@ -199,6 +212,10 @@ fn encode_dns_name(packet: &mut Vec<u8>, name: &str) {
 
 /// Parse an mDNS response and extract device info.
 /// This is a simplified parser that handles the common case.
+#[expect(
+    clippy::too_many_lines,
+    reason = "DNS records share parser position and accumulated device fields"
+)]
 fn parse_mdns_response(
     data: &[u8],
     from: SocketAddr,
@@ -216,10 +233,11 @@ fn parse_mdns_response(
 
     // DNS header: bytes 4-5=QDCOUNT, 6-7=ANCOUNT, 8-9=NSCOUNT, 10-11=ARCOUNT
     let qdcount = u16::from_be_bytes([data[4], data[5]]);
-    let ancount = u16::from_be_bytes([data[6], data[7]]);
-    let nscount = u16::from_be_bytes([data[8], data[9]]);
-    let arcount = u16::from_be_bytes([data[10], data[11]]);
-    let total_rr = ancount + nscount + arcount;
+    let answer_count = u16::from_be_bytes([data[6], data[7]]);
+    let authority_count = u16::from_be_bytes([data[8], data[9]]);
+    let additional_count = u16::from_be_bytes([data[10], data[11]]);
+    let total_rr =
+        u32::from(answer_count) + u32::from(authority_count) + u32::from(additional_count);
 
     if total_rr == 0 {
         return None;
@@ -242,13 +260,12 @@ fn parse_mdns_response(
     let mut address = Ipv4Addr::UNSPECIFIED;
     let mut txt_records = HashMap::new();
 
-    let total = ancount + nscount + arcount;
+    let total = u32::from(answer_count) + u32::from(authority_count) + u32::from(additional_count);
     for _ in 0..total {
         if pos >= data.len() {
             break;
         }
 
-        let _rr_name_start = pos;
         pos = skip_dns_name(data, pos)?;
         if pos + 10 > data.len() {
             break;
@@ -288,7 +305,7 @@ fn parse_mdns_response(
                 }
                 // Extract name from TXT "fn" key (Chromecast) or construct from instance
                 if let Some(friendly) = txt_records.get("fn") {
-                    name = friendly.clone();
+                    name.clone_from(friendly);
                 }
             }
             1
@@ -333,7 +350,7 @@ fn parse_mdns_response(
     }
 
     if name.is_empty() {
-        name = format!("{} ({})", device_type, address);
+        name = format!("{device_type} ({address})");
     }
 
     Some(CastDevice {

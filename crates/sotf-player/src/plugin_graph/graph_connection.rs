@@ -13,6 +13,7 @@ pub struct GraphConnection {
 }
 
 impl GraphConnection {
+    #[must_use]
     pub fn new(
         from_node: GraphNodeId,
         from_port: usize,

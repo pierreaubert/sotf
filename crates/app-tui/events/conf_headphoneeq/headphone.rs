@@ -34,6 +34,10 @@ fn headphone_eq_step_next_wrap(s: crate::app::HeadphoneEqStep) -> crate::app::He
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     use crate::app::{HEADPHONE_TARGET_PRESETS, HeadphoneEqStep, SpinUpdateSubStep};
     use sotf_audio_player::room_eq_types::OptimizationStatus;
@@ -295,7 +299,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 KeyCode::Enter => {
                     use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
                     match app.headphone_eq.selected_field {
-                        0 => {} // source cycles with Left/Right
+                        // source cycles with Left/Right
                         1 => {
                             match app.headphone_eq.model.measurement_source {
                                 HeadphoneMeasurementSource::File => {
@@ -313,14 +317,14 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                                 }
                             }
                         }
-                        2 => {} // target preset cycles with Left/Right
+                        // target preset cycles with Left/Right
                         3 => {
                             app.headphone_eq.editing_custom_target = true;
                         }
                         _ => {}
                     }
                 }
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('+') | KeyCode::Char('-') => {
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('+' | '-') => {
                     let delta = match key.code {
                         KeyCode::Char('+') | KeyCode::Right => 1i32,
                         _ => -1,
@@ -509,13 +513,13 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                         } else {
                             match app.apply_headphone_to_plugins() {
                                 Ok(msg) => app.ui.status_message = Some(msg),
-                                Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                                Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                             }
                         }
                     } else {
                         match app.apply_headphone_to_plugins() {
                             Ok(msg) => app.ui.status_message = Some(msg),
-                            Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                            Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                         }
                     }
                     None
@@ -526,18 +530,17 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 KeyCode::Char('y') => {
                     if let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() {
                         let timestamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
-                        let filename = format!("pre-headphone-eq-{}.json", timestamp);
+                        let filename = format!("pre-headphone-eq-{timestamp}.json");
                         match app.plugin_rack.graph.save_to_file(&presets_dir, &filename) {
-                            Ok(_) => {
-                                app.ui.status_message = Some(format!("Saved backup: {}", filename));
+                            Ok(()) => {
+                                app.ui.status_message = Some(format!("Saved backup: {filename}"));
                                 log::info!(
-                                    "Auto-saved preset before headphone EQ overwrite: {}",
-                                    filename
+                                    "Auto-saved preset before headphone EQ overwrite: {filename}"
                                 );
                             }
                             Err(e) => {
-                                app.ui.status_message = Some(format!("Backup failed: {}", e));
-                                log::error!("Failed to auto-save preset: {}", e);
+                                app.ui.status_message = Some(format!("Backup failed: {e}"));
+                                log::error!("Failed to auto-save preset: {e}");
                                 app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                                 app.headphone_eq.update_existing_eq_info = None;
                                 return None;
@@ -546,7 +549,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     }
                     match app.apply_headphone_to_plugins() {
                         Ok(msg) => app.ui.status_message = Some(msg),
-                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                     }
                     app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                     app.headphone_eq.update_existing_eq_info = None;
@@ -555,7 +558,7 @@ pub fn handle_headphone_eq_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                 KeyCode::Char('n') => {
                     match app.apply_headphone_to_plugins() {
                         Ok(msg) => app.ui.status_message = Some(msg),
-                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                     }
                     app.headphone_eq.update_substep = SpinUpdateSubStep::Ready;
                     app.headphone_eq.update_existing_eq_info = None;
@@ -607,7 +610,7 @@ fn headphone_eq_field_value_string(app: &App, field: usize) -> String {
 mod tests {
     use super::*;
 
-    use crate::app::{HeadphoneEqStep, InputMode, Screen, SpinUpdateSubStep};
+    use crate::app::{HeadphoneEqStep, Screen, SpinUpdateSubStep};
     use crate::events::tests::{key, make_app};
     use sotf_audio_player::headphone_eq_types::HeadphoneMeasurementSource;
     use sotf_audio_player::room_eq_types::OptimizationStatus;

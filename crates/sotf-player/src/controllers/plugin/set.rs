@@ -4,6 +4,11 @@ use super::types::EqEditTarget;
 use crate::{EQFilter, PluginSettings};
 use sotf_plugins::param_specs::eq::{clamp_q, q_max_for};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Parameter setters clamp numeric values before storing quantized plugin settings"
+)]
 pub(super) fn set_eq_band_field_for_plugin(
     filter_idx: usize,
     field_idx: usize,
@@ -68,6 +73,11 @@ pub(super) fn set_eq_param_value_for_target(
     set_eq_band_field_for_plugin(param_idx / 4, param_idx % 4, target_filters, value, true)
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Parameter setters clamp numeric values before storing quantized plugin settings"
+)]
 fn set_fir_eq_band_field_for_plugin(
     filter_idx: usize,
     field_idx: usize,
@@ -108,6 +118,15 @@ fn set_fir_eq_band_field_for_plugin(
 ///
 /// Most plugins delegate to `PluginSettings::set_param_value()` (generic path).
 /// Only plugins with side effects beyond simple field updates have manual arms.
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Parameter setters clamp numeric values before storing quantized plugin settings"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exhaustive plugin parameter dispatch stays together for schema review"
+)]
 pub fn set_plugin_param_value(
     settings: &mut PluginSettings,
     param_idx: usize,
@@ -493,14 +512,14 @@ pub fn set_plugin_param_value(
             *preset = presets[idx];
             let p_params = sotf_plugins::CrossfeedPluginParams::from_preset(*preset);
             *mode = p_params.mode;
-            *bauer_fcut_hz = p_params.bauer_fcut_hz as f64;
-            *bauer_feed_db = p_params.bauer_feed_db as f64;
-            *meier_level = p_params.meier_level as f64;
-            *mb_low_freq_hz = p_params.mb_low_freq_hz as f64;
-            *mb_mid_high_freq_hz = p_params.mb_mid_high_freq_hz as f64;
-            *mb_low_feed_db = p_params.mb_low_feed_db as f64;
-            *mb_mid_feed_db = p_params.mb_mid_feed_db as f64;
-            *mb_high_feed_db = p_params.mb_high_feed_db as f64;
+            *bauer_fcut_hz = f64::from(p_params.bauer_fcut_hz);
+            *bauer_feed_db = f64::from(p_params.bauer_feed_db);
+            *meier_level = f64::from(p_params.meier_level);
+            *mb_low_freq_hz = f64::from(p_params.mb_low_freq_hz);
+            *mb_mid_high_freq_hz = f64::from(p_params.mb_mid_high_freq_hz);
+            *mb_low_feed_db = f64::from(p_params.mb_low_feed_db);
+            *mb_mid_feed_db = f64::from(p_params.mb_mid_feed_db);
+            *mb_high_feed_db = f64::from(p_params.mb_high_feed_db);
             true
         }
         // === Generic path: all other plugins use set_param_value() ===

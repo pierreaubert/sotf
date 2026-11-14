@@ -51,6 +51,10 @@ pub trait PluginEditingManager {
 
     // Additional methods
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64);
+    /// Sets plugin param string.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn set_plugin_param_string(
         &mut self,
         plugin_idx: usize,
@@ -64,12 +68,40 @@ pub trait PluginEditingManager {
     );
     fn set_spectrum_tilt_reference(&mut self, plugin_idx: usize, reference: TiltReferenceFreq);
     fn reset_plugin_param(&mut self, plugin_idx: usize, param_idx: usize);
+    /// Loads apo file.
+    ///
+    /// # Errors
+    /// Returns an error if the APO path is invalid, parsing fails, or the selected plugin is incompatible.
     fn load_apo_file(&mut self) -> Result<(), String>;
+    /// Loads sofa file.
+    ///
+    /// # Errors
+    /// Returns an error if the SOFA path is invalid or the selected plugin is incompatible.
     fn load_sofa_file(&mut self) -> Result<(), String>;
+    /// Adds eq band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn add_eq_band(&mut self) -> Result<(), String>;
+    /// Removes eq band.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn remove_eq_band(&mut self, band_idx: usize) -> Result<(), String>;
+    /// Toggles eq band mute.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn toggle_eq_band_mute(&mut self, band_idx: usize) -> Result<(), String>;
+    /// Toggles eq band solo.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn toggle_eq_band_solo(&mut self, band_idx: usize) -> Result<(), String>;
+    /// Sets eq filter order.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn set_eq_filter_order(
         &mut self,
         plugin_idx: usize,
@@ -77,7 +109,15 @@ pub trait PluginEditingManager {
         order: usize,
     ) -> Result<(), String>;
     fn set_eq_per_channel_mode(&mut self, plugin_idx: usize, per_channel: bool);
+    /// Runs eq global to selected.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn copy_eq_global_to_selected(&mut self, plugin_idx: usize) -> Result<(), String>;
+    /// Runs eq selected to all.
+    ///
+    /// # Errors
+    /// Returns an error if the selected plugin, parameter, or band is invalid or the requested change cannot be applied.
     fn copy_eq_selected_to_all(&mut self, plugin_idx: usize) -> Result<(), String>;
     /// Cycle the topology of an EQ band: Biquad → Warped → Kautz → Biquad.
     fn cycle_eq_filter_topology(&mut self, plugin_idx: usize, band_idx: usize);
@@ -314,6 +354,15 @@ impl PluginEditingManager for App {
         adjusted
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     fn set_plugin_param(&mut self, plugin_idx: usize, param_idx: usize, value: f64) {
         let eq_target = active_eq_edit_target(self, plugin_idx);
         let gate_external_sidechain_idx = sotf_plugins::param_specs::index_of(
@@ -941,11 +990,11 @@ impl PluginEditingManager for App {
         {
             Ok(filename) => {
                 self.ui_state.toast_message =
-                    Some(ToastMessage::success(format!("Saved preset: {}", filename)));
+                    Some(ToastMessage::success(format!("Saved preset: {filename}")));
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(e.clone()));
-                log::error!("Failed to save plugin chain: {}", e);
+                log::error!("Failed to save plugin chain: {e}");
             }
         }
     }
@@ -965,13 +1014,12 @@ impl PluginEditingManager for App {
         match self.plugin_state.save_selected_preset(&presets_dir) {
             Ok(filename) => {
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                    "Overwritten preset: {}",
-                    filename
+                    "Overwritten preset: {filename}"
                 )));
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(e.clone()));
-                log::error!("Failed to save plugin chain: {}", e);
+                log::error!("Failed to save plugin chain: {e}");
             }
         }
     }
@@ -996,10 +1044,8 @@ impl PluginEditingManager for App {
         {
             Ok((effect, filename, warnings)) => {
                 if warnings.is_empty() {
-                    self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                        "Loaded preset: {}",
-                        filename
-                    )));
+                    self.ui_state.toast_message =
+                        Some(ToastMessage::success(format!("Loaded preset: {filename}")));
                 } else {
                     self.ui_state.toast_message = Some(ToastMessage::warning(format!(
                         "Loaded preset: {} ({} plugin(s) skipped: {})",
@@ -1014,7 +1060,7 @@ impl PluginEditingManager for App {
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(e.clone()));
-                log::error!("Failed to load plugin chain: {}", e);
+                log::error!("Failed to load plugin chain: {e}");
             }
         }
     }
@@ -1031,8 +1077,7 @@ impl PluginEditingManager for App {
             Ok((effect, filename, plugin_count, warnings)) => {
                 if warnings.is_empty() {
                     self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                        "Loaded preset: {} ({} plugins)",
-                        filename, plugin_count
+                        "Loaded preset: {filename} ({plugin_count} plugins)"
                     )));
                 } else {
                     self.ui_state.toast_message = Some(ToastMessage::warning(format!(
@@ -1049,7 +1094,7 @@ impl PluginEditingManager for App {
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(e.clone()));
-                log::error!("Failed to load plugin chain: {}", e);
+                log::error!("Failed to load plugin chain: {e}");
             }
         }
     }

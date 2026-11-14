@@ -1,4 +1,4 @@
-//! OAuth2 authorization-code flow with PKCE for Spotify login.
+//! `OAuth2` authorization-code flow with PKCE for Spotify login.
 //!
 //! The caller opens the browser, bounds the callback wait, and can inject a
 //! mock token endpoint in tests. The OAuth exchange returns the same local
@@ -43,16 +43,16 @@ pub(crate) fn build_client(
     auth_url: &str,
     token_url: &str,
 ) -> Result<SpotifyOAuthClient, ServiceError> {
-    let auth_url = AuthUrl::new(auth_url.to_string())
+    let authorization_endpoint = AuthUrl::new(auth_url.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth authorize URL: {e}")))?;
     let token_url = TokenUrl::new(token_url.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth token URL: {e}")))?;
-    let redirect_url = RedirectUrl::new(redirect_uri.to_string())
+    let callback_endpoint = RedirectUrl::new(redirect_uri.to_string())
         .map_err(|e| ServiceError::Other(format!("Invalid OAuth redirect URI: {e}")))?;
     Ok(BasicClient::new(ClientId::new(client_id.to_string()))
-        .set_auth_uri(auth_url)
+        .set_auth_uri(authorization_endpoint)
         .set_token_uri(token_url)
-        .set_redirect_uri(redirect_url))
+        .set_redirect_uri(callback_endpoint))
 }
 
 /// Build the authorize URL for the given scopes, along with the CSRF state
@@ -161,7 +161,7 @@ pub(crate) fn await_auth_code(
 }
 
 /// Blocking HTTP client for the token exchange, with a timeout and no redirects.
-/// OAuth2 5 uses HTTP 1 request and response types, matching the reqwest client.
+/// `OAuth2` 5 uses HTTP 1 request and response types, matching the reqwest client.
 fn http_client_with_timeout(
     request: oauth2::HttpRequest,
 ) -> Result<oauth2::HttpResponse, std::io::Error> {
@@ -217,13 +217,10 @@ pub(crate) fn exchange_code(
         .request(&http_client_with_timeout)
         .map_err(|e| ServiceError::AuthError(format!("OAuth token exchange failed: {e}")))?;
 
-    let refresh_token = token
-        .refresh_token()
-        .map(|t| t.secret().to_string())
-        .unwrap_or_default(); // Spotify always provides a refresh token.
+    let refresh_token = token.refresh_token().map_or_default(|t| t.secret().clone()); // Spotify always provides a refresh token.
 
     Ok(WebApiToken::new(
-        token.access_token().secret().to_string(),
+        token.access_token().secret().clone(),
         refresh_token,
         token
             .expires_in()

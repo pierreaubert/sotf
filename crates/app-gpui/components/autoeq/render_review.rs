@@ -80,7 +80,7 @@
             "{} · {} taps · {:.1} ms",
             option_label(&design.fir_phase, FIR_PHASE_OPTIONS),
             design.fir_taps,
-            design.fir_taps as f64 / design.sample_rate.max(1) as f64 * 1000.0
+            design.fir_taps as f64 / f64::from(design.sample_rate.max(1)) * 1000.0
         )));
     }
     review = review.child(Text::section_header(stage_text.stages[2]).color(theme.header_color));

@@ -11,11 +11,16 @@
 // browsing go through the Spotify Web API with the OAuth access token
 // (see `web_api.rs`).
 
-use sotf_services::*;
+// This direct dependency pins librespot's transitive build dependency.
+use sotf_services::{
+    AudioQuality, PcmStream, ServiceAlbum, ServiceCredentials, ServiceError, ServiceStreamResult,
+    ServiceTrack, StreamingService, redact_secret,
+};
 use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::mpsc;
+use vergen as _;
 
 mod async_runtime;
 mod consts;
@@ -66,7 +71,7 @@ impl std::fmt::Debug for SpotifyService {
                 &self.access_token.as_deref().map(redact_secret),
             )
             .field("web_api", &self.web_api.is_some())
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -77,6 +82,11 @@ impl Default for SpotifyService {
 }
 
 impl SpotifyService {
+    #[must_use]
+    /// Create a Spotify client.
+    ///
+    /// # Panics
+    /// Panics if the asynchronous runtime cannot be created.
     pub fn new() -> Self {
         let rt = async_runtime::AsyncRuntime::new()
             .expect("Failed to create async runtime for SpotifyService");
@@ -90,6 +100,7 @@ impl SpotifyService {
         }
     }
 
+    #[must_use]
     pub fn with_quality(mut self, quality: AudioQuality) -> Self {
         self.quality = quality;
         self
@@ -117,6 +128,9 @@ impl SpotifyService {
     ///
     /// Works from any thread: the librespot session work runs inside the
     /// service's own runtime (see `async_runtime.rs`).
+    ///
+    /// # Errors
+    /// Returns an error if the callback listener, authorization exchange, persistence, or session connection fails.
     pub fn login_with_oauth(
         &mut self,
         cache_dir: &Path,
@@ -175,6 +189,9 @@ impl SpotifyService {
     ///
     /// Works from any thread: the librespot session work runs inside the
     /// service's own runtime (see `async_runtime.rs`).
+    ///
+    /// # Errors
+    /// Returns an error if cached credentials cannot be loaded or restored.
     pub fn login_with_cached_credentials(
         &mut self,
         cache_dir: &Path,
@@ -236,7 +253,7 @@ impl SpotifyService {
                     librespot_core::SessionConfig::default(),
                     Some(cache),
                 );
-                session.connect(credentials, false).await.map(|_| session)
+                session.connect(credentials, false).await.map(|()| session)
             })
             .map_err(|e| ServiceError::AuthError(format!("Spotify cached login failed: {e}")))?;
 
@@ -286,7 +303,7 @@ impl SpotifyService {
                 session
                     .connect(credentials, store_credentials)
                     .await
-                    .map(|_| session)
+                    .map(|()| session)
             })
             .map_err(|e| ServiceError::AuthError(format!("Spotify login failed: {e}")))?;
 
@@ -318,12 +335,18 @@ impl SpotifyService {
 
     /// Albums saved to the user's library (requires the `user-library-read`
     /// scope, requested by `login_with_oauth`).
+    ///
+    /// # Errors
+    /// Returns an error if authentication is missing or the saved-albums request fails.
     pub fn saved_albums(&self) -> Result<Vec<ServiceAlbum>, ServiceError> {
         self.web_api()?.saved_albums()
     }
 
     /// Tracks saved to the user's library (requires the `user-library-read`
     /// scope, requested by `login_with_oauth`).
+    ///
+    /// # Errors
+    /// Returns an error if authentication is missing or the saved-tracks request fails.
     pub fn saved_tracks(&self) -> Result<Vec<ServiceTrack>, ServiceError> {
         self.web_api()?.saved_tracks()
     }
@@ -333,6 +356,7 @@ impl SpotifyService {
     /// Library/search calls work against the mock; `start_stream` and
     /// `is_authenticated` still require a real librespot session.
     #[doc(hidden)]
+    #[must_use]
     pub fn with_test_web_api(mut self, api_base: &str, access_token: &str) -> Self {
         self.access_token = Some(access_token.to_string());
         self.web_api = Some(
@@ -409,9 +433,8 @@ impl StreamingService for SpotifyService {
         // visible rather than silent.
         if matches!(quality, AudioQuality::Lossless | AudioQuality::HiRes) {
             log::warn!(
-                "[Spotify] Requested {:?} quality is not available via librespot; \
-                 falling back to Vorbis ~320 kbps",
-                quality
+                "[Spotify] Requested {quality:?} quality is not available via librespot; \
+                 falling back to Vorbis ~320 kbps"
             );
         }
 
@@ -427,11 +450,11 @@ impl StreamingService for SpotifyService {
         let track_uri = if track_id.starts_with("spotify:track:") {
             track_id.to_string()
         } else {
-            format!("spotify:track:{}", track_id)
+            format!("spotify:track:{track_id}")
         };
 
         let spotify_id = librespot_core::SpotifyUri::from_uri(&track_uri)
-            .map_err(|e| ServiceError::NotFound(format!("Invalid track URI: {:?}", e)))?;
+            .map_err(|e| ServiceError::NotFound(format!("Invalid track URI: {e:?}")))?;
 
         let player_config = librespot_playback::config::PlayerConfig {
             bitrate: self.quality_to_bitrate(),
@@ -456,11 +479,7 @@ impl StreamingService for SpotifyService {
         // Start playing the track.
         player.load(spotify_id, true, 0);
 
-        log::info!(
-            "[Spotify] Streaming track {} at {:?} quality",
-            track_id,
-            quality
-        );
+        log::info!("[Spotify] Streaming track {track_id} at {quality:?} quality");
 
         // Retain the player so we can shut it down in `stop_stream` /
         // `Drop`. Without this the player was previously dropped at the end
@@ -489,7 +508,7 @@ impl StreamingService for SpotifyService {
         }
     }
 
-    fn service_name(&self) -> &str {
+    fn service_name(&self) -> &'static str {
         "Spotify"
     }
 }
@@ -558,6 +577,10 @@ impl librespot_playback::audio_backend::Sink for ChannelSink {
 ///
 /// Exposed as a free function so it can be unit-tested without needing the
 /// librespot stack.
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "The audio boundary intentionally quantizes librespot f64 PCM to f32"
+)]
 fn convert_librespot_samples(samples: &[f64]) -> Vec<f32> {
     samples
         .iter()

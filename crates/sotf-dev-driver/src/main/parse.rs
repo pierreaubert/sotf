@@ -26,8 +26,7 @@ pub(super) fn parse_dev_response_body(
             .ok()
             .and_then(|json| json.get("error"))
             .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| response_excerpt(body));
+            .map_or_else(|| response_excerpt(body), str::to_string);
         bail!("{label} failed ({status}): {err}");
     }
     let json = json.with_context(|| {
@@ -40,8 +39,7 @@ pub(super) fn parse_dev_response_body(
         let err = json
             .get("error")
             .and_then(Value::as_str)
-            .map(str::to_string)
-            .unwrap_or_else(|| response_excerpt(body));
+            .map_or_else(|| response_excerpt(body), str::to_string);
         bail!("{label} failed ({status}): {err}");
     }
     Ok(json)

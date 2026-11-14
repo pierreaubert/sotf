@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    Alignment, App, Axis, Block, Borders, Chart, Constraint, Dataset, Frame, GraphType, Layout,
+    Line, List, ListItem, Modifier, Paragraph, Rect, Span, Style, Wrap, draw_help_box, symbols,
+};
 use crate::app::{EarTrainingTab, Screen};
 use sotf_audio_player::{EarTrainingCourse, EqTrainingSession};
 
@@ -127,14 +130,16 @@ fn draw_practice_question(f: &mut Frame, area: Rect, app: &App) {
 fn draw_question_chart(f: &mut Frame, area: Rect, app: &App, session: Option<&EqTrainingSession>) {
     let data: Vec<(f64, f64)> = session
         .and_then(|session| session.current_question.as_ref())
-        .map(|question| {
-            question
-                .preview_curve(100)
-                .into_iter()
-                .map(|(frequency, gain)| (frequency.log10(), gain))
-                .collect()
-        })
-        .unwrap_or_else(|| vec![(20.0_f64.log10(), 0.0), (20_000.0_f64.log10(), 0.0)]);
+        .map_or_else(
+            || vec![(20.0_f64.log10(), 0.0), (20_000.0_f64.log10(), 0.0)],
+            |question| {
+                question
+                    .preview_curve(100)
+                    .into_iter()
+                    .map(|(frequency, gain)| (frequency.log10(), gain))
+                    .collect()
+            },
+        );
     let datasets = vec![
         Dataset::default()
             .name(crate::tui_text!(app, "EQ change"))
@@ -183,8 +188,9 @@ fn draw_answers(f: &mut Frame, area: Rect, app: &App, session: Option<&EqTrainin
     let labels = session
         .current_question
         .as_ref()
-        .map(|question| question.answer_labels(session.config.exercise, &session.band_frequencies))
-        .unwrap_or_default();
+        .map_or_default(|question| {
+            question.answer_labels(session.config.exercise, &session.band_frequencies)
+        });
     let answered = session.current_is_answered();
     let correct = session
         .current_question

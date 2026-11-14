@@ -1,5 +1,7 @@
 //! Client-side business logic for the native SOTF LAN control API.
 
+const MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
+
 use crate::lan_discovery::DiscoveredSotfApiServer;
 use serde::{Serialize, de::DeserializeOwned};
 use std::fmt;
@@ -22,12 +24,6 @@ use decode::decode_response;
 use misc::endpoint_url;
 use sotf_api_client_error::normalize_base_url;
 use sotf_api_client_error::validate_api_path_segment;
-use types::AddAlbumRequest;
-use types::CompletePairingRequest;
-use types::IndexRequest;
-use types::SeekRequest;
-use types::VolumeRequest;
-use types::parse_sse_frame;
 
 #[derive(Clone)]
 pub struct SotfApiClient {
@@ -47,8 +43,12 @@ impl fmt::Debug for SotfApiClient {
 }
 
 impl SotfApiClient {
+    /// New.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid API address, authentication, certificate, or HTTP client configuration.
     pub fn new(base_url: impl Into<String>, auth_token: impl Into<String>) -> SotfApiResult<Self> {
-        let base_url = normalize_base_url(base_url.into())?;
+        let base_url = normalize_base_url(&base_url.into())?;
         Self::new_normalized(base_url, auth_token.into(), None, None)
     }
 
@@ -57,7 +57,7 @@ impl SotfApiClient {
         auth_token: impl Into<String>,
         accepted_fingerprint: Option<&str>,
     ) -> SotfApiResult<Self> {
-        let base_url = normalize_base_url(base_url.into())?;
+        let base_url = normalize_base_url(&base_url.into())?;
         Self::new_normalized(base_url, auth_token.into(), None, accepted_fingerprint)
     }
 
@@ -67,10 +67,14 @@ impl SotfApiClient {
         auth_token: impl Into<String>,
         tofu_dir: &Path,
     ) -> SotfApiResult<Self> {
-        let base_url = normalize_base_url(base_url.into())?;
+        let base_url = normalize_base_url(&base_url.into())?;
         Self::new_normalized(base_url, auth_token.into(), Some(tofu_dir), None)
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public client constructor accepts owned credentials and normalizes them before storage "
+    )]
     fn new_normalized(
         base_url: String,
         auth_token: String,
@@ -83,8 +87,8 @@ impl SotfApiClient {
             ));
         }
         let tls = sotf_api_tls_options(&base_url, tofu_dir, accepted_fingerprint)?;
-        let client = build_reqwest_client(&tls, Some(std::time::Duration::from_secs(8)))?;
-        let event_client = build_reqwest_client(&tls, None)?;
+        let client = build_reqwest_client(tls.as_ref(), Some(std::time::Duration::from_secs(8)))?;
+        let event_client = build_reqwest_client(tls.as_ref(), None)?;
         Ok(Self {
             client,
             event_client,
@@ -93,6 +97,10 @@ impl SotfApiClient {
         })
     }
 
+    /// From discovered.
+    ///
+    /// # Errors
+    /// Returns an error for an invalid API address, authentication, certificate, or HTTP client configuration.
     pub fn from_discovered(
         server: &DiscoveredSotfApiServer,
         auth_token: impl Into<String>,
@@ -110,30 +118,55 @@ impl SotfApiClient {
         endpoint_url(&self.base_url, path)
     }
 
+    /// Health.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn health(&self) -> SotfApiResult<SotfApiHealth> {
         self.get_public("health").await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn discovery(&self) -> SotfApiResult<SotfApiDiscoveryInfo> {
         self.get_public("discovery").await
     }
 
+    /// Capabilities.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn capabilities(&self) -> SotfApiResult<SotfApiCapabilities> {
         self.get_public("capabilities").await
     }
 
+    /// State.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn state(&self) -> SotfApiResult<SotfApiState> {
         self.get_auth("state").await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn queue(&self) -> SotfApiResult<SotfApiQueue> {
         self.get_auth("queue").await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn library_albums(&self) -> SotfApiResult<SotfApiAlbumList> {
         self.get_auth("library/albums").await
     }
 
+    /// Library albums page.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn library_albums_page(
         &self,
         offset: usize,
@@ -156,42 +189,76 @@ impl SotfApiClient {
         self.get_auth(&format!("library/albums?{query}")).await
     }
 
+    /// Album tracks.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn album_tracks(&self, album_id: &str) -> SotfApiResult<SotfApiAlbumTracks> {
         let album_id = validate_api_path_segment(album_id)?;
         self.get_auth(&format!("library/albums/{album_id}/tracks"))
             .await
     }
 
+    /// Album artwork.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn album_artwork(&self, album_id: &str) -> SotfApiResult<Vec<u8>> {
         let album_id = validate_api_path_segment(album_id)?;
         self.get_auth_bytes(&format!("library/albums/{album_id}/artwork"))
             .await
     }
 
+    /// Play.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn play(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("play").await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn pause(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("pause").await
     }
 
+    /// Resume.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn resume(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("resume").await
     }
 
+    /// Stop.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn stop(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("stop").await
     }
 
+    /// Next.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn next(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("next").await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn previous(&self) -> SotfApiResult<SotfApiCommandResponse> {
         self.post_empty("previous").await
     }
 
+    /// Seek.
+    ///
+    /// # Errors
+    /// Returns an error for a non-finite value or a failed, rejected, or malformed remote response.
     pub async fn seek(&self, position_secs: f64) -> SotfApiResult<SotfApiCommandResponse> {
         if !position_secs.is_finite() || position_secs < 0.0 {
             return Err(SotfApiClientError::InvalidConfig(
@@ -201,6 +268,10 @@ impl SotfApiClient {
         self.post_json("seek", &SeekRequest { position_secs }).await
     }
 
+    /// Set volume.
+    ///
+    /// # Errors
+    /// Returns an error for a non-finite value or a failed, rejected, or malformed remote response.
     pub async fn set_volume(&self, volume: u8) -> SotfApiResult<SotfApiCommandResponse> {
         if volume > 100 {
             return Err(SotfApiClientError::InvalidConfig(
@@ -210,6 +281,10 @@ impl SotfApiClient {
         self.post_json("volume", &VolumeRequest { volume }).await
     }
 
+    /// Queue add album.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn queue_add_album(
         &self,
         album_id: impl Into<String>,
@@ -221,24 +296,42 @@ impl SotfApiClient {
             .await
     }
 
+    /// Queue clear.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn queue_clear(&self) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.post_empty("queue/clear").await
     }
 
+    /// Queue delete.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn queue_delete(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.post_json("queue/delete", &IndexRequest { index })
             .await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn queue_jump(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.post_json("queue/jump", &IndexRequest { index }).await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the media URL cannot be constructed from the configured API address.
     pub fn media_url(&self, track_id: &str) -> SotfApiResult<String> {
         let track_id = validate_api_path_segment(track_id)?;
         Ok(self.endpoint_url(&format!("media/{track_id}")))
     }
 
+    /// Authenticated media url.
+    ///
+    /// # Errors
+    /// Returns an error if the media URL cannot be constructed from the configured API address.
     pub fn authenticated_media_url(&self, track_id: &str) -> SotfApiResult<String> {
         let base_url = self.media_url(track_id)?;
         let mut query_serializer = url::form_urlencoded::Serializer::new(String::new());
@@ -254,26 +347,41 @@ impl SotfApiClient {
     /// Query the server's pairing status.
     ///
     /// This is a public endpoint — no auth token required.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn pairing_status(&self) -> SotfApiResult<SotfApiPairingStatus> {
         self.get_public("pairing/status").await
     }
 
     /// Enable pairing mode on the server and receive the one-time nonce.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn enable_pairing(&self) -> SotfApiResult<SotfApiPairingModeResponse> {
         self.post_empty("pairing/enable").await
     }
 
     /// Disable pairing mode on the server.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn disable_pairing(&self) -> SotfApiResult<SotfApiPairingModeResponse> {
         self.post_empty("pairing/disable").await
     }
 
     /// List trusted client certificates registered with the server.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn trusted_clients(&self) -> SotfApiResult<SotfApiTrustedClientList> {
         self.get_auth("pairing/clients").await
     }
 
     /// Revoke a trusted client certificate fingerprint.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn revoke_trusted_client(
         &self,
         fingerprint: &str,
@@ -290,6 +398,9 @@ impl SotfApiClient {
     /// Complete the pairing ceremony by submitting this client's fingerprint.
     ///
     /// This is a public endpoint — no auth token required.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn complete_pairing(
         &self,
         nonce: &str,
@@ -311,6 +422,14 @@ impl SotfApiClient {
     ///
     /// Returns a receiver that yields parsed stream frames. The background task
     /// automatically reconnects with exponential backoff on disconnect.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "The public async subscription API starts its task when polled and remains awaitable "
+    )]
     pub async fn events_stream(
         &self,
     ) -> SotfApiResult<tokio::sync::mpsc::Receiver<SotfApiResult<SotfApiStreamEvent>>> {
@@ -321,7 +440,6 @@ impl SotfApiClient {
 
         tokio::spawn(async move {
             let mut backoff = std::time::Duration::from_secs(1);
-            const MAX_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
             loop {
                 match client
@@ -499,7 +617,7 @@ fn sotf_api_tls_options(
 }
 
 fn build_reqwest_client(
-    tls: &Option<SotfApiTlsOptions>,
+    tls: Option<&SotfApiTlsOptions>,
     timeout: Option<std::time::Duration>,
 ) -> SotfApiResult<reqwest::Client> {
     let mut builder = reqwest::Client::builder();
@@ -507,9 +625,11 @@ fn build_reqwest_client(
         builder = builder.timeout(timeout);
     }
     if let Some(tls) = tls {
-        let config =
-            sotf_tls::build_auto_accept_client_tls_config_for_port(tls.store.clone(), tls.port)
-                .map_err(SotfApiClientError::InvalidConfig)?;
+        let config = sotf_tls::build_auto_accept_client_tls_config_for_port(
+            std::sync::Arc::clone(&tls.store),
+            tls.port,
+        )
+        .map_err(SotfApiClientError::InvalidConfig)?;
         builder = builder.use_preconfigured_tls(config);
     }
     builder.build().map_err(SotfApiClientError::from)
@@ -529,7 +649,7 @@ fn canonical_url_host_port(url: &url::Url, port: u16) -> SotfApiResult<String> {
 fn canonical_certificate_fingerprint(fingerprint: &str) -> String {
     let hex = fingerprint
         .chars()
-        .filter(|ch| ch.is_ascii_hexdigit())
+        .filter(char::is_ascii_hexdigit)
         .map(|ch| ch.to_ascii_uppercase())
         .collect::<String>();
     if hex.len() >= 2 && hex.len() % 2 == 0 {

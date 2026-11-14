@@ -62,6 +62,10 @@ impl EqChartGeometry {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub fn q_bar_width(self, q: f64) -> f32 {
         let t = ((q - pk(EQ, "q").min_f64()) / (pk(EQ, "q").max_f64() - pk(EQ, "q").min_f64()))
             .clamp(0.0, 1.0) as f32;
@@ -70,6 +74,7 @@ impl EqChartGeometry {
 }
 
 /// Convert Q value to bar width (inverse: higher Q = narrower bar)
+#[must_use]
 pub fn q_to_bar_width(q: f64) -> f32 {
     EqChartGeometry::scaled(1.0).q_bar_width(q)
 }
@@ -144,12 +149,12 @@ pub(super) fn filter_log_response_at_rate(filter: &EQFilter, freq: f64, sample_r
     }
 }
 
-/// Fallback band color (gray) when theme band_colors is exhausted.
-pub(crate) const BAND_COLOR_FALLBACK: u32 = 0x9ca3af;
+/// Fallback band color (gray) when theme `band_colors` is exhausted.
+pub(crate) const BAND_COLOR_FALLBACK: u32 = 0x009c_a3af;
 
 /// Chart layout constants for control point positioning
 /// These MUST match gpui-px line chart margins (see gpui-px/src/line.rs)
-/// Left margin = untitled Y-axis total_size() = 60.
+/// Left margin = untitled Y-axis `total_size()` = 60.
 pub const CHART_LEFT_MARGIN: f32 = 60.0; // Untitled Y-axis tick width.
 
 pub const CHART_RIGHT_MARGIN: f32 = 0.0; // EQ opts into an edge-to-edge plot.
@@ -170,6 +175,7 @@ pub(super) const CONTROL_POINT_RADIUS: f32 = 8.0;
 
 /// Apply one keyboard nudge to an EQ point. Horizontal movement is logarithmic
 /// (one 48th-octave, or one 192nd-octave with Shift); vertical movement is in dB.
+#[must_use]
 pub fn nudge_eq_band_values(
     frequency: f64,
     gain_db: f64,
@@ -179,14 +185,19 @@ pub fn nudge_eq_band_values(
 ) -> (f64, f64) {
     let steps_per_octave = if fine { 192.0 } else { 48.0 };
     let gain_step = if fine { 0.025 } else { 0.1 };
-    let frequency = (frequency * 2.0_f64.powf(frequency_direction as f64 / steps_per_octave))
+    let frequency = (frequency * 2.0_f64.powf(f64::from(frequency_direction) / steps_per_octave))
         .clamp(MIN_FREQ, MAX_FREQ);
-    let gain_db = (gain_db + gain_direction as f64 * gain_step)
+    let gain_db = (gain_db + f64::from(gain_direction) * gain_step)
         .clamp(pk(EQ, "gain").min_f64(), pk(EQ, "gain").max_f64());
     (frequency, gain_db)
 }
 
 /// Convert frequency (Hz) to x pixel position
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
@@ -195,19 +206,26 @@ pub fn freq_to_x(freq: f64, plot_width: f32) -> f32 {
 }
 
 /// Convert x pixel position to frequency (Hz)
+#[must_use]
 pub fn x_to_freq(x: f32, plot_width: f32) -> f64 {
-    let t = ((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0) as f64;
+    let t = f64::from(((x - CHART_LEFT_MARGIN) / plot_width).clamp(0.0, 1.0));
     let log_min = MIN_FREQ.ln();
     let log_max = MAX_FREQ.ln();
     (log_min + t * (log_max - log_min)).exp()
 }
 
 /// Convert gain (dB) to y pixel position with dynamic range
+#[must_use]
 pub fn gain_to_y(gain_db: f64, min_db: f64, max_db: f64) -> f32 {
     gain_to_y_with_height(gain_db, min_db, max_db, CHART_HEIGHT)
 }
 
 /// Convert gain (dB) to y pixel position for a chart with custom height.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn gain_to_y_with_height(gain_db: f64, min_db: f64, max_db: f64, height: f32) -> f32 {
     // gpui-px calculates plot_height = height - margin_top(10) - margin_bottom(30)
     // but renders the plot starting at y=0 (no actual top margin offset)
@@ -217,14 +235,16 @@ pub fn gain_to_y_with_height(gain_db: f64, min_db: f64, max_db: f64, height: f32
 }
 
 /// Convert y pixel position to gain (dB) with dynamic range
+#[must_use]
 pub fn y_to_gain(y: f32, min_db: f64, max_db: f64) -> f64 {
     y_to_gain_with_height(y, min_db, max_db, CHART_HEIGHT)
 }
 
 /// Convert y pixel position to gain (dB) for a chart with custom height.
+#[must_use]
 pub fn y_to_gain_with_height(y: f32, min_db: f64, max_db: f64, height: f32) -> f64 {
     let plot_height = height - GPUI_PX_MARGIN_TOP - CHART_BOTTOM_MARGIN;
-    let t = ((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0) as f64;
+    let t = f64::from(((y - CHART_TOP_MARGIN) / plot_height).clamp(0.0, 1.0));
     max_db - t * (max_db - min_db)
 }
 
@@ -232,6 +252,7 @@ pub fn y_to_gain_with_height(y: f32, min_db: f64, max_db: f64, height: f32) -> f
 ///
 /// Returns left, top, and height in pixels. Prefer the space above the band;
 /// cap the height to the available space so expanded controls can scroll.
+#[must_use]
 pub fn eq_popup_placement(
     graph_width: f32,
     graph_height: f32,

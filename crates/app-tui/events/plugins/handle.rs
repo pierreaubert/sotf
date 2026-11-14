@@ -392,14 +392,14 @@ fn handle_matrix_grid_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand
             }
             None
         }
-        KeyCode::Char('-') | KeyCode::Char('[') => {
+        KeyCode::Char('-' | '[') => {
             // Decrease gain by 0.5 dB
             if app.adjust_matrix_cell(-0.5) {
                 app.request_plugin_update();
             }
             None
         }
-        KeyCode::Char('+') | KeyCode::Char('=') | KeyCode::Char(']') => {
+        KeyCode::Char('+' | '=' | ']') => {
             // Increase gain by 0.5 dB
             if app.adjust_matrix_cell(0.5) {
                 app.request_plugin_update();
@@ -599,7 +599,7 @@ pub(in super::super) fn handle_load_apo_file_mode(
                     app.request_plugin_update();
                 }
                 Err(e) => {
-                    app.ui.status_message = Some(format!("Failed to load APO file: {}", e));
+                    app.ui.status_message = Some(format!("Failed to load APO file: {e}"));
                 }
             }
             app.input_mode = InputMode::Normal;
@@ -665,7 +665,7 @@ pub(in super::super) fn handle_load_sofa_file_mode(
                     app.request_plugin_update();
                 }
                 Err(e) => {
-                    app.ui.status_message = Some(format!("Failed to set SOFA file: {}", e));
+                    app.ui.status_message = Some(format!("Failed to set SOFA file: {e}"));
                 }
             }
             app.input_mode = InputMode::Normal;

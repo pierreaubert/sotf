@@ -98,6 +98,10 @@ impl From<SpeakerOptResult> for SpeakerOptimizationResult {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "The preview fixture interpolates a small fixed number of frequency points"
+)]
 pub(super) fn generate_dummy_result() -> SpeakerOptimizationResult {
     let n = 200;
     let frequencies: Vec<f64> = (0..n)

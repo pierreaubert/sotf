@@ -3,8 +3,8 @@
 
 use gpui::prelude::*;
 use gpui::{
-    Bounds, Context, Entity, Modifiers, MouseButton, Pixels, Point, TestAppContext,
-    VisualTestContext, Window, WindowHandle, div, point, px, size,
+    Bounds, Entity, Modifiers, MouseButton, Pixels, Point, TestAppContext, VisualTestContext,
+    Window, WindowHandle, div, point, px, size,
 };
 use sotf_audio_player::{Player, PluginGraph, PluginSettings};
 use sotf_audio_player_gpui::app::dev_api::{DevTrackExt, registry};

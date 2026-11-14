@@ -1,4 +1,7 @@
-use super::*;
+use super::{
+    App, Block, BorderType, Borders, Constraint, Direction, Frame, Layout, Line, Modifier,
+    Paragraph, Rect, Span, Style, Wrap,
+};
 use crate::app::ServerSection;
 use sotf_audio_player::federation_config::MpdAuthMode;
 use sotf_audio_player::server::normalize_certificate_fingerprint;
@@ -59,8 +62,10 @@ fn draw_api_section(f: &mut Frame, area: Rect, app: &App) {
         .auth_token
         .as_deref()
         .filter(|token| !token.trim().is_empty())
-        .map(|token| format!("{}...", token.chars().take(8).collect::<String>()))
-        .unwrap_or_else(|| crate::tui_text!(app, "(auto on enable)"));
+        .map_or_else(
+            || crate::tui_text!(app, "(auto on enable)"),
+            |token| format!("{}...", token.chars().take(8).collect::<String>()),
+        );
 
     let fields: Vec<(&str, String, bool)> = vec![
         (
@@ -121,6 +126,10 @@ fn draw_api_section(f: &mut Frame, area: Rect, app: &App) {
     f.render_widget(para, area);
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
 fn draw_mpd_section(f: &mut Frame, area: Rect, app: &App) {
     let state = &app.server_state;
     let mpd = &state.config.mpd;

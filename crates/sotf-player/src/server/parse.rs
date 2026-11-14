@@ -5,7 +5,7 @@ use serde_json::Value;
 
 pub(super) fn parse_api_request(buf: &[u8], header_end: usize) -> Result<ApiRequest, String> {
     let header_text = std::str::from_utf8(&buf[..header_end])
-        .map_err(|_| "request headers are not valid UTF-8".to_string())?;
+        .map_err(|_error| "request headers are not valid UTF-8".to_string())?;
     let mut lines = header_text.split("\r\n");
     let request_line = lines
         .next()
@@ -47,6 +47,10 @@ pub(super) fn parse_api_request(buf: &[u8], header_end: usize) -> Result<ApiRequ
     })
 }
 
+/// Parse sotf api connection qr payload.
+///
+/// # Errors
+/// Returns an error if the QR payload has an unsupported type, version, authentication method, or invalid connection fields.
 pub fn parse_sotf_api_connection_qr_payload(
     payload: &str,
 ) -> Result<SotfApiConnectionQrPayload, String> {

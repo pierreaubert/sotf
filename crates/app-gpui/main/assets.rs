@@ -1,5 +1,5 @@
 use anyhow::anyhow;
-use gpui::*;
+use gpui::{Result, SharedString};
 use rust_embed::RustEmbed;
 use sotf_audio_player_gpui::asset_cache::cached_asset_list;
 use std::borrow::Cow;
@@ -19,7 +19,7 @@ use std::borrow::Cow;
 #[include = "presets/*.json"]
 pub(super) struct Assets;
 
-/// Copy bundled preset files to the user's plugin_presets directory.
+/// Copy bundled preset files to the user's `plugin_presets` directory.
 /// Skips any file that already exists (never overwrites user presets).
 pub(super) fn install_default_presets() {
     let Some(presets_dir) = sotf_audio_player::config::get_plugin_presets_dir() else {
@@ -33,7 +33,7 @@ pub(super) fn install_default_presets() {
         if let Some(filename) = path.strip_prefix("presets/") {
             let dest = presets_dir.join(filename);
             if dest.exists() {
-                log::debug!("Default preset already exists, skipping: {}", filename);
+                log::debug!("Default preset already exists, skipping: {filename}");
                 continue;
             }
             if let Some(parent) = dest.parent()
@@ -48,8 +48,8 @@ pub(super) fn install_default_presets() {
             }
             if let Some(file) = Assets::get(&path) {
                 match std::fs::write(&dest, &file.data) {
-                    Ok(()) => log::info!("Installed default preset: {}", filename),
-                    Err(e) => log::warn!("Failed to install default preset {}: {}", filename, e),
+                    Ok(()) => log::info!("Installed default preset: {filename}"),
+                    Err(e) => log::warn!("Failed to install default preset {filename}: {e}"),
                 }
             }
         }
@@ -64,7 +64,7 @@ impl gpui::AssetSource for Assets {
 
         Self::get(path)
             .map(|file| Some(file.data))
-            .ok_or_else(|| anyhow!("Could not find asset at path \"{}\"", path))
+            .ok_or_else(|| anyhow!("Could not find asset at path \"{path}\""))
     }
 
     fn list(&self, path: &str) -> Result<Vec<SharedString>> {

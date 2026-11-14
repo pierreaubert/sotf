@@ -16,6 +16,7 @@ pub struct SplitMix64 {
 }
 
 impl SplitMix64 {
+    #[must_use]
     pub fn new(seed: u64) -> Self {
         Self {
             state: seed,
@@ -32,16 +33,19 @@ impl SplitMix64 {
         value ^ (value >> 31)
     }
 
+    #[must_use]
     pub fn cursor(self) -> u64 {
         self.cursor
     }
 }
 
+#[must_use]
 pub fn derive_worker_seed(root_seed: u64, worker: u32) -> u64 {
     let mut rng = SplitMix64::new(root_seed ^ u64::from(worker).rotate_left(32));
     rng.next_u64()
 }
 
+#[must_use]
 pub fn class_for_roll(roll: u64) -> ActionClass {
     if roll % 100 < STATE_VALID_PERCENT {
         ActionClass::StateValid
@@ -67,10 +71,12 @@ impl CoverageState {
         self.seen_state_hashes.insert(hash.into())
     }
 
+    #[must_use]
     pub fn count(&self, key: &str) -> u64 {
         self.counts.get(key).copied().unwrap_or(0)
     }
 
+    #[must_use]
     pub fn counters(&self) -> &BTreeMap<String, u64> {
         &self.counts
     }
@@ -84,6 +90,7 @@ pub struct Generator {
 }
 
 impl Generator {
+    #[must_use]
     pub fn new(seed: u64) -> Self {
         Self {
             rng: SplitMix64::new(seed),
@@ -92,6 +99,10 @@ impl Generator {
         }
     }
 
+    /// Generates the next supported action.
+    ///
+    /// # Errors
+    /// Returns an error when no eligible action can be selected.
     pub fn next_action(
         &mut self,
         manifest: &SurfaceManifest,

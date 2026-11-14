@@ -4,7 +4,7 @@ use sotf_audio_player::room_eq_types::{RoomEqEasyLayout, validate_room_eq_easy_l
 use sotf_audio_player::ui_models::room_eq::RoomEqScreenModel;
 use std::collections::VecDeque;
 
-/// Quality evidence associated with one loaded RoomEQ source.
+/// Quality evidence associated with one loaded `RoomEQ` source.
 ///
 /// `quality: None` means the source has no current, validated sidecar entry;
 /// it is presented as unknown evidence, never as a passing take.
@@ -24,6 +24,10 @@ pub struct RoomEqQualityReviewEntry {
 /// results) lives in the shared [`RoomEqScreenModel`] from `sotf-player`;
 /// this struct only holds view state that is specific to the terminal UI.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RoomEqTuiState {
     /// Shared, UI-agnostic Room EQ domain model.
     pub model: RoomEqScreenModel,
@@ -47,7 +51,7 @@ pub struct RoomEqTuiState {
     // the shared `DelayDetectionState`; the `dd_*` fields below are
     // TUI-only UI state.
     /// Index of the currently focused form field on the delay-detection
-    /// step (0..=3: probe_duration, silence_duration, input_channel,
+    /// step (0..=3: `probe_duration`, `silence_duration`, `input_channel`,
     /// Run button). Scroll-local cursor only — no semantic meaning.
     pub dd_field: usize,
     /// Row index of the results table currently highlighted for editing.
@@ -116,6 +120,7 @@ impl RoomEqTuiState {
     ///
     /// Falls back to the number of channel results when measurements have
     /// not yet been converted to speaker configs.
+    #[must_use]
     pub fn opt_total_speakers(&self) -> usize {
         let n = self.model.speaker_configs.len();
         if n > 0 {

@@ -135,7 +135,7 @@ impl std::fmt::Debug for SpatialSpiderUiState {
 ///
 /// Until one of those lands, the widget header carries a small "(chain
 /// out)" label so the user knows what they're looking at.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SpatialSpiderSnapshot {
     pub loudness: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     pub ui: SpatialSpiderUiState,

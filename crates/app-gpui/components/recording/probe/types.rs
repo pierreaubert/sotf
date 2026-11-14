@@ -3,7 +3,7 @@ use super::misc::probe_number_row;
 use crate::app::types::recording::ProbeCaptureStatus;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, Column, HStack, Progress, ProgressSize, Spinner,
     SpinnerSize, StackAlign, StackSpacing, Table, TableTheme, Text, TextSize, TextWeight, VStack,
@@ -26,6 +26,15 @@ macro_rules! dev_track {
 
 impl PlayerView {
     /// Render the Probe step UI.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Numeric input controls deliberately round their bounded UI parameter values"
+    )]
     pub(crate) fn render_recording_probe_step(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
@@ -45,8 +54,7 @@ impl PlayerView {
             estimate_probe_sequence_ms(channel_count, pc.probe_duration_ms, pc.silence_duration_ms);
         let now_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
         // --- Form -----------------------------------------------------
         let view = cx.entity().clone();
@@ -70,7 +78,7 @@ impl PlayerView {
                         cx,
                         &theme,
                         "Probe duration (ms)",
-                        pc.probe_duration_ms as f64,
+                        f64::from(pc.probe_duration_ms),
                         100.0,
                         |rec, delta| {
                             rec.probe_capture.probe_duration_ms =
@@ -81,7 +89,7 @@ impl PlayerView {
                         cx,
                         &theme,
                         "Silence gap (ms)",
-                        pc.silence_duration_ms as f64,
+                        f64::from(pc.silence_duration_ms),
                         100.0,
                         |rec, delta| {
                             rec.probe_capture.silence_duration_ms =
@@ -93,10 +101,10 @@ impl PlayerView {
                         cx,
                         &theme,
                         "Mic input channel",
-                        pc.input_channel as f64,
+                        f64::from(pc.input_channel),
                         1.0,
                         |rec, delta| {
-                            let next = rec.probe_capture.input_channel as i32 + delta as i32;
+                            let next = i32::from(rec.probe_capture.input_channel) + delta as i32;
                             rec.probe_capture.input_channel = next.max(0) as u16;
                         },
                     ))
@@ -149,18 +157,17 @@ impl PlayerView {
             ),
             ProbeCaptureStatus::Running { .. } => {
                 let pct = running_progress
-                    .map(|p| format!("{:.0}%", p * 100.0))
-                    .unwrap_or_else(|| "…".to_string());
-                (format!("Running... {}", pct), theme.accent)
+                    .map_or_else(|| "…".to_string(), |p| format!("{:.0}%", p * 100.0));
+                (format!("Running... {pct}"), theme.accent)
             }
             ProbeCaptureStatus::Complete => (
                 format!(
                     "Complete — detected {} channel(s)",
-                    pc.results.as_ref().map(|r| r.channels.len()).unwrap_or(0)
+                    pc.results.as_ref().map_or(0, |r| r.channels.len())
                 ),
                 theme.success,
             ),
-            ProbeCaptureStatus::Failed(msg) => (format!("Failed: {}", msg), theme.error),
+            ProbeCaptureStatus::Failed(msg) => (format!("Failed: {msg}"), theme.error),
         };
         let status = Card::new()
             .background(theme.surface)
@@ -289,7 +296,7 @@ impl PlayerView {
                     .theme(table_theme),
             );
             if let Some(wav) = pc.wav_path.clone() {
-                content = content.child(Text::caption(format!("Recording saved to: {}", wav)));
+                content = content.child(Text::caption(format!("Recording saved to: {wav}")));
             }
             Card::new()
                 .background(theme.surface)
@@ -321,6 +328,10 @@ impl PlayerView {
     /// recording device configuration and writes the raw mono mic
     /// buffer to `<recording_directory>/probe_all_channels.wav` via
     /// `sotf_audio::signal_recorder::probe_channel_delays_with_recording`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub(crate) fn start_probe_capture(&mut self, cx: &mut Context<Self>) {
         #[cfg(feature = "dev-api")]
         if self.complete_qa_fake_probe_capture(cx) {
@@ -356,10 +367,14 @@ impl PlayerView {
             // hardware outputs that don't exist.
             let mappings = &rec.playback_config.channel_mappings;
             let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-            let indices: Vec<u16> = mappings
+            let Ok(indices) = mappings
                 .iter()
-                .map(|m| m.interface_channel() as u16)
-                .collect();
+                .map(|m| u16::try_from(m.interface_channel()))
+                .collect::<Result<Vec<_>, _>>()
+            else {
+                log::error!("Output channel exceeds the capture channel range");
+                return;
+            };
             let dir = rec
                 .recording_directory
                 .clone()
@@ -381,8 +396,7 @@ impl PlayerView {
 
         let started_at_ms = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as u64)
-            .unwrap_or(0);
+            .map_or(0, |d| u64::try_from(d.as_millis()).unwrap_or(u64::MAX));
 
         let (capture_generation, cancel_flag) = self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;
@@ -392,12 +406,15 @@ impl PlayerView {
             rec.probe_capture.status = ProbeCaptureStatus::Running { started_at_ms };
             rec.probe_capture.results = None;
             cx.notify();
-            (capture_generation, rec.probe_cancel_requested.clone())
+            (
+                capture_generation,
+                std::sync::Arc::clone(&rec.probe_cancel_requested),
+            )
         });
 
         let state_clone = self.state.clone();
         let wav_path_for_state = wav_path.clone();
-        let cancel_for_task = cancel_flag.clone();
+        let cancel_for_task = std::sync::Arc::clone(&cancel_flag);
         cx.spawn(async move |_, cx| {
             let result = smol::unblock(move || {
                 #[cfg(not(target_os = "ios"))]
@@ -463,7 +480,7 @@ impl PlayerView {
                         pc.status = ProbeCaptureStatus::Idle;
                     }
                     Err(e) => {
-                        log::warn!("Probe capture failed: {}", e);
+                        log::warn!("Probe capture failed: {e}");
                         pc.status = ProbeCaptureStatus::Failed(e);
                     }
                 }
@@ -476,6 +493,10 @@ impl PlayerView {
     /// Complete the QA probe from deterministic fixture data only after the
     /// visible Run Probe control has been activated.
     #[cfg(feature = "dev-api")]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     fn complete_qa_fake_probe_capture(&mut self, cx: &mut Context<Self>) -> bool {
         self.state.update(cx, |state, cx| {
             let rec = &mut state.app.measurement_state.recording_state;

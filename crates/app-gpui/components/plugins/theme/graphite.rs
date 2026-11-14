@@ -7,6 +7,10 @@ use super::plugin_theme::PluginTheme;
 use gpui::{Rgba, SharedString};
 use gpui_audio_kit::audio_design_tokens::AudioDesignTokens;
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Presentation colors and image geometry deliberately use floating-point coordinates"
+)]
 const fn rgba(hex: u32, alpha: f32) -> Rgba {
     Rgba {
         r: ((hex >> 16) & 0xff) as f32 / 255.0,
@@ -16,34 +20,35 @@ const fn rgba(hex: u32, alpha: f32) -> Rgba {
     }
 }
 
+#[must_use]
 pub fn theme() -> PluginTheme {
     PluginTheme {
         // Surfaces — deep graphite gradient
-        chassis_bg_top: rgba(0x14171c, 1.0),
-        chassis_bg_bottom: rgba(0x0c0e12, 1.0),
-        chassis_border: rgba(0x353a44, 1.0),
-        panel_bg: rgba(0x11141a, 1.0),
-        panel_recess: rgba(0x07080b, 1.0),
-        section_divider: rgba(0x1a1d23, 1.0),
-        corner_bracket: rgba(0x353a44, 0.6),
+        chassis_bg_top: rgba(0x0014_171c, 1.0),
+        chassis_bg_bottom: rgba(0x000c_0e12, 1.0),
+        chassis_border: rgba(0x0035_3a44, 1.0),
+        panel_bg: rgba(0x0011_141a, 1.0),
+        panel_recess: rgba(0x0007_080b, 1.0),
+        section_divider: rgba(0x001a_1d23, 1.0),
+        corner_bracket: rgba(0x0035_3a44, 0.6),
 
         // Ink — warm off-white scale
-        ink_hi: rgba(0xece8df, 1.0),
-        ink: rgba(0xc8c3b8, 1.0),
-        ink_mid: rgba(0x8a857a, 1.0),
-        ink_low: rgba(0xa09a8e, 1.0),
-        ink_faint: rgba(0x8a857a, 1.0),
+        ink_hi: rgba(0x00ec_e8df, 1.0),
+        ink: rgba(0x00c8_c3b8, 1.0),
+        ink_mid: rgba(0x008a_857a, 1.0),
+        ink_low: rgba(0x00a0_9a8e, 1.0),
+        ink_faint: rgba(0x008a_857a, 1.0),
 
         // Accent — calibrated amber
-        accent: rgba(0xe5a93d, 1.0),
-        accent_bright: rgba(0xffc857, 1.0),
-        accent_glow: rgba(0xe5a93d, 0.35),
-        accent_arc: rgba(0xe5a93d, 0.92),
-        accent_track: rgba(0xe5a93d, 0.06),
+        accent: rgba(0x00e5_a93d, 1.0),
+        accent_bright: rgba(0x00ff_c857, 1.0),
+        accent_glow: rgba(0x00e5_a93d, 0.35),
+        accent_arc: rgba(0x00e5_a93d, 0.92),
+        accent_track: rgba(0x00e5_a93d, 0.06),
 
         // LED — soft green calibrated indicator
-        led_active: rgba(0x62d077, 1.0),
-        led_glow: rgba(0x62d077, 0.55),
+        led_active: rgba(0x0062_d077, 1.0),
+        led_glow: rgba(0x0062_d077, 0.55),
 
         // Typography — italic serif for titles, geometric mono for data
         font_display: SharedString::from("Instrument Serif"),

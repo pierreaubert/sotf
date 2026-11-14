@@ -31,17 +31,17 @@
         .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_algo_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         algo_select = algo_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_algo_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         algo_select = algo_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }
 
     block_out = block_out.child(algo_select);
-}
+};
 
 // --- Population + Max Evals ---
 {
@@ -59,7 +59,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_population_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         population_input =
             population_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
@@ -78,7 +78,7 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_maxeval_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         maxeval_input =
             maxeval_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
@@ -92,8 +92,8 @@
                 .child(population_input)
                 .child(maxeval_input),
         )
-    };
-}
+    }
+};
 
 // --- Tolerance (conditional) ---
 if !hide_tolerance {
@@ -111,7 +111,7 @@ if !hide_tolerance {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_tolerance_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         tolerance_input = tolerance_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -129,7 +129,7 @@ if !hide_tolerance {
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_atolerance_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         atolerance_input = atolerance_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -163,7 +163,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_bo_initial_samples_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_initial_input =
             bo_initial_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
@@ -182,7 +182,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_bo_batch_size_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_batch_input = bo_batch_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
 
@@ -200,7 +200,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_bo_posterior_std_threshold_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_std_input = bo_std_input.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -234,13 +234,13 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
         .theme(theme.select_theme.clone());
 
     if let Some(ref handler) = on_bo_acquisition_toggle_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_acquisition_select =
             bo_acquisition_select.on_toggle(move |open, w, cx| h(open, w, cx));
     }
 
     if let Some(ref handler) = on_bo_acquisition_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_acquisition_select =
             bo_acquisition_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
     }
@@ -251,7 +251,7 @@ if config.algorithm.algo.eq_ignore_ascii_case("autoeq:bo") || config.algorithm.a
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_bo_ehvi_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         bo_ehvi_toggle = bo_ehvi_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -306,13 +306,13 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
             .theme(theme.select_theme.clone());
 
         if let Some(ref handler) = on_strategy_toggle_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             strategy_select =
                 strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
 
         if let Some(ref handler) = on_strategy_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             strategy_select =
                 strategy_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
         }
@@ -334,7 +334,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_de_f_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             de_f_input = de_f_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -352,7 +352,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_de_cr_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             de_cr_input = de_cr_input.on_change(move |v, w, cx| h(v, w, cx));
         }
 
@@ -383,7 +383,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref handler) = on_adaptive_weight_f_change_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 weight_f_input = weight_f_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -401,7 +401,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref handler) = on_adaptive_weight_cr_change_rc {
-                let h = handler.clone();
+                let h = std::rc::Rc::clone(handler);
                 weight_cr_input = weight_cr_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -427,7 +427,7 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
         .theme(toggle_theme.clone());
 
     if let Some(ref handler) = on_refine_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         refine_toggle = refine_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -459,13 +459,13 @@ if !hide_de_params && config.algorithm.algo.contains(":de") {
             .theme(theme.select_theme.clone());
 
         if let Some(ref handler) = on_local_algo_toggle_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             local_algo_select =
                 local_algo_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
 
         if let Some(ref handler) = on_local_algo_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             local_algo_select =
                 local_algo_select.on_change(move |value, w, cx| h(value.as_ref(), w, cx));
         }

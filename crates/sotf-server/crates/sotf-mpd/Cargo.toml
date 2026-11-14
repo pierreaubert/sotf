@@ -25,3 +25,4 @@ tokio = { workspace = true, features = ["test-util"] }
 insta = { workspace = true }
 
 [lints]
+workspace = true

@@ -44,7 +44,7 @@ impl App {
     /// Start force library scan (non-blocking background scan, rescans ALL files)
     ///
     /// Unlike `start_library_scan()`, this rescans all files regardless of modification time.
-    /// ReplayGain values are preserved (not overwritten).
+    /// `ReplayGain` values are preserved (not overwritten).
     pub fn start_force_library_scan(&mut self) {
         if self.read_only {
             log::info!("Skipping force library scan (read-only mode)");
@@ -84,21 +84,21 @@ impl App {
 
     /// Check progress of background library scan
     pub fn check_library_scan_progress(&mut self) {
+        enum Completion {
+            Complete,
+            Error,
+        }
+
         if !self.scan.in_progress {
             return;
         }
 
         // Drain messages one at a time instead of collecting them into a Vec.
         // This bounds memory usage when the UI thread falls behind the scanner.
-        let scanner = match &self.scan.library_scanner {
-            Some(s) => s,
-            None => return,
+        let Some(scanner) = &self.scan.library_scanner else {
+            return;
         };
 
-        enum Completion {
-            Complete,
-            Error,
-        }
         let mut completion = None;
 
         while let Some(msg) = scanner.try_recv() {
@@ -109,8 +109,7 @@ impl App {
                     self.scan.progress_tracks = tracks;
                     self.scan.progress_albums = albums;
                     self.ui.status_message = Some(format!(
-                        "Scanning: {} tracks, {} albums found...",
-                        tracks, albums
+                        "Scanning: {tracks} tracks, {albums} albums found..."
                     ));
                 }
                 LibraryScanMessage::Complete { tracks, albums } => {
@@ -118,21 +117,15 @@ impl App {
                     self.scan.needs_rescan = false;
                     self.scan.progress_tracks = tracks;
                     self.scan.progress_albums = albums;
-                    self.ui.status_message = Some(format!(
-                        "Scan complete: {} tracks in {} albums",
-                        tracks, albums
-                    ));
-                    log::info!(
-                        "Library scan complete: {} tracks in {} albums",
-                        tracks,
-                        albums
-                    );
+                    self.ui.status_message =
+                        Some(format!("Scan complete: {tracks} tracks in {albums} albums"));
+                    log::info!("Library scan complete: {tracks} tracks in {albums} albums");
                     completion = Some(Completion::Complete);
                 }
                 LibraryScanMessage::Error { message } => {
                     self.scan.in_progress = false;
-                    self.ui.status_message = Some(format!("Scan failed: {}", message));
-                    log::error!("Library scan failed: {}", message);
+                    self.ui.status_message = Some(format!("Scan failed: {message}"));
+                    log::error!("Library scan failed: {message}");
                     completion = Some(Completion::Error);
                 }
             }
@@ -148,7 +141,7 @@ impl App {
             Some(Completion::Complete) => {
                 // Reload library from database to get the new data
                 if let Err(e) = self.library.load_from_database() {
-                    log::error!("Failed to reload library after scan: {}", e);
+                    log::error!("Failed to reload library after scan: {e}");
                 }
                 self.rebuild_artist_tree();
                 self.request_filter_update();
@@ -157,10 +150,10 @@ impl App {
                 // Bliss scan will auto-start when waveform completes to avoid
                 // excessive memory usage from concurrent full-file decodings.
                 if let Err(e) = self.start_replay_gain_scan() {
-                    log::warn!("Failed to start replay gain scan: {}", e);
+                    log::warn!("Failed to start replay gain scan: {e}");
                 }
                 if let Err(e) = self.start_waveform_scan() {
-                    log::warn!("Failed to start waveform scan: {}", e);
+                    log::warn!("Failed to start waveform scan: {e}");
                 }
                 self.clear_pause_override_if_idle();
             }
@@ -171,6 +164,9 @@ impl App {
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if scanning cannot start or library filesystem and database operations fail.
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.scan.in_progress = true;
         self.scan.progress_tracks = 0;
@@ -196,7 +192,7 @@ impl App {
                 progress_tracks_clone.store(tracks, Ordering::Relaxed);
                 progress_albums_clone.store(albums, Ordering::Relaxed);
                 last_update_clone.store(tracks, Ordering::Relaxed);
-                log::info!("Scan progress: {} tracks, {} albums found", tracks, albums);
+                log::info!("Scan progress: {tracks} tracks, {albums} albums found");
             }
         });
 
@@ -210,22 +206,17 @@ impl App {
         self.library_view.album_list_offset = 0;
 
         match &result {
-            Ok(_) => {
+            Ok(()) => {
                 let album_count = self.library.albums.len();
                 let track_count: usize = self.library.albums.iter().map(|a| a.tracks.len()).sum();
                 self.ui.status_message = Some(format!(
-                    "Scan complete: {} tracks in {} albums",
-                    track_count, album_count
+                    "Scan complete: {track_count} tracks in {album_count} albums"
                 ));
-                log::info!(
-                    "Scan complete: {} tracks in {} albums",
-                    track_count,
-                    album_count
-                );
+                log::info!("Scan complete: {track_count} tracks in {album_count} albums");
             }
             Err(e) => {
-                self.ui.status_message = Some(format!("Scan failed: {}", e));
-                log::error!("Scan failed: {}", e);
+                self.ui.status_message = Some(format!("Scan failed: {e}"));
+                log::error!("Scan failed: {e}");
             }
         }
 
@@ -235,12 +226,15 @@ impl App {
         if result.is_ok()
             && let Err(e) = self.start_waveform_scan()
         {
-            log::warn!("Failed to start waveform scan: {}", e);
+            log::warn!("Failed to start waveform scan: {e}");
         }
 
         result
     }
-    /// Start background ReplayGain analysis for tracks without gain data
+    /// Start background `ReplayGain` analysis for tracks without gain data
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping replay gain scan (read-only mode)");
@@ -254,6 +248,9 @@ impl App {
         Ok(())
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_replay_gain_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping force replay gain scan (read-only mode)");
@@ -267,7 +264,7 @@ impl App {
         Ok(())
     }
 
-    /// Check for ReplayGain scanner progress updates
+    /// Check for `ReplayGain` scanner progress updates
     pub fn check_replay_gain_progress(&mut self) {
         if !self.scan.replay_gain_manager.in_progress {
             return;
@@ -285,7 +282,7 @@ impl App {
 
             // Reload library so in-memory tracks get the new gain values
             if let Err(e) = self.library.load_from_database() {
-                log::error!("Failed to reload library after ReplayGain scan: {}", e);
+                log::error!("Failed to reload library after ReplayGain scan: {e}");
             }
             self.rebuild_artist_tree();
             self.request_filter_update();
@@ -306,6 +303,9 @@ impl App {
     }
 
     /// Start background waveform scanning for tracks without waveform data
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping waveform scan (read-only mode)");
@@ -314,6 +314,9 @@ impl App {
         self.scan.waveform_manager.start_scan()
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_waveform_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping force waveform scan (read-only mode)");
@@ -338,7 +341,7 @@ impl App {
         if was_in_progress && !self.scan.waveform_manager.in_progress {
             // Reload library so in-memory tracks get waveform data
             if let Err(e) = self.library.load_from_database() {
-                log::error!("Failed to reload library after waveform scan: {}", e);
+                log::error!("Failed to reload library after waveform scan: {e}");
             }
             self.rebuild_artist_tree();
             self.request_filter_update();
@@ -348,13 +351,16 @@ impl App {
             // This serializes the two scans to avoid excessive memory usage
             // from concurrent full-file decodings.
             if let Err(e) = self.start_bliss_scan() {
-                log::warn!("Failed to start bliss scan after waveform: {}", e);
+                log::warn!("Failed to start bliss scan after waveform: {e}");
             }
 
             self.clear_pause_override_if_idle();
         }
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_bliss_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping force bliss scan (read-only mode)");
@@ -369,6 +375,9 @@ impl App {
     }
 
     /// Start background bliss audio analysis for tracks without bliss data
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_bliss_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.read_only {
             log::info!("Skipping bliss scan (read-only mode)");

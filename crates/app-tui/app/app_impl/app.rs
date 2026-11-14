@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+#[derive(Debug)]
 pub struct UiState {
     pub loading_tick: u16,
     pub status_message: Option<String>,
@@ -25,6 +26,7 @@ pub struct UiState {
     pub ab_testing: super::super::types::AbTestingTuiState,
 }
 
+#[derive(Debug)]
 pub struct ModalState {
     pub metadata_editor: Option<super::super::types::MetadataEditorState>,
     pub channel_conflict_path: Option<sotf_audio::decoder::AudioSource>,
@@ -60,11 +62,17 @@ pub struct LibraryViewState {
     pub image_protocol_path: Option<PathBuf>,
 }
 
+#[derive(Debug)]
 pub struct QueueViewState {
     pub selected_index: usize,
     pub selected_track_index: Option<usize>,
 }
 
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct PlaybackState {
     pub is_playing: bool,
     pub current_queue_index: Option<usize>,
@@ -82,6 +90,7 @@ pub struct PlaybackState {
     pub replay_gain_preamp: f32,
 }
 
+#[derive(Debug)]
 pub struct PluginRackState {
     pub graph: PluginGraph,
     pub needs_update: bool,
@@ -105,12 +114,14 @@ pub struct PluginRackState {
     pub last_loaded_preset: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct PlaylistState {
     pub controller: sotf_audio_player::PlaylistController,
     pub mode: super::super::types::PlaylistMode,
     pub name_input: String,
 }
 
+#[derive(Debug)]
 pub struct MatrixEditState {
     pub edit_mode: MatrixEditMode,
     pub grid_row: usize,
@@ -118,6 +129,7 @@ pub struct MatrixEditState {
     pub header_selection: usize,
 }
 
+#[derive(Debug)]
 pub struct LevelMeterState {
     pub groups: Vec<ChannelGroup>,
     pub selected_group: usize,
@@ -126,6 +138,7 @@ pub struct LevelMeterState {
     pub last_speaker_config: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct AudioDeviceState {
     pub outputs: Vec<AudioDevice>,
     pub selected_output_index: usize,
@@ -135,6 +148,11 @@ pub struct AudioDeviceState {
     pub cast_discovery_receiver: Option<std::sync::mpsc::Receiver<Vec<CastDeviceInfo>>>,
 }
 
+#[derive(Debug)]
+#[expect(
+    clippy::struct_field_names,
+    reason = "Callback and cached-state field names identify their event or snapshot explicitly"
+)]
 pub struct MediaControlState {
     pub last_queue_index: Option<usize>,
     pub last_title: Option<String>,
@@ -148,6 +166,10 @@ pub struct MediaControlState {
     pub last_signal_path_signature: u64,
 }
 
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct ScanState {
     pub in_progress: bool,
     pub progress_tracks: usize,
@@ -165,6 +187,7 @@ pub struct ScanState {
     pub needs_rescan: bool,
 }
 
+#[derive(Debug)]
 pub struct FileExplorerState {
     pub items: Vec<PathBuf>,
     pub selected: usize,
@@ -176,12 +199,14 @@ pub struct FileExplorerState {
     pub picker_title: String,
 }
 
+#[derive(Debug)]
 pub struct AutocompleteState {
     pub suggestions: Vec<String>,
     pub index: usize,
     pub menu_active: bool,
 }
 
+#[derive(Debug)]
 pub struct FederationReceivers {
     pub scan: Option<std::sync::mpsc::Receiver<FederationScanResult>>,
     pub test: Option<
@@ -231,6 +256,11 @@ pub struct App {
 }
 
 impl App {
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn new(theme: Theme, read_only: bool) -> Self {
         // Try to create library with database, fallback to simple library
         let db_result = if read_only {
@@ -239,10 +269,7 @@ impl App {
             MusicLibrary::with_database()
         };
         let library = db_result.unwrap_or_else(|e| {
-            log::warn!(
-                "Failed to initialize database, using in-memory library: {}",
-                e
-            );
+            log::warn!("Failed to initialize database, using in-memory library: {e}");
             MusicLibrary::new()
         });
 
@@ -407,8 +434,7 @@ impl App {
                 items: Vec::new(),
                 selected: 0,
                 dir: directories::UserDirs::new()
-                    .map(|u| u.home_dir().to_path_buf())
-                    .unwrap_or_else(|| PathBuf::from("/")),
+                    .map_or_else(|| PathBuf::from("/"), |u| u.home_dir().to_path_buf()),
                 filter: None,
                 show_hidden: false,
                 picker_mode: FilePickerMode::File,
@@ -440,7 +466,7 @@ impl App {
         if let Some(db) = app.library.get_database()
             && let Err(e) = app.playlists.controller.load_playlists(db)
         {
-            log::warn!("Failed to load playlists: {}", e);
+            log::warn!("Failed to load playlists: {e}");
         }
 
         app
@@ -454,13 +480,13 @@ impl App {
         self.scan.waveform_manager.set_num_threads(threads);
         self.scan.bliss_manager.set_num_threads(threads);
         if let Some(t) = threads {
-            log::info!("Scanner thread count set to {}", t);
+            log::info!("Scanner thread count set to {t}");
         }
     }
 
     pub fn current_track_path(&self) -> Option<PathBuf> {
         self.current_track_source()
-            .and_then(|s| s.as_path().map(|p| p.to_path_buf()))
+            .and_then(|s| s.as_path().map(std::path::Path::to_path_buf))
     }
 
     pub fn current_track_source(&self) -> Option<sotf_audio::decoder::AudioSource> {
@@ -468,7 +494,7 @@ impl App {
             .current_queue_index
             .and_then(|idx| self.queue.get(idx))
             .and_then(|entry| entry.item.current_track())
-            .map(|track| track.audio_source())
+            .map(sotf_audio_player::Track::audio_source)
     }
 
     /// Get the currently playing track info
@@ -506,7 +532,7 @@ impl App {
             ReplayGainMode::Track => track.replay_gain,
             ReplayGainMode::Album => track.album_gain,
         };
-        gain.map(|g| g + self.playback.replay_gain_preamp as f64)
+        gain.map(|g| g + f64::from(self.playback.replay_gain_preamp))
     }
 
     pub fn next_track(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
@@ -530,30 +556,29 @@ impl App {
         {
             if let Some(track) = entry.item.previous_track() {
                 return Some(track.audio_source());
-            } else {
-                // Move to previous album in queue
-                if idx > 0 {
-                    self.playback.current_queue_index = Some(idx - 1);
-                    // Go to last track of previous album
-                    if let Some(prev_entry) = self.queue.get_mut(idx - 1) {
-                        prev_entry.item.current_track_index =
-                            prev_entry.item.album.tracks.len().saturating_sub(1);
-                    }
-                    return self.current_track_source();
+            }
+            // Move to previous album in queue
+            if idx > 0 {
+                self.playback.current_queue_index = Some(idx - 1);
+                // Go to last track of previous album
+                if let Some(prev_entry) = self.queue.get_mut(idx - 1) {
+                    prev_entry.item.current_track_index =
+                        prev_entry.item.album.tracks.len().saturating_sub(1);
                 }
+                return self.current_track_source();
             }
         }
         None
     }
 
     pub fn start_queue(&mut self) -> Option<sotf_audio::decoder::AudioSource> {
-        if !self.queue.is_empty() {
+        if self.queue.is_empty() {
+            None
+        } else {
             self.playback.current_queue_index = Some(0);
             self.queue[0].item.current_track_index = 0;
             self.playback.is_playing = true;
             self.current_track_source()
-        } else {
-            None
         }
     }
 
@@ -573,6 +598,9 @@ impl App {
     }
 
     /// Load APO file and update the currently selected EQ plugin
+    ///
+    /// # Errors
+    /// Returns an error if the APO path is invalid, parsing fails, or the selected plugin is incompatible.
     pub fn load_apo_file(&mut self) -> Result<(), String> {
         use sotf_audio_player::{EQFilter, PluginSettings};
         use std::path::Path;
@@ -622,6 +650,9 @@ impl App {
     }
 
     /// Update SOFA file path for the currently selected binaural decoder plugin
+    ///
+    /// # Errors
+    /// Returns an error if the SOFA path is invalid or the selected plugin is incompatible.
     pub fn load_sofa_file(&mut self) -> Result<(), String> {
         use sotf_audio_player::PluginSettings;
 
@@ -635,7 +666,7 @@ impl App {
                 ref mut sofa_file, ..
             } = plugin.settings
             {
-                *sofa_file = self.plugin_rack.sofa_input.clone();
+                sofa_file.clone_from(&self.plugin_rack.sofa_input);
                 Ok(())
             } else {
                 Err("Selected plugin is not a Binaural Decoder".to_string())
@@ -659,9 +690,12 @@ impl App {
         })
     }
 
-    /// Generic: convert biquad filter tuples to EQFilters and apply to the plugin chain.
-    /// `filters` are (filter_type_str, freq, q, db_gain) tuples.
+    /// Generic: convert biquad filter tuples to `EQFilters` and apply to the plugin chain.
+    /// `filters` are (`filter_type_str`, freq, q, `db_gain`) tuples.
     /// Returns a success message or an error string.
+    ///
+    /// # Errors
+    /// Returns an error if the filters cannot be represented in the current plugin graph.
     pub fn apply_eq_filters_to_chain(
         &mut self,
         filters: &[(String, f64, f64, f64)],
@@ -677,6 +711,9 @@ impl App {
     }
 
     /// Apply Spinorama EQ results to the plugin chain.
+    ///
+    /// # Errors
+    /// Returns an error if optimization results are missing or cannot be applied to the plugin graph.
     pub fn apply_spinorama_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .spinorama_eq
@@ -695,6 +732,9 @@ impl App {
     }
 
     /// Apply Headphone EQ results to the plugin chain.
+    ///
+    /// # Errors
+    /// Returns an error if optimization results are missing or cannot be applied to the plugin graph.
     pub fn apply_headphone_to_plugins(&mut self) -> Result<String, String> {
         let filters: Vec<_> = self
             .headphone_eq
@@ -705,8 +745,10 @@ impl App {
             .collect();
         let label = std::path::Path::new(&self.headphone_eq.model.measurement_path)
             .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_else(|| "headphone".to_string());
+            .map_or_else(
+                || "headphone".to_string(),
+                |s| s.to_string_lossy().to_string(),
+            );
         self.apply_eq_filters_to_chain(&filters, &label)
     }
 
@@ -720,6 +762,9 @@ impl App {
     /// On success, schedules a structural plugin update; the main loop's
     /// flush picks `update_plugins` (linear) or `update_plugin_graph`
     /// (non-linear) based on the resulting topology.
+    ///
+    /// # Errors
+    /// Returns an error if optimization results are missing or cannot be applied to the plugin graph.
     pub fn apply_room_eq_to_chain(&mut self) -> Result<String, String> {
         use sotf_audio_player::autoeq::{self, RoomEqApplyOutcome};
 
@@ -744,8 +789,7 @@ impl App {
         let sample_rate = self
             .playback
             .current_sample_rate
-            .map(|r| r as f64)
-            .unwrap_or_else(|| self.get_current_sample_rate());
+            .map_or_else(|| self.get_current_sample_rate(), f64::from);
 
         let outcome = autoeq::apply_room_eq_to_chain(
             &mut self.plugin_rack.graph,
@@ -782,6 +826,11 @@ impl App {
     }
 
     /// Check if current track has been played for 30+ seconds and record it
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+    )]
     pub fn check_and_record_play(&mut self) {
         if self.read_only || self.playback.current_track_already_recorded {
             return;
@@ -797,9 +846,9 @@ impl App {
                 if let Some(db) = self.library.get_database() {
                     let duration = self.playback.position_secs as u64;
                     if let Err(e) = db.record_play(path, duration) {
-                        log::error!("Failed to record play: {}", e);
+                        log::error!("Failed to record play: {e}");
                     } else {
-                        log::info!("Recorded play for {:?} ({}s)", path, duration);
+                        log::info!("Recorded play for {} ({duration}s)", path.display());
                         self.playback.current_track_already_recorded = true;
                     }
                 }
@@ -840,13 +889,9 @@ impl App {
                     }
                     // Invalidate filter cache since library data changed
                     self.request_filter_update();
-                    log::info!(
-                        "Toggled album favorite: id={} is_favorite={}",
-                        album_id,
-                        new_state
-                    );
+                    log::info!("Toggled album favorite: id={album_id} is_favorite={new_state}");
                 }
-                Err(e) => log::error!("Failed to toggle album favorite: {}", e),
+                Err(e) => log::error!("Failed to toggle album favorite: {e}"),
             }
         }
     }
@@ -876,12 +921,10 @@ impl App {
                         }
                     }
                     log::info!(
-                        "Toggled queue album favorite: id={} is_favorite={}",
-                        album_id,
-                        new_state
+                        "Toggled queue album favorite: id={album_id} is_favorite={new_state}"
                     );
                 }
-                Err(e) => log::error!("Failed to toggle album favorite: {}", e),
+                Err(e) => log::error!("Failed to toggle album favorite: {e}"),
             }
         }
     }
@@ -909,7 +952,7 @@ impl App {
         self.file_explorer.picker_origin = origin;
         self.file_explorer.picker_mode = mode;
         self.file_explorer.picker_title = title.to_string();
-        self.file_explorer.filter = extension_filter.map(|s| s.to_lowercase());
+        self.file_explorer.filter = extension_filter.map(str::to_lowercase);
         self.file_explorer.show_hidden = false;
 
         // Smart start directory: use provided path's parent if it exists, else home
@@ -921,13 +964,12 @@ impl App {
                 } else {
                     p.parent()
                         .filter(|pp| pp.is_dir())
-                        .map(|pp| pp.to_path_buf())
+                        .map(std::path::Path::to_path_buf)
                 }
             })
             .unwrap_or_else(|| {
                 directories::UserDirs::new()
-                    .map(|u| u.home_dir().to_path_buf())
-                    .unwrap_or_else(|| PathBuf::from("/"))
+                    .map_or_else(|| PathBuf::from("/"), |u| u.home_dir().to_path_buf())
             });
 
         self.file_explorer.dir = dir;
@@ -982,8 +1024,7 @@ impl App {
                 let path = entry.path();
                 let name = path
                     .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
+                    .map_or_default(|n| n.to_string_lossy().to_string());
 
                 // Skip hidden files unless toggled on
                 if !self.file_explorer.show_hidden && name.starts_with('.') {
@@ -1088,5 +1129,44 @@ mod p1_field_budget_tests {
         use crate::theme::Theme;
         let app = super::App::new(Theme::default(), true);
         assert!(app.playback.signal_path.is_none());
+    }
+}
+
+impl std::fmt::Debug for LibraryViewState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LibraryViewState")
+            .field("selected_album_index", &self.selected_album_index)
+            .field("mode", &self.mode)
+            .field("needs_filter_update", &self.needs_filter_update)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for ScanState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScanState")
+            .field("in_progress", &self.in_progress)
+            .field("progress_tracks", &self.progress_tracks)
+            .field("progress_albums", &self.progress_albums)
+            .field("maintenance_in_progress", &self.maintenance_in_progress)
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for FederationRuntimeState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("FederationRuntimeState")
+            .finish_non_exhaustive()
+    }
+}
+
+impl std::fmt::Debug for App {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("App")
+            .field("current_screen", &self.current_screen)
+            .field("input_mode", &self.input_mode)
+            .field("read_only", &self.read_only)
+            .field("should_quit", &self.should_quit)
+            .finish_non_exhaustive()
     }
 }

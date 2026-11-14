@@ -6,7 +6,7 @@ use std::io::{BufReader, Read, Write};
 use std::net::TcpStream;
 use std::time::Duration;
 
-/// Minimal blocking HTTP GET. Returns (host_header, base_url, body).
+/// Minimal blocking HTTP GET. Returns (`host_header`, `base_url`, body).
 pub(super) fn http_get(url: &str) -> Result<(String, String, String), ProviderError> {
     let (host, port, path) = parse_http_url(url)?;
     let addr = format!("{host}:{port}");
@@ -19,7 +19,7 @@ pub(super) fn http_get(url: &str) -> Result<(String, String, String), ProviderEr
     )
     .map_err(|e| ProviderError::Network(format!("connect {addr}: {e}")))?;
 
-    stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
 
     let request =
         format!("GET {path} HTTP/1.1\r\nHost: {host}:{port}\r\nConnection: close\r\n\r\n");
@@ -55,7 +55,7 @@ pub(super) fn soap_post(url: &str, action: &str, body: &str) -> Result<String, P
     )
     .map_err(|e| ProviderError::Network(format!("connect {addr}: {e}")))?;
 
-    stream.set_read_timeout(Some(Duration::from_secs(30))).ok();
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(30)));
 
     let request = format!(
         "POST {path} HTTP/1.1\r\n\
@@ -92,7 +92,7 @@ pub(super) fn parse_http_url(url: &str) -> Result<(String, u16, String), Provide
         (
             h.to_string(),
             p.parse::<u16>()
-                .map_err(|_| ProviderError::Network(format!("invalid port: {p}")))?,
+                .map_err(|_error| ProviderError::Network(format!("invalid port: {p}")))?,
         )
     } else {
         (authority.to_string(), 80)
@@ -205,11 +205,7 @@ pub(super) fn parse_res_element(
     let mime = extract_xml_attr(res_block, "protocolInfo")
         .and_then(|pi| {
             let parts: Vec<&str> = pi.split(':').collect();
-            if parts.len() >= 3 {
-                Some(parts[2].to_string())
-            } else {
-                None
-            }
+            (parts.len() >= 3).then(|| parts[2].to_string())
         })
         .unwrap_or_else(|| "audio/mpeg".to_string());
 
@@ -223,7 +219,7 @@ pub(super) fn parse_res_element(
     (url, mime, duration, channels, sample_rate, bit_depth)
 }
 
-/// Parse UPnP duration "HH:MM:SS.mmm" → seconds.
+/// Parse `UPnP` duration "HH:MM:SS.mmm" → seconds.
 pub(super) fn parse_upnp_duration(s: &str) -> Option<f64> {
     let parts: Vec<&str> = s.split(':').collect();
     if parts.len() != 3 {

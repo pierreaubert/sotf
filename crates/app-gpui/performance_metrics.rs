@@ -38,6 +38,12 @@ fn statistic_total(value: &Value, name: &str) -> Result<u64> {
         .ok_or_else(|| anyhow!("mimalloc statistic `{name}` has no unsigned total"))
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_precision_loss,
+    clippy::cast_sign_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn percentile_ms(values: &mut [Duration], percentile: f64) -> f64 {
     if values.is_empty() {
         return 0.0;
@@ -52,6 +58,10 @@ pub(crate) fn duration_ms(duration: Duration) -> f64 {
 }
 
 #[cfg(feature = "dev-api")]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn rate(value: u64, elapsed_seconds: f64) -> f64 {
     if elapsed_seconds > 0.0 {
         value as f64 / elapsed_seconds
@@ -61,6 +71,10 @@ pub(crate) fn rate(value: u64, elapsed_seconds: f64) -> f64 {
 }
 
 #[cfg(feature = "dev-api")]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn ratio(numerator: u64, denominator: u64) -> f64 {
     if denominator > 0 {
         numerator as f64 / denominator as f64

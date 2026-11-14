@@ -3,6 +3,10 @@ use super::misc::mime_type_for_path;
 use crate::queue::Queue;
 use sotf_mpd::MpdSongInfo;
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Protocol duration metadata is exposed as approximate floating-point seconds"
+)]
 pub(super) fn track_to_song_info(track: &crate::library::Track, pos: u32) -> MpdSongInfo {
     MpdSongInfo {
         file: track.path.display().to_string(),
@@ -18,6 +22,10 @@ pub(super) fn track_to_song_info(track: &crate::library::Track, pos: u32) -> Mpd
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Protocol duration metadata is exposed as approximate floating-point seconds"
+)]
 pub(super) fn track_to_media_track(
     track: &crate::library::Track,
     album: &crate::library::Album,
@@ -45,7 +53,7 @@ pub(super) fn track_to_media_track(
     }
 }
 
-/// Flatten the queue into a flat list of MpdSongInfo (one entry per track).
+/// Flatten the queue into a flat list of `MpdSongInfo` (one entry per track).
 pub(super) fn flatten_queue_tracks(queue: &Queue) -> Vec<MpdSongInfo> {
     let mut result = Vec::new();
     let mut pos = 0u32;

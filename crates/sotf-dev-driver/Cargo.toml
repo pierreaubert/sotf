@@ -32,3 +32,4 @@ name = "sotf-dev-driver"
 path = "src/main.rs"
 
 [lints]
+workspace = true

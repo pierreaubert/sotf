@@ -145,3 +145,4 @@ path = "tests/test_dev_api.rs"
 required-features = ["dev-api"]
 
 [lints]
+workspace = true

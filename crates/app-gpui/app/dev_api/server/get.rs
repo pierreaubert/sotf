@@ -7,10 +7,10 @@ use std::sync::mpsc::{self};
 pub(super) fn get_qa_elements(tx: &mpsc::SyncSender<DevCommand>) -> Result<String> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::QaElements { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?
         .map_err(anyhow::Error::msg)
 }
 
@@ -32,38 +32,38 @@ pub(super) fn get_query(
         path,
         reply: reply_tx,
     })
-    .map_err(|_| anyhow!("dev-api queue closed"))?;
+    .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
 pub(super) fn get_health(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Health { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
 pub(super) fn get_accessibility(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Accessibility { reply: reply_tx })
-        .map_err(|_| anyhow!("dev-api queue closed"))?;
+        .map_err(|_error| anyhow!("dev-api queue closed"))?;
     let reply = reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("dev-api reply timeout"))?;
+        .map_err(|_error| anyhow!("dev-api reply timeout"))?;
     Ok(reply)
 }
 
 pub(super) fn get_snapshot(tx: &mpsc::SyncSender<DevCommand>) -> Result<DevQueryReply> {
     let (reply_tx, reply_rx) = mpsc::sync_channel(1);
     tx.send(DevCommand::Snapshot { reply: reply_tx })
-        .map_err(|_| anyhow!("GPUI command channel closed"))?;
+        .map_err(|_error| anyhow!("GPUI command channel closed"))?;
     reply_rx
         .recv_timeout(REPLY_TIMEOUT)
-        .map_err(|_| anyhow!("GPUI snapshot reply timed out"))
+        .map_err(|_error| anyhow!("GPUI snapshot reply timed out"))
 }

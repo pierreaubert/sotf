@@ -14,7 +14,7 @@ use crate::components::plugins::render_gr_meter;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Entity, FontWeight, SharedString, div};
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
     Accordion, AccordionItem, AccordionMode, Button, ButtonSize, ButtonVariant, NumberInput,
@@ -29,6 +29,11 @@ use std::sync::Arc;
 const BAND_PARAM_BASE: usize = 100;
 const BAND_PARAM_STRIDE: usize = 10;
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub fn render_dynamic_eq_plugin(
     entity: Entity<AppState>,
     plugin_idx: usize,
@@ -62,7 +67,7 @@ pub fn render_dynamic_eq_plugin(
     let wide = available_width / layout_scale.max(0.01) >= 800.0;
     let gr = plugin_data
         .and_then(|data| data.downcast::<DynamicEqData>().ok())
-        .map(|data| data.gain_reduction_db.clone());
+        .map(|data| std::sync::Arc::clone(&data.gain_reduction_db));
 
     div()
         .flex()
@@ -101,7 +106,7 @@ pub fn render_dynamic_eq_plugin(
             num_bands,
             selected_band_idx,
             gr.as_deref(),
-            sample_rate as f64,
+            f64::from(sample_rate),
             available_width,
             text,
             theme,
@@ -125,7 +130,26 @@ pub fn render_dynamic_eq_plugin(
 /// coefficient designers used by the DSP, including shelves and tilt. Routing
 /// is shown on the selected band; a combined target is only meaningful when
 /// every active band uses Stereo routing.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 fn render_dynamic_eq_response(
     d: &Ds,
     bands: &[sotf_plugins::DynEqBandParams],
@@ -262,8 +286,7 @@ fn render_dynamic_eq_response(
         .and_then(|values| values.get(selected_band_idx))
         .copied()
         .filter(|value| value.is_finite())
-        .map(f64::from)
-        .unwrap_or(0.0);
+        .map_or(0.0, f64::from);
 
     div()
         .flex()
@@ -299,7 +322,14 @@ fn render_dynamic_eq_response(
 }
 
 /// Global dynamics defaults stay below the selected-band editor.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_global_controls(
     d: &Ds,
     entity: Entity<AppState>,
@@ -393,6 +423,10 @@ fn render_global_controls(
 }
 
 /// Compact structural controls live between the title and Active.
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 pub(crate) fn render_dynamic_eq_header_controls(
     d: &Ds,
     entity: Entity<AppState>,
@@ -443,6 +477,14 @@ pub(crate) fn render_dynamic_eq_header_controls(
         .into_any_element()
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_band_tabs(
     d: &Ds,
     entity: Entity<AppState>,
@@ -520,6 +562,14 @@ fn render_band_tabs(
         .child(controls)
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_selected_band(
     d: &Ds,
     entity: Entity<AppState>,
@@ -611,7 +661,7 @@ fn render_selected_band(
         .gap(d.grid)
         .w_full()
         .min_w_0()
-        .when(!wide, |rows| rows.flex_col())
+        .when(!wide, gpui::Styled::flex_col)
         .child(render_rows(&[0, 1, 2]))
         .child(render_rows(&[3, 4]).child(render_horizontal_param(
             d,

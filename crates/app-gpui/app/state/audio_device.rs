@@ -15,7 +15,7 @@ pub use sotf_audio_player::ui_models::audio_preferences::INPUT_BUFFER_FRAMES as 
 /// Select the output sample rate used to configure the active processing graph.
 ///
 /// Visual QA has no audio-output contract. Probing nominal rates can start a
-/// CoreAudio output unit and block the GPUI main thread indefinitely on CI or
+/// `CoreAudio` output unit and block the GPUI main thread indefinitely on CI or
 /// a busy local HAL device, preventing the dev API from answering. Production
 /// keeps the engine's verified device-rate selection unchanged.
 pub(crate) fn output_sample_rate_for_track(
@@ -57,6 +57,7 @@ pub struct HalDropdownState {
 }
 
 impl HalDropdownState {
+    #[must_use]
     pub fn is_open(&self) -> bool {
         self.sample_rate_open || self.channel_count_open || self.buffer_size_open
     }
@@ -74,27 +75,36 @@ impl Default for HalConfig {
 
 impl HalConfig {
     /// Get available sample rates
+    #[must_use]
     pub fn available_sample_rates() -> &'static [u32] {
         SAMPLE_RATES
     }
 
     /// Get available buffer sizes
+    #[must_use]
     pub fn available_buffer_sizes() -> &'static [u32] {
         BUFFER_SIZES
     }
 
     /// Get sample rate as display string (e.g., "48 kHz")
+    #[must_use]
     pub fn sample_rate_display(&self) -> String {
         format_sample_rate(self.sample_rate)
     }
 
     /// Get buffer size as display string with latency (e.g., "1024 (~21ms)")
+    #[must_use]
     pub fn buffer_frames_display(&self) -> String {
         format_buffer_size(self.buffer_frames, self.sample_rate)
     }
 }
 
 /// Format sample rate for display (e.g., 48000 -> "48 kHz")
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub fn format_sample_rate(sample_rate: u32) -> String {
     if sample_rate.is_multiple_of(1000) {
         format!("{} kHz", sample_rate / 1000)
@@ -104,17 +114,18 @@ pub fn format_sample_rate(sample_rate: u32) -> String {
 }
 
 /// Format buffer size for display with latency estimate
+#[must_use]
 pub fn format_buffer_size(buffer_frames: u32, sample_rate: u32) -> String {
-    let latency_ms = (buffer_frames as f64 / sample_rate as f64) * 1000.0;
-    format!("{} (~{:.1}ms)", buffer_frames, latency_ms)
+    let latency_ms = (f64::from(buffer_frames) / f64::from(sample_rate)) * 1000.0;
+    format!("{buffer_frames} (~{latency_ms:.1}ms)")
 }
 
-/// A discovered Cast device (Chromecast or AirPlay) on the local network.
+/// A discovered Cast device (Chromecast or `AirPlay`) on the local network.
 #[derive(Debug, Clone)]
 pub struct CastDeviceInfo {
-    /// Display name (e.g., "Living Room HomePod")
+    /// Display name (e.g., "Living Room `HomePod`")
     pub name: String,
-    /// Device type ("AirPlay" or "Chromecast")
+    /// Device type ("`AirPlay`" or "Chromecast")
     pub device_type: String,
     /// IP address
     pub address: String,
@@ -192,16 +203,19 @@ pub enum AudioApplyRecovery {
 }
 
 impl AudioDeviceState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
     /// Get the currently selected output device
+    #[must_use]
     pub fn selected_output_device(&self) -> Option<&AudioDevice> {
         self.output_devices.get(self.selected_output_device_index)
     }
 
     /// Get the currently selected input device
+    #[must_use]
     pub fn selected_input_device(&self) -> Option<&AudioDevice> {
         self.input_devices.get(self.selected_input_device_index)
     }
@@ -254,16 +268,19 @@ impl AudioDeviceState {
     }
 
     /// Check if playback source is file-based
+    #[must_use]
     pub fn is_file_source(&self) -> bool {
         matches!(self.playback_source, PlaybackSource::File)
     }
 
     /// Check if a device name is a virtual/passthrough device that shouldn't be default
+    #[must_use]
     pub fn is_virtual_device(name: &str) -> bool {
         sotf_audio_player::is_virtual_device(name)
     }
 
-    /// Find the best default output device index (prefers non-virtual, is_default, then first)
+    /// Find the best default output device index (prefers non-virtual, `is_default`, then first)
+    #[must_use]
     pub fn find_best_default_device_index(&self) -> usize {
         // First, try to find the system default device that's not virtual
         if let Some((idx, _)) = self
@@ -290,8 +307,7 @@ impl AudioDeviceState {
             .iter()
             .enumerate()
             .find(|(_, d)| d.is_default)
-            .map(|(idx, _)| idx)
-            .unwrap_or(0)
+            .map_or(0, |(idx, _)| idx)
     }
 
     /// Update output devices and select the best default

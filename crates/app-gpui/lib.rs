@@ -6,7 +6,11 @@
 // The main application binary is in main.rs.
 
 #![recursion_limit = "8192"]
-#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+#![allow(
+    clippy::too_many_arguments,
+    clippy::type_complexity,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context; Widget callbacks retain their typed GPUI handler signatures"
+)]
 
 #[cfg(all(feature = "dev-api", not(debug_assertions)))]
 compile_error!(

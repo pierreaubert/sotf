@@ -6,6 +6,7 @@ pub struct RemoteRefreshRequests {
 }
 
 impl RemoteRefreshRequests {
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         !self.state && !self.queue && !self.visible_album_page
     }

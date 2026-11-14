@@ -2,6 +2,11 @@ use super::misc::param_idx;
 use sotf_plugins::param_specs::upmixer::PARAMS as UP;
 
 /// State for rendering the Upmixer plugin
+#[derive(Debug)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct UpmixerRenderState<'a> {
     pub speaker_config: &'a str,
     // Gains (vertical sliders)
@@ -70,7 +75,7 @@ pub struct UpmixerRenderState<'a> {
     pub expanded_sections: Vec<String>,
     /// Live per-channel loudness. Drives both spider modes — the SPL view
     /// reads `true_peaks_dbtp`, the Correlation view reads
-    /// `correlation_matrix`. Both are populated by the same LoudnessMonitor
+    /// `correlation_matrix`. Both are populated by the same `LoudnessMonitor`
     /// poll path, so no separate correlation field is needed.
     pub loudness_info: Option<std::sync::Arc<sotf_audio_player::LoudnessData>>,
     /// Shared spatial-spider UI state (view mode, ref channel, 3D camera).

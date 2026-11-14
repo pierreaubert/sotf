@@ -30,6 +30,7 @@ pub(super) fn normalize_album_key(name: &str) -> String {
         .to_lowercase()
 }
 
+#[must_use]
 pub fn normalize_waveform_samples(samples: &[u8]) -> Option<TrackWaveform> {
     if samples.is_empty() {
         return None;
@@ -49,8 +50,8 @@ pub fn normalize_waveform_samples(samples: &[u8]) -> Option<TrackWaveform> {
 
 pub(super) fn tagged_album_key(title: &str, edition: Option<&str>) -> String {
     let normalized = normalize_album_key(title);
-    let edition = edition.map(normalize_album_key).unwrap_or_default();
-    format!("{}|{}", normalized, edition)
+    let edition = edition.map_or_default(normalize_album_key);
+    format!("{normalized}|{edition}")
 }
 
 #[cfg(test)]

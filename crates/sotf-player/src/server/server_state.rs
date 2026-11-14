@@ -29,7 +29,7 @@ pub(super) struct ServerState {
     pub(super) library_scan_active: AtomicBool,
     /// Whether pairing mode is currently open.
     pub(super) pairing_mode: std::sync::atomic::AtomicBool,
-    /// Pairing nonce/short code — valid only while pairing_mode is true.
+    /// Pairing nonce/short code — valid only while `pairing_mode` is true.
     pub(super) pairing_nonce: parking_lot::Mutex<String>,
     /// When pairing mode was enabled; used to enforce `PAIRING_MAX_LIFETIME`.
     pub(super) pairing_enabled_at: parking_lot::Mutex<Option<Instant>>,
@@ -92,7 +92,7 @@ impl ServerState {
         state
             .library_scan_active
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
-            .map_err(|_| "library scan already running".to_string())?;
+            .map_err(|_error| "library scan already running".to_string())?;
 
         let state_for_thread = Arc::clone(state);
         std::thread::Builder::new()
@@ -151,7 +151,7 @@ impl ServerState {
     /// Generate a fresh pairing nonce and record the pairing-window start time.
     pub(super) fn refresh_pairing_nonce(&self) -> String {
         let nonce = generate_pairing_nonce();
-        *self.pairing_nonce.lock() = nonce.clone();
+        (*self.pairing_nonce.lock()).clone_from(&nonce);
         *self.pairing_enabled_at.lock() = Some(Instant::now());
         nonce
     }

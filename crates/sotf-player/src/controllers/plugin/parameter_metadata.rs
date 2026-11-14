@@ -8,6 +8,12 @@
 ///
 /// Dynamic bands and FIR globals have sparse addresses; callers must not use row positions.
 /// Standard EQ globals have dedicated header operations and are not band parameter addresses.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Desktop metadata adapts bounded plugin parameters and their storage precision"
+)]
 pub fn desktop_param_indices(settings: &crate::PluginSettings) -> Vec<usize> {
     match settings {
         crate::PluginSettings::Crossover { .. } => {
@@ -55,7 +61,8 @@ pub fn desktop_param_indices(settings: &crate::PluginSettings) -> Vec<usize> {
 
 /// Resolve desktop parameter metadata, including sparse band and global addresses.
 ///
-/// Returns None for addresses absent from desktop_param_indices.
+/// Returns None for addresses absent from `desktop_param_indices`.
+#[must_use]
 pub fn desktop_param_spec(
     settings: &crate::PluginSettings,
     idx: usize,
@@ -115,8 +122,17 @@ pub fn desktop_param_spec(
 
 /// Read a raw desktop parameter value without parsing formatted display text.
 ///
-/// Returns None for invalid addresses and file parameters. Multiply by the spec display_scale
+/// Returns None for invalid addresses and file parameters. Multiply by the spec `display_scale`
 /// for widgets; the desktop setter consumes values in that display space.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Desktop metadata adapts bounded plugin parameters and their storage precision"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Exhaustive plugin parameter dispatch stays together for schema review"
+)]
 pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Option<f64> {
     if !desktop_param_indices(settings).contains(&idx) {
         return None;
@@ -141,8 +157,8 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
                 2 => Some(f64::from(band.gain)),
                 3 => Some(f64::from(band.band_threshold)),
                 4 => Some(f64::from(band.band_ratio)),
-                5 => Some(f64::from(band.active as u8)),
-                6 => Some(f64::from(band.solo as u8)),
+                5 => Some(f64::from(u8::from(band.active))),
+                6 => Some(f64::from(u8::from(band.solo))),
                 7 => Some(f64::from(band.shape.choice_index())),
                 8 => Some(f64::from(band.shelf_slope)),
                 9 => Some(f64::from(band.placement.choice_index())),
@@ -174,10 +190,10 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
                 ),
                 10 => f64::from(band.and_then(|b| b.knee_db).unwrap_or(*knee_db as f32)),
                 13 => f64::from(band.map_or(0.0, |b| b.makeup_gain_db)),
-                14 => f64::from(band.is_some_and(|b| b.bypass) as u8),
-                15 => f64::from(band.is_some_and(|b| b.solo) as u8),
-                16 => f64::from(band.is_some_and(|b| b.auto_makeup) as u8),
-                17 => f64::from(band.is_none_or(|b| b.active) as u8),
+                14 => f64::from(u8::from(band.is_some_and(|b| b.bypass))),
+                15 => f64::from(u8::from(band.is_some_and(|b| b.solo))),
+                16 => f64::from(u8::from(band.is_some_and(|b| b.auto_makeup))),
+                17 => f64::from(u8::from(band.is_none_or(|b| b.active))),
                 18 => f64::from(band.and_then(|b| b.range_db).unwrap_or(*range_db as f32)),
                 19 => f64::from(band.and_then(|b| b.hold_ms).unwrap_or(*hold_ms as f32)),
                 _ => return None,
@@ -214,10 +230,10 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
                         .unwrap_or(*hysteresis_db as f32),
                 ),
                 13 => f64::from(band.and_then(|b| b.hold_ms).unwrap_or(*hold_ms as f32)),
-                14 => f64::from(band.is_some_and(|b| b.bypass) as u8),
-                15 => f64::from(band.is_some_and(|b| b.solo) as u8),
-                16 => f64::from(band.is_some_and(|b| b.auto_makeup) as u8),
-                17 => f64::from(band.is_none_or(|b| b.active) as u8),
+                14 => f64::from(u8::from(band.is_some_and(|b| b.bypass))),
+                15 => f64::from(u8::from(band.is_some_and(|b| b.solo))),
+                16 => f64::from(u8::from(band.is_some_and(|b| b.auto_makeup))),
+                17 => f64::from(u8::from(band.is_none_or(|b| b.active))),
                 _ => return None,
             })
         }
@@ -228,6 +244,11 @@ pub fn desktop_param_value(settings: &crate::PluginSettings, idx: usize) -> Opti
 /// Read an EQ value from the exact bank selected by the desktop setter.
 ///
 /// Returns None for non-EQ settings, missing channel banks, or absent filter fields.
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Desktop metadata adapts bounded plugin parameters and their storage precision"
+)]
 pub fn desktop_eq_param_value(
     settings: &crate::PluginSettings,
     target: super::EqEditTarget,
@@ -261,8 +282,9 @@ pub fn desktop_eq_param_value(
 /// Check declarative edit prerequisites without treating hidden placement as disabled.
 ///
 /// Tables keep parameters discoverable but respect read-only controls, group conditions,
-/// and each control's enabled_when condition. Custom controls without a declarative owner
+/// and each control's `enabled_when` condition. Custom controls without a declarative owner
 /// require their specialized editor's constraints.
+#[must_use]
 pub fn desktop_param_enabled(settings: &crate::PluginSettings, index: usize) -> bool {
     if !desktop_param_indices(settings).contains(&index) {
         return false;

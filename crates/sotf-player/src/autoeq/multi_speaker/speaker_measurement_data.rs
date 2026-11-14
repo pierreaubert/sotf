@@ -13,6 +13,7 @@ pub struct SpeakerMeasurementData {
 
 impl SpeakerMeasurementData {
     /// Create a new speaker measurement with default weight
+    #[must_use]
     pub fn new(
         name: &str,
         input_curve: autoeq_core::Curve,
@@ -27,6 +28,7 @@ impl SpeakerMeasurementData {
     }
 
     /// Set the weight for this speaker
+    #[must_use]
     pub fn with_weight(mut self, weight: f64) -> Self {
         self.weight = weight;
         self

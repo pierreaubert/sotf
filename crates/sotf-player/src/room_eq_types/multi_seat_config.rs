@@ -19,7 +19,7 @@ pub struct MultiSeatConfig {
     pub seat_weights: Option<Vec<f64>>,
     #[serde(default = "default_primary_seat_weight")]
     pub primary_seat_weight: f64,
-    /// Continuous listening-area configuration (used when strategy = "continuous_area")
+    /// Continuous listening-area configuration (used when strategy = "`continuous_area`")
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub continuous_area: Option<ContinuousListeningAreaUiConfig>,
 }

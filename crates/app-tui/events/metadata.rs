@@ -157,7 +157,7 @@ fn search_musicbrainz(app: &mut App) {
         return;
     }
 
-    let result = run_musicbrainz_search(editor.scope, query);
+    let result = run_musicbrainz_search(editor.scope, &query);
     if let Some(current) = &mut app.modal.metadata_editor {
         match result {
             Ok(candidates) => {
@@ -175,7 +175,7 @@ fn search_musicbrainz(app: &mut App) {
 
 fn run_musicbrainz_search(
     scope: crate::app::MetadataEditorScope,
-    query: String,
+    query: &str,
 ) -> Result<Vec<sotf_audio_player::MetadataImportCandidate>, String> {
     use sotf_audio_player::metadata::MetadataProvider;
 
@@ -200,8 +200,8 @@ fn run_musicbrainz_search(
     runtime
         .block_on(async {
             match scope {
-                crate::app::MetadataEditorScope::Album => provider.search_album(None, &query).await,
-                crate::app::MetadataEditorScope::Track => provider.search_track(None, &query).await,
+                crate::app::MetadataEditorScope::Album => provider.search_album(None, query).await,
+                crate::app::MetadataEditorScope::Track => provider.search_track(None, query).await,
             }
         })
         .map_err(|err| err.to_string())

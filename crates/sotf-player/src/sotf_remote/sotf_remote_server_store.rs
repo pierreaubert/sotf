@@ -26,6 +26,10 @@ impl Default for SotfRemoteServerStore {
 }
 
 impl SotfRemoteServerStore {
+    /// Load from path.
+    ///
+    /// # Errors
+    /// Returns an error if the server store cannot be read, decoded, encoded, or written.
     pub fn load_from_path(path: impl AsRef<Path>) -> SotfApiResult<Self> {
         let path = path.as_ref();
         if !path.exists() {
@@ -36,6 +40,10 @@ impl SotfRemoteServerStore {
         serde_json::from_str(&json).map_err(SotfApiClientError::Json)
     }
 
+    /// Save to path.
+    ///
+    /// # Errors
+    /// Returns an error if the server store cannot be read, decoded, encoded, or written.
     pub fn save_to_path(&self, path: impl AsRef<Path>) -> SotfApiResult<()> {
         let path = path.as_ref();
         if let Some(parent) = path.parent() {

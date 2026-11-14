@@ -32,6 +32,7 @@ impl RackThemeState {
 
     /// Return the resolved theme id for `plugin_idx` (override if present,
     /// else rack default).
+    #[must_use]
     pub fn resolved_id(&self, plugin_idx: usize) -> PluginThemeId {
         self.overrides
             .get(&plugin_idx)
@@ -40,7 +41,7 @@ impl RackThemeState {
     }
 
     /// Compact the override map after a plugin is removed at `removed_idx`.
-    /// Entries for indices > removed_idx are shifted down by one. The
+    /// Entries for indices > `removed_idx` are shifted down by one. The
     /// removed entry itself is dropped.
     pub fn on_plugin_removed(&mut self, removed_idx: usize) {
         let mut compacted: HashMap<usize, PluginThemeId> = HashMap::new();

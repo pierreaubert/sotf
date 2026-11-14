@@ -1,7 +1,7 @@
 use crate::app::types::SpinoramaCurves;
 use sotf_audio_player::autoeq::SpeakerOptimizationResult;
 
-/// Convert SpeakerOptimizationResult to SpinoramaCurves for rendering
+/// Convert `SpeakerOptimizationResult` to `SpinoramaCurves` for rendering
 /// If corrected is true, applies the filter response to all curves
 pub(super) fn result_to_spinorama_curves(
     result: &SpeakerOptimizationResult,

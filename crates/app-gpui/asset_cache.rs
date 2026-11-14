@@ -29,11 +29,8 @@ pub fn cached_asset_list(
     let list: Vec<SharedString> = entries
         .filter_map(|p| {
             let p = p.as_ref();
-            if p.starts_with(path) {
-                Some(SharedString::from(p.to_string()))
-            } else {
-                None
-            }
+            p.starts_with(path)
+                .then(|| SharedString::from(p.to_string()))
         })
         .collect();
 

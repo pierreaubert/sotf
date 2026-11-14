@@ -18,7 +18,7 @@ pub(super) fn optimize_single_driver(
 ) -> Result<SpeakerOptimizationResult, String> {
     // Create tokio runtime for async operations
     let rt =
-        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {}", e))?;
+        tokio::runtime::Runtime::new().map_err(|e| format!("Failed to create runtime: {e}"))?;
 
     rt.block_on(async {
         // Extract spinorama parameters from input
@@ -87,7 +87,7 @@ pub(super) fn optimize_from_csv(
     callback: Option<SpeakerOptimizationCallback>,
 ) -> Result<SpeakerOptimizationResult, String> {
     let curve = autoeq_measurements::read::read_curve_from_csv(&path.to_path_buf())
-        .map_err(|e| format!("Failed to read CSV: {}", e))?;
+        .map_err(|e| format!("Failed to read CSV: {e}"))?;
     optimize_from_curve(&curve, config, callback)
 }
 
@@ -133,11 +133,10 @@ pub(super) fn optimize_from_curve(
     let progress_config = config
         .callback_config
         .as_ref()
-        .map(ProgressCallbackConfig::from)
-        .unwrap_or_default();
+        .map_or_default(ProgressCallbackConfig::from);
 
     let history = Arc::new(Mutex::new(Vec::new()));
-    let history_clone = history.clone();
+    let history_clone = std::sync::Arc::clone(&history);
 
     let lib_callback = move |update: &ProgressUpdate| -> CallbackAction {
         if let Ok(mut h) = history_clone.lock() {
@@ -181,10 +180,10 @@ pub(super) fn optimize_from_curve(
 
     let history_vec = history
         .lock()
-        .map_err(|_| "Failed to lock history")?
+        .map_err(|_error| "Failed to lock history")?
         .clone();
-    let initial_loss = history_vec.first().map(|x| x.1).unwrap_or(0.0);
-    let final_loss = history_vec.last().map(|x| x.1).unwrap_or(0.0);
+    let initial_loss = history_vec.first().map_or(0.0, |x| x.1);
+    let final_loss = history_vec.last().map_or(0.0, |x| x.1);
 
     Ok(SpeakerOptimizationResult {
         biquads,

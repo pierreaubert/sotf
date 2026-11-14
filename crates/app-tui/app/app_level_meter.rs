@@ -10,13 +10,16 @@ use sotf_plugins::speaker_config::{
 impl App {
     /// Build channel groups from current speaker configuration or channel count
     /// Uses caching to avoid rebuilding every frame
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     pub fn update_level_meter_groups(&mut self) {
         let num_channels = self
             .playback
             .loudness_info
             .as_ref()
-            .map(|l| l.channel_peaks.len())
-            .unwrap_or(0);
+            .map_or(0, |l| l.channel_peaks.len());
 
         if num_channels == 0 {
             return;
@@ -35,7 +38,9 @@ impl App {
 
         // Update cache
         self.level_meters.last_channel_count = num_channels;
-        self.level_meters.last_speaker_config = current_speaker_config.clone();
+        self.level_meters
+            .last_speaker_config
+            .clone_from(&current_speaker_config);
 
         self.level_meters.groups.clear();
 
@@ -264,7 +269,7 @@ impl App {
                     ..
                 } = plugin.settings
                 {
-                    *cs = channel_states.clone();
+                    cs.clone_from(&channel_states);
                 }
                 break;
             }
@@ -316,7 +321,7 @@ impl App {
     }
 
     /// Queue a transient command for the exact output monitor whose snapshot
-    /// drives the LevelMeters pane.
+    /// drives the `LevelMeters` pane.
     pub fn request_loudness_control(&mut self, operation: LoudnessControlOperation) {
         let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
         let Some(loudness) = self.playback.loudness_info.as_ref() else {
@@ -441,6 +446,10 @@ impl App {
         self.ui.needs_redraw = true;
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve the public command submission API accepting owned errors"
+    )]
     pub fn report_loudness_control_submission_error(&mut self, error: String) {
         let translations = crate::i18n::TuiTranslations::for_language(self.ui.language);
         self.plugin_rack.pending_loudness_control = None;

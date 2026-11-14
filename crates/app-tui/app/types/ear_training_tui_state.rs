@@ -54,6 +54,7 @@ impl Default for EarTrainingTuiState {
 }
 
 impl EarTrainingTuiState {
+    #[must_use]
     pub fn answer_count(&self) -> usize {
         self.session
             .as_ref()
@@ -67,6 +68,7 @@ impl EarTrainingTuiState {
             .unwrap_or(0)
     }
 
+    #[must_use]
     pub fn should_loop(&self, position_secs: f64) -> Option<f64> {
         let (start, end) = self.loop_range?;
         (self.loop_enabled && position_secs >= end).then_some(start)

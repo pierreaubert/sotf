@@ -33,12 +33,13 @@ use crate::i18n::Translations;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, AnyView, App, AppContext, Rgba, SharedString, Window, div};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonTheme, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize,
     TextWeight, VStack,
 };
 
+#[must_use]
 pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
     match tab {
         SettingsTab::Library => IconName::Library,
@@ -54,6 +55,7 @@ pub fn settings_tab_icon_name(tab: SettingsTab) -> IconName {
     }
 }
 
+#[must_use]
 pub fn settings_tab_label(tab: SettingsTab, translations: &Translations) -> &'static str {
     match tab {
         SettingsTab::Library => translations.settings_tab_library,
@@ -111,7 +113,7 @@ impl Render for ThemedTooltip {
     }
 }
 
-/// Create a themed tooltip AnyView for GPUI's native `.tooltip()` method.
+/// Create a themed tooltip `AnyView` for GPUI's native `.tooltip()` method.
 pub(crate) fn themed_tooltip(
     text: impl Into<SharedString>,
     theme: &Theme,
@@ -128,6 +130,7 @@ pub(crate) fn themed_tooltip(
 }
 
 /// Consistent primary-action copy for every guided workflow.
+#[must_use]
 pub fn wizard_continue_label(language: Language, next_step: Option<&str>) -> String {
     WizardNavigationTranslations::for_language(language).primary_action(next_step)
 }
@@ -176,29 +179,19 @@ impl PlayerView {
     }
 
     /// Clear all EQ plugins from the playback chain.
-    /// Shared by spinorama_eq and headphone_eq workflows.
+    /// Shared by `spinorama_eq` and `headphone_eq` workflows.
     pub fn clear_eq_from_playback(&mut self, cx: &mut Context<Self>) {
         self.state.update(cx, |state, _cx| {
             let plugins = state.app.plugin_state.graph.plugins();
             let eq_indices: Vec<_> = plugins
                 .iter()
                 .enumerate()
-                .filter_map(|(i, p)| {
-                    if matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ) {
-                        Some(i)
-                    } else {
-                        None
-                    }
-                })
+                .filter(|&(_i, p)| matches!(p.plugin_type(), sotf_audio_player::PluginType::EQ))
+                .map(|(i, _p)| i)
                 .collect();
 
             for idx in eq_indices.into_iter().rev() {
-                state
-                    .app
-                    .plugin_state
-                    .graph
-                    .remove_plugin_by_index(idx)
-                    .ok();
+                let _ = state.app.plugin_state.graph.remove_plugin_by_index(idx);
             }
 
             state.app.plugin_state.update_state.pending_plugin_update =
@@ -219,6 +212,8 @@ impl PlayerView {
         delivery: &sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery,
         result_is_current: bool,
     ) -> impl IntoElement {
+        use sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus;
+
         let state = self.state.read(cx);
         let theme = &state.app.ui_state.theme;
         let text = crate::app::i18n::CorrectionDeliveryTranslations::for_language(
@@ -230,7 +225,6 @@ impl PlayerView {
             Some(_) if current => text.current_export,
             Some(_) => text.previous_export,
         };
-        use sotf_audio_player::ui_models::correction_delivery::CorrectionApplicationStatus;
         let application_text = crate::app::i18n::CorrectionApplicationTranslations::for_language(
             state.app.ui_state.language,
         );
@@ -301,8 +295,8 @@ impl PlayerView {
     ) -> Card {
         let text =
             PlaybackApplyTranslations::for_language(self.state.read(cx).app.ui_state.language);
-        let apply_id = SharedString::from(format!("apply-{}-eq", id_prefix));
-        let clear_id = SharedString::from(format!("clear-{}-eq", id_prefix));
+        let apply_id = SharedString::from(format!("apply-{id_prefix}-eq"));
+        let clear_id = SharedString::from(format!("clear-{id_prefix}-eq"));
 
         let apply_button = Button::new(apply_id, text.title)
             .disabled(!result_is_current)

@@ -9,12 +9,16 @@ use crate::components::icons::IconName;
 use crate::theme::Theme;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{Div, div, px};
 use gpui_px::{BarTheme, LegendPosition, ScaleType, bar, line};
 use sotf_audio_player::autoeq::SpeakerOptimizationResult;
 
 impl PlayerView {
     /// Render Spinorama speaker optimization result graphs
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub fn render_speaker_optimization_result_graphs(
         &self,
         d: &Ds,
@@ -50,8 +54,8 @@ impl PlayerView {
         if !has_cea2034_curves {
             return div()
                 .flex()
-                .when(two_columns, |row| row.flex_row())
-                .when(!two_columns, |row| row.flex_col())
+                .when(two_columns, gpui::Styled::flex_row)
+                .when(!two_columns, gpui::Styled::flex_col)
                 .gap(d.section)
                 .child(render_spinorama_main_response_plot(
                     result,
@@ -78,8 +82,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .when(two_columns, |row| row.flex_row())
-                    .when(!two_columns, |row| row.flex_col())
+                    .when(two_columns, gpui::Styled::flex_row)
+                    .when(!two_columns, gpui::Styled::flex_col)
                     .gap(d.section)
                     .child(render_cea2034_from_result(
                         result,
@@ -100,8 +104,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .when(two_columns, |row| row.flex_row())
-                    .when(!two_columns, |row| row.flex_col())
+                    .when(two_columns, gpui::Styled::flex_row)
+                    .when(!two_columns, gpui::Styled::flex_col)
                     .gap(d.section)
                     .child(render_spinorama_main_response_plot(
                         result,
@@ -122,8 +126,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .when(two_columns, |row| row.flex_row())
-                    .when(!two_columns, |row| row.flex_col())
+                    .when(two_columns, gpui::Styled::flex_row)
+                    .when(!two_columns, gpui::Styled::flex_col)
                     .gap(d.section)
                     .child(render_tonal_balance_plot(
                         d,
@@ -146,8 +150,8 @@ impl PlayerView {
             .child(
                 div()
                     .flex()
-                    .when(two_columns, |row| row.flex_row())
-                    .when(!two_columns, |row| row.flex_col())
+                    .when(two_columns, gpui::Styled::flex_row)
+                    .when(!two_columns, gpui::Styled::flex_col)
                     .gap(d.section)
                     .child(render_tonal_balance_plot(
                         d,
@@ -181,10 +185,10 @@ fn render_spinorama_main_response_plot(
 
     // Use the LW curve as "Original" for consistency with CEA2034 plot above.
     // Fall back to input_curve if LW is empty (e.g., headphone mode).
-    let original = if !result.lw_curve.is_empty() {
-        &result.lw_curve
-    } else {
+    let original = if result.lw_curve.is_empty() {
         &result.input_curve
+    } else {
+        &result.lw_curve
     };
 
     // Corrected = original + filter response
@@ -223,7 +227,7 @@ fn render_spinorama_main_response_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render Filter Response Plot using gpui-px with individual filter curves
@@ -275,11 +279,12 @@ fn render_speaker_filter_response_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render measurement preview graph showing On Axis measurement and optional target curve
-/// Used in spinorama_eq Step 1 (Select Speaker) for previewing the measurement before optimization
+/// Used in `spinorama_eq` Step 1 (Select Speaker) for previewing the measurement before optimization
+#[must_use]
 pub fn render_speaker_preview_graph(
     frequencies: &[f64],
     on_axis_curve: &[f64],
@@ -318,18 +323,31 @@ pub fn render_speaker_preview_graph(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render CEA2034 Spinorama plot with dual y-axis
 /// Left axis: ON (On Axis), LW (Listening Window), ER (Early Reflections), SP (Sound Power)
 /// Right axis: ERDI (Early Reflections DI), SPDI (Sound Power DI)
+#[must_use]
 pub fn render_spinorama_cea2034_graph(
     curves: &SpinoramaCurves,
     theme: &Theme,
     width: f32,
     height: f32,
 ) -> Div {
+    const EARLY_REFLECTIONS_COLOR: u32 = 0x002c_a02c; // Green
+
+    const ERDI_COLOR: u32 = 0x0094_67bd; // Purple (dashed style would be nice)
+
+    const LISTENING_WINDOW_COLOR: u32 = 0x00ff_7f0e; // Orange
+
+    const ON_AXIS_COLOR: u32 = 0x001f_77b4; // Blue
+
+    const SOUND_POWER_COLOR: u32 = 0x00d6_2728; // Red
+
+    const SPDI_COLOR: u32 = 0x008c_564b; // Brown (dashed style would be nice)
+
     if !curves.is_valid() {
         return div().child(render_empty_state(
             IconName::AudioWaveform,
@@ -344,12 +362,6 @@ pub fn render_spinorama_cea2034_graph(
     // derive its domain from its series instead of clipping absolute SPL
     // to a normalized range (or excluding negative directivity indices).
     // CEA2034 standard colors (matching spinorama.org)
-    const ON_AXIS_COLOR: u32 = 0x1f77b4; // Blue
-    const LISTENING_WINDOW_COLOR: u32 = 0xff7f0e; // Orange
-    const EARLY_REFLECTIONS_COLOR: u32 = 0x2ca02c; // Green
-    const SOUND_POWER_COLOR: u32 = 0xd62728; // Red
-    const ERDI_COLOR: u32 = 0x9467bd; // Purple (dashed style would be nice)
-    const SPDI_COLOR: u32 = 0x8c564b; // Brown (dashed style would be nice)
 
     let chart = line(&curves.frequencies, &curves.on_axis)
         .x_scale(ScaleType::Log)
@@ -393,10 +405,11 @@ pub fn render_spinorama_cea2034_graph(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render PIR (Estimated In-Room Response) graph
+#[must_use]
 pub fn render_spinorama_pir_graph(
     curves: &SpinoramaCurves,
     text: SpeakerGraphTranslations,
@@ -404,13 +417,13 @@ pub fn render_spinorama_pir_graph(
     width: f32,
     height: f32,
 ) -> Div {
+    const PIR_COLOR: u32 = 0x0094_67bd; // Purple
+
     if !curves.has_pir() || curves.frequencies.is_empty() {
         return div().child(text.pir_unavailable);
     }
 
     let chart_theme = theme_to_chart_theme(theme);
-
-    const PIR_COLOR: u32 = 0x9467bd; // Purple
 
     let chart = line(&curves.frequencies, &curves.estimated_in_room)
         .x_scale(ScaleType::Log)
@@ -428,10 +441,11 @@ pub fn render_spinorama_pir_graph(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render horizontal directivity (SPL Horizontal) graph showing multiple angle curves
+#[must_use]
 pub fn render_spinorama_horizontal_graph(
     curves: &SpinoramaCurves,
     text: SpeakerGraphTranslations,
@@ -447,16 +461,16 @@ pub fn render_spinorama_horizontal_graph(
 
     // Color palette for different angles
     let angle_colors: Vec<u32> = vec![
-        0x1f77b4, // Blue (0°)
-        0xff7f0e, // Orange
-        0x2ca02c, // Green
-        0xd62728, // Red
-        0x9467bd, // Purple
-        0x8c564b, // Brown
-        0xe377c2, // Pink
-        0x7f7f7f, // Gray
-        0xbcbd22, // Yellow-green
-        0x17becf, // Cyan
+        0x001f_77b4, // Blue (0°)
+        0x00ff_7f0e, // Orange
+        0x002c_a02c, // Green
+        0x00d6_2728, // Red
+        0x0094_67bd, // Purple
+        0x008c_564b, // Brown
+        0x00e3_77c2, // Pink
+        0x007f_7f7f, // Gray
+        0x00bc_bd22, // Yellow-green
+        0x0017_becf, // Cyan
     ];
 
     // Standard horizontal angles for spinorama display
@@ -514,10 +528,11 @@ pub fn render_spinorama_horizontal_graph(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
 /// Render vertical directivity (SPL Vertical) graph showing multiple angle curves
+#[must_use]
 pub fn render_spinorama_vertical_graph(
     curves: &SpinoramaCurves,
     text: SpeakerGraphTranslations,
@@ -533,16 +548,16 @@ pub fn render_spinorama_vertical_graph(
 
     // Color palette for different angles
     let angle_colors: Vec<u32> = vec![
-        0x1f77b4, // Blue (0°)
-        0xff7f0e, // Orange
-        0x2ca02c, // Green
-        0xd62728, // Red
-        0x9467bd, // Purple
-        0x8c564b, // Brown
-        0xe377c2, // Pink
-        0x7f7f7f, // Gray
-        0xbcbd22, // Yellow-green
-        0x17becf, // Cyan
+        0x001f_77b4, // Blue (0°)
+        0x00ff_7f0e, // Orange
+        0x002c_a02c, // Green
+        0x00d6_2728, // Red
+        0x0094_67bd, // Purple
+        0x008c_564b, // Brown
+        0x00e3_77c2, // Pink
+        0x007f_7f7f, // Gray
+        0x00bc_bd22, // Yellow-green
+        0x0017_becf, // Cyan
     ];
 
     // Standard vertical angles for spinorama display
@@ -600,10 +615,10 @@ pub fn render_spinorama_vertical_graph(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
 }
 
-/// Render CEA2034 (Original or Corrected) - reuses render_spinorama_cea2034_graph
+/// Render CEA2034 (Original or Corrected) - reuses `render_spinorama_cea2034_graph`
 fn render_cea2034_from_result(
     result: &SpeakerOptimizationResult,
     theme: &Theme,
@@ -623,6 +638,19 @@ fn render_cea2034_from_result(
 }
 
 /// Render Tonal Balance Trend Lines (Before vs After)
+#[expect(
+    clippy::similar_names,
+    reason = "Related UI values retain the domain names used by their paired controls"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Nonnegative histogram deviations are quantized to half-decibel bins"
+)]
 fn render_tonal_balance_plot(
     d: &Ds,
     result: &SpeakerOptimizationResult,
@@ -631,6 +659,10 @@ fn render_tonal_balance_plot(
     width: f32,
     height: f32,
 ) -> Div {
+    const BLUE: u32 = 0x001f_77b4;
+
+    const ORANGE: u32 = 0x00ff_7f0e;
+
     let chart_theme = theme_to_chart_theme(theme);
 
     let apply_filter = |curve: &[f64]| -> Vec<f64> {
@@ -703,13 +735,11 @@ fn render_tonal_balance_plot(
     let corr_trend = calculate_trend(&result.frequencies, &corrected_curve);
 
     // CEA2034 standard colors for consistency
-    const BLUE: u32 = 0x1f77b4;
-    const ORANGE: u32 = 0xff7f0e;
 
     let mut chart_builder = line(&result.frequencies, &original_curve)
         .x_scale(ScaleType::Log)
         .x_range(20.0, 20000.0)
-        .label(format!("{} Orig", curve_type))
+        .label(format!("{curve_type} Orig"))
         .y_label("SPL (dB)")
         .legend_position(LegendPosition::Bottom)
         .color(BLUE)
@@ -719,7 +749,7 @@ fn render_tonal_balance_plot(
         .size(width, height)
         .add_series(
             &corrected_curve,
-            Some(&format!("{} EQ", curve_type)),
+            Some(&format!("{curve_type} EQ")),
             ORANGE,
             1.0,
             0.5,
@@ -774,7 +804,7 @@ fn render_tonal_balance_plot(
         // Use a grouped bar chart
         let chart = bar(&labels, &hist_orig)
             .color(BLUE)
-            .label(format!("{} Original", curve_type))
+            .label(format!("{curve_type} Original"))
             .theme(bar_theme)
             .size(width, height / 2.0)
             .bar_gap(4.0)
@@ -782,7 +812,7 @@ fn render_tonal_balance_plot(
             .legend_position(LegendPosition::Bottom)
             .add_series(
                 &hist_corr,
-                Some(&format!("{} Corrected", curve_type)),
+                Some(&format!("{curve_type} Corrected")),
                 ORANGE,
                 0.8,
             );
@@ -796,13 +826,8 @@ fn render_tonal_balance_plot(
             .iter()
             .map(|f| slope * f.log10() + intercept)
             .collect();
-        chart_builder = chart_builder.add_series(
-            &trend,
-            Some(&format!("{:.2} dB/oct", slope)),
-            BLUE,
-            2.5,
-            1.0,
-        );
+        chart_builder =
+            chart_builder.add_series(&trend, Some(&format!("{slope:.2} dB/oct")), BLUE, 2.5, 1.0);
     }
 
     if let Some((slope, intercept)) = corr_trend {
@@ -813,7 +838,7 @@ fn render_tonal_balance_plot(
             .collect();
         chart_builder = chart_builder.add_series(
             &trend,
-            Some(&format!("{:.2} dB/oct", slope)),
+            Some(&format!("{slope:.2} dB/oct")),
             ORANGE,
             2.5,
             1.0,
@@ -825,7 +850,7 @@ fn render_tonal_balance_plot(
         .w(px(width))
         .flex()
         .flex_col()
-        .when_some(chart.ok(), |el, c| el.child(c))
+        .when_some(chart.ok(), gpui::ParentElement::child)
         .gap(d.gap)
-        .when_some(hist_chart, |el, c| el.child(c))
+        .when_some(hist_chart, gpui::ParentElement::child)
 }

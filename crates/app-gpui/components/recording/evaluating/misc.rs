@@ -9,7 +9,10 @@ use crate::components::graphs::response_graphs::{
 use crate::components::icons::IconName;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    BorderStyle, Bounds, Corners, Edges, Hsla, PaintQuad, Rgba, SharedString, canvas, div, point,
+    px, size,
+};
 use gpui_px::ScaleType;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, EmptyState, HStack, Heading, Select, SelectOption,
@@ -35,6 +38,10 @@ pub(crate) struct DerivedSeriesCache {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_take_review(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let recording = &state.app.measurement_state.recording_state;
@@ -70,9 +77,10 @@ impl PlayerView {
                         let accept = self.state.clone();
                         let (microphone, position) = recording.take_capture_indices(take);
                         let index_label = |index: Option<usize>| {
-                            index
-                                .map(|index| (index + 1).to_string())
-                                .unwrap_or_else(|| text.unknown.to_string())
+                            index.map_or_else(
+                                || text.unknown.to_string(),
+                                |index| (index + 1).to_string(),
+                            )
                         };
                         div()
                             .flex()
@@ -172,6 +180,10 @@ impl PlayerView {
             )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_imported_take_route(
         &self,
         index: usize,
@@ -235,7 +247,7 @@ impl PlayerView {
                 )))
                 .size(gpui_ui_kit::SelectSize::Md)
                 .options(options)
-                .selected(selected.map(|value| value.to_string()).unwrap_or_default())
+                .selected(selected.map_or_default(|value| value.to_string()))
                 .placeholder(label)
                 .is_open(rec.imported_route_dropdown == Some((index, output)))
                 .highlighted_index(if rec.imported_route_dropdown == Some((index, output)) {
@@ -325,6 +337,10 @@ impl PlayerView {
     }
 
     /// Render plot controls (channel selector, smoothing)
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_plot_controls(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
@@ -344,7 +360,7 @@ impl PlayerView {
         for (idx, rec) in recording_state.channel_recordings.iter().enumerate() {
             if rec.result.is_some() {
                 channel_options.push(SelectOption::new(
-                    format!("{}", idx),
+                    format!("{idx}"),
                     rec.channel_name.clone(),
                 ));
             }
@@ -352,7 +368,7 @@ impl PlayerView {
 
         let selected_channel_value = match selected_channel {
             None => "all".to_string(),
-            Some(idx) => format!("{}", idx),
+            Some(idx) => format!("{idx}"),
         };
 
         // Build smoothing options
@@ -785,6 +801,10 @@ impl PlayerView {
     }
 
     /// Render spectrogram chart
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_spectrogram_chart(
         &self,
         d: &Ds,
@@ -832,6 +852,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_spectrogram_canvas(
         &self,
         d: Ds,
@@ -840,6 +864,10 @@ impl PlayerView {
         sample_rate: f32,
         language: crate::app::i18n::Language,
     ) -> impl IntoElement {
+        const MAX_COLS: usize = 128;
+
+        const MAX_ROWS: usize = 80;
+
         let num_time_slices = spectrogram.len();
         if num_time_slices == 0 {
             return self
@@ -864,8 +892,6 @@ impl PlayerView {
         // rendered this data as a blank white panel: marching-squares
         // bands over the thin impulse stripe produce almost no filled
         // polygons, and its plot background ignores the app theme.
-        const MAX_COLS: usize = 128;
-        const MAX_ROWS: usize = 80;
         let Some(display) = dsp::display_spectrogram(spectrogram, MAX_COLS, MAX_ROWS, 80.0) else {
             return self
                 .render_no_data_placeholder(&d, theme, language)
@@ -955,6 +981,10 @@ impl PlayerView {
         })
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_no_data_placeholder(
         &self,
         d: &Ds,
@@ -977,6 +1007,10 @@ impl PlayerView {
 
     /// Compute average SPL in the 100 Hz - 10 kHz range.
     /// Excludes noise-floor sentinel values (<= -150 dB) from the average.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn compute_average_spl(frequencies: &[f32], magnitude_db: &[f32]) -> Option<f32> {
         let mut sum = 0.0_f32;
         let mut count = 0;
@@ -986,14 +1020,14 @@ impl PlayerView {
                 count += 1;
             }
         }
-        if count > 0 {
-            Some(sum / count as f32)
-        } else {
-            None
-        }
+        (count > 0).then(|| sum / count as f32)
     }
 
     /// Render magnitude chart
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_magnitude_chart(
         &self,
         results: &[(&str, usize, &RecordingResult)],
@@ -1037,8 +1071,8 @@ impl PlayerView {
                     .collect();
                 let smoothed = Self::apply_smoothing(&filtered_freqs, &normalized, smoothing);
 
-                let freqs_f64: Vec<f64> = filtered_freqs.iter().map(|&v| v as f64).collect();
-                let mags_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> = filtered_freqs.iter().map(|&v| f64::from(v)).collect();
+                let mags_f64: Vec<f64> = smoothed.iter().map(|&v| f64::from(v)).collect();
 
                 Series::new(name, channel_color(theme, idx), freqs_f64, mags_f64)
             })
@@ -1077,6 +1111,10 @@ impl PlayerView {
     }
 
     /// Render phase chart
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_phase_chart(
         &self,
         results: &[(&str, usize, &RecordingResult)],
@@ -1090,8 +1128,9 @@ impl PlayerView {
                 let smoothed =
                     Self::apply_smoothing(&result.frequencies, &result.phase_deg, smoothing);
 
-                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
-                let phases_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> =
+                    result.frequencies.iter().map(|&v| f64::from(v)).collect();
+                let phases_f64: Vec<f64> = smoothed.iter().map(|&v| f64::from(v)).collect();
 
                 Series::new(name, channel_color(theme, idx), freqs_f64, phases_f64)
             })
@@ -1147,8 +1186,8 @@ impl PlayerView {
                 },
             );
 
-            let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
-            let gd_f64: Vec<f64> = smoothed_gd.iter().map(|&v| v as f64).collect();
+            let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| f64::from(v)).collect();
+            let gd_f64: Vec<f64> = smoothed_gd.iter().map(|&v| f64::from(v)).collect();
 
             series.push(Series::new(
                 name.to_string(),
@@ -1192,6 +1231,10 @@ impl PlayerView {
     }
 
     /// Render distortion chart
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     pub(super) fn render_distortion_chart(
         &self,
         d: &Ds,
@@ -1207,8 +1250,9 @@ impl PlayerView {
 
                 let smoothed = Self::apply_smoothing(&result.frequencies, &thd, smoothing);
 
-                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
-                let thd_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> =
+                    result.frequencies.iter().map(|&v| f64::from(v)).collect();
+                let thd_f64: Vec<f64> = smoothed.iter().map(|&v| f64::from(v)).collect();
 
                 Some(Series::new(
                     name.to_string(),
@@ -1272,6 +1316,10 @@ impl PlayerView {
     /// only results (imports, older sessions) have no measured IR, and
     /// without this fallback the RT60/Clarity panels stayed empty even
     /// though the same data drives the Impulse Response panel.
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn result_impulse_samples(result: &RecordingResult) -> Option<Vec<f32>> {
         if let Some(ir) = &result.impulse_response
             && !ir.is_empty()
@@ -1354,7 +1402,7 @@ impl PlayerView {
         result
             .impulse_response
             .as_ref()
-            .is_none_or(|ir| ir.is_empty())
+            .is_none_or(std::vec::Vec::is_empty)
             && result.can_reconstruct_impulse()
     }
 
@@ -1427,6 +1475,10 @@ impl PlayerView {
     }
 
     /// Render RT60 chart
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_rt60_chart(
         &self,
         results: &[(&str, usize, &RecordingResult)],
@@ -1455,14 +1507,14 @@ impl PlayerView {
                     let smoothed = Self::apply_smoothing(&result.frequencies, &rt60, smoothing);
 
                     let freqs_f64: Vec<f64> =
-                        result.frequencies.iter().map(|&v| v as f64).collect();
-                    let rt60_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                        result.frequencies.iter().map(|&v| f64::from(v)).collect();
+                    let rt60_f64: Vec<f64> = smoothed.iter().map(|&v| f64::from(v)).collect();
 
                     // Check if flat (broadband)
                     let min_val = rt60_f64.iter().fold(f64::INFINITY, |a, &b| a.min(b));
                     let max_val = rt60_f64.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                     let label = if (max_val - min_val).abs() < 1e-3 {
-                        format!("{} (Broadband)", name)
+                        format!("{name} (Broadband)")
                     } else {
                         name.to_string()
                     };
@@ -1494,6 +1546,10 @@ impl PlayerView {
     }
 
     /// Render Clarity chart
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_clarity_chart(
         &self,
         results: &[(&str, usize, &RecordingResult)],
@@ -1522,14 +1578,15 @@ impl PlayerView {
 
                 let smoothed = Self::apply_smoothing(&result.frequencies, &c50, smoothing);
 
-                let freqs_f64: Vec<f64> = result.frequencies.iter().map(|&v| v as f64).collect();
-                let c50_f64: Vec<f64> = smoothed.iter().map(|&v| v as f64).collect();
+                let freqs_f64: Vec<f64> =
+                    result.frequencies.iter().map(|&v| f64::from(v)).collect();
+                let c50_f64: Vec<f64> = smoothed.iter().map(|&v| f64::from(v)).collect();
 
                 // Check if flat (broadband)
                 let min_val = c50_f64.iter().fold(f64::INFINITY, |a, &b| a.min(b));
                 let max_val = c50_f64.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
                 let label = if (max_val - min_val).abs() < 0.1 {
-                    format!("{} (Broadband)", name)
+                    format!("{name} (Broadband)")
                 } else {
                     name.to_string()
                 };
@@ -1583,12 +1640,22 @@ impl PlayerView {
                     .partial_cmp(&b.abs())
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(i, _)| times.get(i).copied().unwrap_or(0.0))
-            .unwrap_or(0.0)
+            .map_or(0.0, |(i, _)| times.get(i).copied().unwrap_or(0.0))
     }
 
     /// Render impulse response chart with first channel as timing reference
-    #[allow(clippy::type_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        reason = "Widget callbacks retain their typed GPUI handler signatures"
+    )]
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_impulse_response_chart(
         &self,
         results: &[(&str, usize, &RecordingResult)],
@@ -1621,17 +1688,18 @@ impl PlayerView {
         // This shows propagation delay between speakers
         let reference_time = channel_data
             .first()
-            .map(|(_, _, _, _, peak_time)| *peak_time)
-            .unwrap_or(0.0);
+            .map_or(0.0, |(_, _, _, _, peak_time)| *peak_time);
 
         // Build series with time adjusted relative to first channel
         let series: Vec<Series> = channel_data
             .iter()
             .map(|(name, idx, times, impulse, _)| {
                 // Shift time so first channel's peak is at t=0, others show relative delay
-                let adjusted_times: Vec<f64> =
-                    times.iter().map(|&t| (t - reference_time) as f64).collect();
-                let impulse_f64: Vec<f64> = impulse.iter().map(|&v| v as f64).collect();
+                let adjusted_times: Vec<f64> = times
+                    .iter()
+                    .map(|&t| f64::from(t - reference_time))
+                    .collect();
+                let impulse_f64: Vec<f64> = impulse.iter().map(|&v| f64::from(v)).collect();
 
                 Series::new(
                     name,
@@ -1722,7 +1790,7 @@ impl PlayerView {
                                 )
                                 .child(
                                     // intentional: numeric "N / M" count display, not a heading
-                                    Text::new(format!("{} / {}", recorded_count, total_count))
+                                    Text::new(format!("{recorded_count} / {total_count}"))
                                         .size(TextSize::Md)
                                         .weight(TextWeight::Bold)
                                         .color(theme.text_primary),

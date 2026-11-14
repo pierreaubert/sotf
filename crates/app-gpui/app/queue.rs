@@ -16,6 +16,10 @@ fn is_missing_album_files_error(message: &str) -> bool {
 }
 
 impl App {
+    /// Plays single audio file.
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn play_single_audio_file(
         &mut self,
         album: Album,
@@ -28,12 +32,16 @@ impl App {
         })
     }
 
-    /// Sync playback.current_queue_index from queue.current_index.
+    /// Sync `playback.current_queue_index` from `queue.current_index`.
     #[inline]
     fn sync_queue_index(&mut self) {
         self.playback.current_queue_index = self.queue_state.current_index();
     }
 
+    /// Adds album to queue.
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn add_album_to_queue(
         &mut self,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
@@ -63,6 +71,9 @@ impl App {
     }
 
     /// Add album to queue and immediately jump to it and start playing
+    ///
+    /// # Errors
+    /// Returns an error if the selected media is invalid or the playback queue cannot be updated.
     pub fn play_album_now(&mut self) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
         let albums = self.filtered_albums();
         let selected_album = albums
@@ -248,8 +259,7 @@ impl App {
             return self
                 .queue_state
                 .current_track_source()
-                .map(QueuePlaybackEffect::Reload)
-                .unwrap_or(QueuePlaybackEffect::Stop);
+                .map_or(QueuePlaybackEffect::Stop, QueuePlaybackEffect::Reload);
         }
         QueuePlaybackEffect::None
     }
@@ -329,14 +339,14 @@ impl App {
     }
 
     /// Fill queue with "magic" recommendations (~1h of music)
+    ///
+    /// # Errors
+    /// Returns an error if the music database is unavailable or recommendations cannot be loaded.
     pub fn fill_queue_magic(&mut self) -> Result<usize, String> {
         log::info!("[App] Starting fill_queue_magic...");
-        let db = match self.library_state.library.get_database() {
-            Some(db) => db,
-            None => {
-                log::error!("[App] fill_queue_magic: Database not available");
-                return Err("Database not available".to_string());
-            }
+        let Some(db) = self.library_state.library.get_database() else {
+            log::error!("[App] fill_queue_magic: Database not available");
+            return Err("Database not available".to_string());
         };
 
         let added_albums = self

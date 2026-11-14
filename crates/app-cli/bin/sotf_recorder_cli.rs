@@ -10,7 +10,6 @@ mod types;
 pub use misc::*;
 
 use error_output::redact_secrets;
-use misc::list_audio_devices;
 use types::Cli;
 
 #[path = "sotf_recorder_cli/capture.rs"]
@@ -44,9 +43,9 @@ fn main() {
     // Handle --list-devices flag
     if cli.actions.list_devices {
         if let Err(e) = list_audio_devices() {
-            let e = redact_secrets(&e.to_string());
-            log::error!("Error: {}", e);
-            eprintln!("Error: {}", e);
+            let e = redact_secrets(&e.clone());
+            log::error!("Error: {e}");
+            eprintln!("Error: {e}");
             std::process::exit(1);
         }
         return;
@@ -75,25 +74,16 @@ fn main() {
         std::collections::HashMap::new();
     for entry in &cli.mic_calibration {
         if let Some((ch_str, path)) = entry.split_once(':') {
-            match ch_str.parse::<usize>() {
-                Ok(ch) => {
-                    mic_calibration_map.insert(ch, path.to_string());
-                }
-                Err(_) => {
-                    let entry = redact_secrets(entry);
-                    eprintln!(
-                        "Error: invalid channel number in --mic-calibration: {}",
-                        entry
-                    );
-                    std::process::exit(1);
-                }
+            if let Ok(ch) = ch_str.parse::<usize>() {
+                mic_calibration_map.insert(ch, path.to_string());
+            } else {
+                let entry = redact_secrets(entry);
+                eprintln!("Error: invalid channel number in --mic-calibration: {entry}");
+                std::process::exit(1);
             }
         } else {
             let entry = redact_secrets(entry);
-            eprintln!(
-                "Error: --mic-calibration must be in CHANNEL:PATH format, got: {}",
-                entry
-            );
+            eprintln!("Error: --mic-calibration must be in CHANNEL:PATH format, got: {entry}");
             std::process::exit(1);
         }
     }
@@ -104,20 +94,20 @@ fn main() {
     if let Err(e) = sotf_audio::run_preflight_checks() {
         let e = redact_secrets(&e.to_string());
         eprintln!("\nPre-flight check failed:\n");
-        eprintln!("{}\n", e);
+        eprintln!("{e}\n");
         std::process::exit(1);
     }
 
     if let Err(e) = record_signal(
-        signal,
+        &signal,
         duration,
         cli.sample_rate,
         cli.channels,
-        hwaudio_send_to,
-        hwaudio_record_from,
-        cli.name,
+        &hwaudio_send_to,
+        &hwaudio_record_from,
+        cli.name.as_deref(),
         cli.output_dir,
-        cli.device,
+        cli.device.as_deref(),
         cli.freq,
         cli.freq1,
         cli.freq2,
@@ -127,11 +117,11 @@ fn main() {
         cli.amp1,
         cli.amp2,
         cli.mls_order,
-        cli.microphone_compensation,
-        mic_calibration_map,
+        cli.microphone_compensation.as_deref(),
+        &mic_calibration_map,
     ) {
-        let e = redact_secrets(&e.to_string());
-        eprintln!("Error: {}", e);
+        let e = redact_secrets(&e.clone());
+        eprintln!("Error: {e}");
         std::process::exit(1);
     }
 }

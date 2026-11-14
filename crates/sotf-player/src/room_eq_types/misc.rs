@@ -4,11 +4,12 @@ pub use roomeq_model::DspChainOutput;
 use std::path::{Path, PathBuf};
 
 /// Return true when a channel name conventionally represents an LFE/sub output.
+#[must_use]
 pub fn room_eq_channel_is_bass_output(name: &str) -> bool {
     let normalized: String = name
         .chars()
-        .filter(|ch| ch.is_ascii_alphanumeric())
-        .flat_map(|ch| ch.to_lowercase())
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_lowercase)
         .collect();
     normalized.contains("lfe")
         || normalized == "sub"
@@ -66,6 +67,16 @@ pub(super) fn resolve_recording_wav_path(path: &str, output_dir: &Path) -> PathB
 /// budget for device startup and stream settling. Used by the UI to
 /// turn `DelayDetectionStatus::Running { started_at_ms }` into a
 /// progress estimate.
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Probe timing is deliberately rounded and saturated to nonnegative whole milliseconds"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Probe duration is an approximate estimate rounded to whole milliseconds"
+)]
 pub fn estimate_probe_sequence_ms(
     num_channels: usize,
     probe_duration_ms: f32,
@@ -74,12 +85,13 @@ pub fn estimate_probe_sequence_ms(
     if num_channels == 0 {
         return 0;
     }
-    let per_channel = probe_duration_ms as f64 + silence_duration_ms as f64;
+    let per_channel = f64::from(probe_duration_ms) + f64::from(silence_duration_ms);
     let total = per_channel * num_channels as f64 + 1_000.0;
     total.round().max(0.0) as u64
 }
 
-/// Returns true when a RoomEQ result cannot be represented as a single linear rack.
+/// Returns true when a `RoomEQ` result cannot be represented as a single linear rack.
+#[must_use]
 pub fn requires_room_eq_graph(output: &DspChainOutput) -> bool {
     !output.global_plugins.is_empty()
         || output.channels.values().any(|chain| {
@@ -107,6 +119,7 @@ pub fn requires_room_eq_graph(output: &DspChainOutput) -> bool {
 ///
 /// Accepts both autoeq optimizer output format (`"freq"`, `"db_gain"`)
 /// and engine format (`"frequency"`, `"gain_db"`).
+#[must_use]
 pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQFilter> {
     use sotf_audio::plugins::eq::KautzSectionConfig;
 
@@ -118,7 +131,6 @@ pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQF
                 .and_then(|t| t.as_str())
                 .unwrap_or("peak");
             let filter_type = match filter_type_str.to_lowercase().as_str() {
-                "peak" | "pk" => BiquadFilterType::Peak,
                 "lowshelf" | "ls" => BiquadFilterType::Lowshelf,
                 "highshelf" | "hs" => BiquadFilterType::Highshelf,
                 "lowpass" | "lp" => BiquadFilterType::Lowpass,
@@ -129,13 +141,16 @@ pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQF
             let frequency = filter
                 .get("frequency")
                 .or_else(|| filter.get("freq"))
-                .and_then(|f| f.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .unwrap_or(1000.0);
-            let q = filter.get("q").and_then(|q| q.as_f64()).unwrap_or(1.0);
+            let q = filter
+                .get("q")
+                .and_then(serde_json::Value::as_f64)
+                .unwrap_or(1.0);
             let gain_db = filter
                 .get("gain_db")
                 .or_else(|| filter.get("db_gain"))
-                .and_then(|g| g.as_f64())
+                .and_then(serde_json::Value::as_f64)
                 .unwrap_or(0.0);
 
             // Topology drives whether we read additional warped/Kautz fields
@@ -145,13 +160,13 @@ pub fn parse_eq_filters_from_json(filters_json: &[serde_json::Value]) -> Vec<EQF
             let topology = filter
                 .get("topology")
                 .and_then(|t| t.as_str())
-                .map(|s| s.to_ascii_lowercase());
+                .map(str::to_ascii_lowercase);
             match topology.as_deref() {
-                Some("warped_biquad") | Some("warped") => {
-                    let lambda = filter.get("lambda").and_then(|v| v.as_f64());
+                Some("warped_biquad" | "warped") => {
+                    let lambda = filter.get("lambda").and_then(serde_json::Value::as_f64);
                     EQFilter::new_warped(filter_type, frequency, q, gain_db, lambda)
                 }
-                Some("kautz_filter") | Some("kautz") => {
+                Some("kautz_filter" | "kautz") => {
                     let sections = filter
                         .get("kautz_sections")
                         .or_else(|| filter.get("sections"))

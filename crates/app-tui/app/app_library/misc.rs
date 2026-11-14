@@ -11,6 +11,9 @@ use std::sync::{Arc, Mutex};
 
 impl App {
     /// Load library from database if available
+    ///
+    /// # Errors
+    /// Returns an error if the database cannot be opened or its library rows cannot be loaded.
     pub fn load_library_from_database(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.library.load_from_database()?;
         self.rebuild_artist_tree();
@@ -25,7 +28,7 @@ impl App {
     }
 
     /// Load all audio devices (output + recording) in a single cpal enumeration.
-    /// Previously this called get_audio_devices() twice (once for output, once for recording).
+    /// Previously this called `get_audio_devices()` twice (once for output, once for recording).
     pub fn load_all_audio_devices(&mut self) {
         let t0 = std::time::Instant::now();
 
@@ -41,7 +44,7 @@ impl App {
 
         // Output devices
         if let Some(output_devices) = devices_map.get("output") {
-            self.audio_devices.outputs = output_devices.clone();
+            self.audio_devices.outputs.clone_from(output_devices);
             if !self.audio_devices.outputs.is_empty() {
                 self.audio_devices.selected_output_index = self
                     .audio_devices
@@ -99,7 +102,7 @@ impl App {
         if let Ok(devices_map) = sotf_audio::devices::get_audio_devices()
             && let Some(output_devices) = devices_map.get("output")
         {
-            self.audio_devices.outputs = output_devices.clone();
+            self.audio_devices.outputs.clone_from(output_devices);
             if !self.audio_devices.outputs.is_empty() {
                 self.audio_devices.selected_output_index = self
                     .audio_devices
@@ -116,7 +119,7 @@ impl App {
         }
     }
 
-    /// Spawn a background mDNS scan for AirPlay + Chromecast receivers.
+    /// Spawn a background mDNS scan for `AirPlay` + Chromecast receivers.
     /// Idempotent: returns immediately if a scan is already in flight.
     pub fn start_cast_discovery(&mut self) {
         if self.audio_devices.cast_discovery_running {
@@ -127,7 +130,7 @@ impl App {
         let (tx, rx) = std::sync::mpsc::channel();
         self.audio_devices.cast_discovery_receiver = Some(rx);
 
-        std::thread::Builder::new()
+        if let Err(error) = std::thread::Builder::new()
             .name("tui-cast-discovery".into())
             .spawn(move || {
                 let rt = match tokio::runtime::Runtime::new() {
@@ -163,15 +166,18 @@ impl App {
                 });
                 let _ = tx.send(devices);
             })
-            .expect("spawn cast discovery thread");
+        {
+            self.audio_devices.cast_discovery_running = false;
+            self.audio_devices.cast_discovery_receiver = None;
+            self.ui.error_message = Some(format!("Could not start cast discovery: {error}"));
+        }
     }
 
     /// Drain the cast-discovery channel; returns true if state changed and the
     /// devices screen should redraw.
     pub fn poll_cast_discovery(&mut self) -> bool {
-        let rx = match &self.audio_devices.cast_discovery_receiver {
-            Some(rx) => rx,
-            None => return false,
+        let Some(rx) = &self.audio_devices.cast_discovery_receiver else {
+            return false;
         };
         match rx.try_recv() {
             Ok(devices) => {
@@ -278,16 +284,15 @@ impl App {
     pub fn get_current_sample_rate(&self) -> f64 {
         self.get_selected_output_device()
             .and_then(|device| device.default_config.as_ref())
-            .map(|config| config.sample_rate as f64)
-            .unwrap_or(48000.0)
+            .map_or(48000.0, |config| f64::from(config.sample_rate))
     }
 
     /// Get the target sample rate for a track, accounting for device capabilities
     pub fn get_target_sample_rate(&self, track_sample_rate: u32) -> f64 {
-        sotf_audio::select_output_sample_rate(
+        f64::from(sotf_audio::select_output_sample_rate(
             track_sample_rate,
             self.audio_devices.current_output_name.as_deref(),
-        ) as f64
+        ))
     }
 
     /// Get filtered albums, using cache if available
@@ -309,6 +314,9 @@ impl App {
         self.library_view.needs_filter_update = true;
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the selected media cannot be added to the playback queue.
     pub fn add_album_to_queue(
         &mut self,
     ) -> Result<Option<sotf_audio::decoder::AudioSource>, String> {
@@ -629,7 +637,7 @@ impl App {
             }
             // Reload library from database (tracks already removed by remove_directory)
             if let Err(e) = self.load_library_from_database() {
-                log::warn!("Failed to reload library after directory removal: {}", e);
+                log::warn!("Failed to reload library after directory removal: {e}");
             }
         }
     }
@@ -646,6 +654,9 @@ impl App {
         self.library.get_directory_tree_items()
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if database cleanup fails.
     pub fn clean_library_database(&mut self) -> Result<usize, Box<dyn std::error::Error>> {
         self.scan.maintenance_in_progress = true;
         self.scan.maintenance_progress_checked = 0;
@@ -685,8 +696,8 @@ impl App {
             Ok(removed) => {
                 if *removed > 0 {
                     self.ui.status_message =
-                        Some(format!("Cleaned {} missing tracks from database", removed));
-                    log::info!("Database maintenance: removed {} missing tracks", removed);
+                        Some(format!("Cleaned {removed} missing tracks from database"));
+                    log::info!("Database maintenance: removed {removed} missing tracks");
                 } else {
                     self.ui.status_message =
                         Some("Database is clean - no missing tracks found".to_string());
@@ -694,8 +705,8 @@ impl App {
                 }
             }
             Err(e) => {
-                self.ui.status_message = Some(format!("Database maintenance failed: {}", e));
-                log::error!("Database maintenance failed: {}", e);
+                self.ui.status_message = Some(format!("Database maintenance failed: {e}"));
+                log::error!("Database maintenance failed: {e}");
             }
         }
 
@@ -705,6 +716,9 @@ impl App {
     }
 
     /// Save current app state to config file
+    ///
+    /// # Errors
+    /// Returns an error if configuration serialization or file writing fails.
     pub fn save_config(&self) -> Result<(), Box<dyn std::error::Error>> {
         let config = sotf_audio_player::config::AppConfig {
             version: 1,
@@ -719,8 +733,7 @@ impl App {
                 .playback
                 .current_queue_index
                 .and_then(|idx| self.queue.get(idx))
-                .map(|entry| entry.item.current_track_index)
-                .unwrap_or(0),
+                .map_or(0, |entry| entry.item.current_track_index),
             plugin_preset: self.plugin_rack.last_loaded_preset.clone(),
         };
 
@@ -730,6 +743,9 @@ impl App {
     }
 
     /// Load app state from config file and restore it
+    ///
+    /// # Errors
+    /// Returns an error if configuration loading or validation fails.
     pub fn load_config(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let config = sotf_audio_player::config::load_app_config()?;
 
@@ -789,7 +805,7 @@ impl App {
                         self.plugin_rack.last_loaded_preset = Some(preset_name.clone());
                         self.request_plugin_update();
                         if warnings.is_empty() {
-                            log::info!("Restored plugin preset: {}", preset_name);
+                            log::info!("Restored plugin preset: {preset_name}");
                         } else {
                             log::warn!(
                                 "Restored preset '{}' with {} skipped plugin(s)",
@@ -797,7 +813,7 @@ impl App {
                                 warnings.len()
                             );
                             for w in &warnings {
-                                log::warn!("  {}", w);
+                                log::warn!("  {w}");
                             }
                             self.ui.status_message = Some(format!(
                                 "Preset '{}': {} plugin(s) skipped",
@@ -807,7 +823,7 @@ impl App {
                         }
                     }
                     Err(e) => {
-                        log::warn!("Could not restore preset '{}': {}", preset_name, e);
+                        log::warn!("Could not restore preset '{preset_name}': {e}");
                     }
                 }
             }
@@ -899,7 +915,7 @@ impl App {
         }
 
         let mut counts: Vec<u32> = channel_counts.into_iter().collect();
-        counts.sort();
+        counts.sort_unstable();
         counts
     }
 
@@ -1002,7 +1018,7 @@ impl App {
                     ChannelFilter::Mono => album.uniform_channel_count() == Some(1),
                     ChannelFilter::Stereo => album.uniform_channel_count() == Some(2),
                     ChannelFilter::Surround => {
-                        matches!(album.uniform_channel_count(), Some(5) | Some(6))
+                        matches!(album.uniform_channel_count(), Some(5 | 6))
                     }
                     ChannelFilter::Surround71 => album.uniform_channel_count() == Some(8),
                     ChannelFilter::SurroundPlus => {

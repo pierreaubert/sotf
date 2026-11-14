@@ -3,7 +3,7 @@ use crate::app::types::recording::RoomDimensionUnit;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, Heading, Input, NumberInput, StackAlign,
     StackSpacing, Text, TextSize, VStack,
@@ -275,7 +275,7 @@ impl PlayerView {
 
         let save_name = recording_state.safe_save_name();
         let full_path = if base_dir.is_some() {
-            format!("{}/{}/", base_dir_display, save_name)
+            format!("{base_dir_display}/{save_name}/")
         } else {
             translations.recording_not_set.to_string()
         };
@@ -401,10 +401,11 @@ impl PlayerView {
                                     .into_iter()
                                     .flatten()
                                     .map(|path| {
-                                        let name = std::path::Path::new(path)
-                                            .file_name()
-                                            .map(|name| name.to_string_lossy().into_owned())
-                                            .unwrap_or_else(|| path.to_owned());
+                                        let name =
+                                            std::path::Path::new(path).file_name().map_or_else(
+                                                || path.to_owned(),
+                                                |name| name.to_string_lossy().into_owned(),
+                                            );
                                         Text::caption(name)
                                     }),
                             ),
@@ -414,6 +415,14 @@ impl PlayerView {
     }
 
     /// Render save action buttons
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     pub(super) fn render_save_actions(
         &self,
         has_recordings: bool,
@@ -429,8 +438,8 @@ impl PlayerView {
                 .translate(&recording.status_message)
                 .into_owned();
         let status_severity = recording.status_severity;
-        let show_status = !status_message.is_empty()
-            && !(recording.take_review.saved_to.is_some()
+        let show_status = !(status_message.is_empty()
+            || recording.take_review.saved_to.is_some()
                 && matches!(
                     status_severity,
                     crate::app::types::recording::RecordingStatusSeverity::Success
@@ -461,7 +470,7 @@ impl PlayerView {
             .disabled(!can_save)
             .theme(theme.to_button_theme())
             .on_click(move |_, cx| {
-                save_view.update(cx, |this, cx| this.save_recordings(cx));
+                save_view.update(cx, crate::ui::PlayerView::save_recordings);
             });
         #[cfg(feature = "dev-api")]
         let save_button = {
@@ -507,8 +516,10 @@ impl PlayerView {
                                 .size(ButtonSize::Sm)
                                 .theme(theme.to_button_theme())
                                 .on_click(move |_, cx| {
-                                    load_view
-                                        .update(cx, |this, cx| this.load_recordings_from_file(cx));
+                                    load_view.update(
+                                        cx,
+                                        crate::ui::PlayerView::load_recordings_from_file,
+                                    );
                                 }),
                         ),
                 )
@@ -682,6 +693,10 @@ impl PlayerView {
     /// (`spinorama_eq_state.available_speakers`). The catalog is
     /// populated the first time the save step renders — see
     /// [`render_recording_saving_step`].
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_channel_speakers_card(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -756,8 +771,7 @@ impl PlayerView {
                                         })
                                         .child(
                                             Input::new(SharedString::from(format!(
-                                                "channel_speaker_input_{}",
-                                                row
+                                                "channel_speaker_input_{row}"
                                             )))
                                             .value(current.clone())
                                             .placeholder(
@@ -792,8 +806,7 @@ impl PlayerView {
                             el.child(
                                 div()
                                     .id(SharedString::from(format!(
-                                        "channel_speaker_suggestions_{}",
-                                        row
+                                        "channel_speaker_suggestions_{row}"
                                     )))
                                     .ml(px(88.0)) // intentional: align under the input (label col + gap)
                                     .w(px(380.0)) // intentional: match input field width
@@ -807,8 +820,7 @@ impl PlayerView {
                                         let suggestion = s.clone();
                                         div()
                                             .id(SharedString::from(format!(
-                                                "channel_speaker_opt_{}_{}",
-                                                row, suggestion
+                                                "channel_speaker_opt_{row}_{suggestion}"
                                             )))
                                             .px(d.pad_y)
                                             .py(d.pad_y_half)
@@ -829,7 +841,7 @@ impl PlayerView {
                                                             if let Some(slot) =
                                                                 rec.channel_speakers.get_mut(row)
                                                             {
-                                                                *slot = picked.clone();
+                                                                slot.clone_from(&picked);
                                                             }
                                                             rec.channel_speaker_autocomplete_open =
                                                                 None;
@@ -848,7 +860,11 @@ impl PlayerView {
 
 /// Build a single "label + number input" block for the room-dimensions
 /// card. Kept as a free function (not a method) to sidestep lifetime
-/// gymnastics inside the HStack chain.
+/// gymnastics inside the `HStack` chain.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn dimension_field(
     id: &'static str,
     label: &'static str,

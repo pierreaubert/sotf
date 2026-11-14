@@ -14,6 +14,14 @@ pub struct MpdServer {
     pub(super) tls_acceptor: Option<tokio_rustls::TlsAcceptor>,
 }
 
+impl std::fmt::Debug for MpdServer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MpdServer")
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
+}
+
 impl MpdServer {
     #[must_use]
     pub fn new(adapter: Arc<dyn PlayerAdapter>) -> Self {
@@ -134,7 +142,7 @@ impl MpdServer {
                         }
                     }
                 }
-                _ = wait_for_cancel(&cancel) => {
+                () = wait_for_cancel(&cancel) => {
                     log::info!("[MPD] Server shutting down");
                     break;
                 }
@@ -144,6 +152,13 @@ impl MpdServer {
         Ok(())
     }
 
+    #[cfg_attr(
+        not(feature = "tls"),
+        expect(
+            clippy::unused_self,
+            reason = "The TLS feature reads this server configuration"
+        )
+    )]
     pub(super) fn tls_mode_label(&self) -> &'static str {
         #[cfg(feature = "tls")]
         {

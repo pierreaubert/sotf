@@ -1,7 +1,7 @@
 //! Audio feature analysis for music similarity
 //!
 //! This module provides audio analysis using a pure Rust implementation
-//! (math-dsp audio_features) with a Symphonia-based decoder. It extracts
+//! (math-dsp `audio_features`) with a Symphonia-based decoder. It extracts
 //! features that can be used to compute similarity between tracks for
 //! intelligent playlist generation.
 //!

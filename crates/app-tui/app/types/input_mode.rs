@@ -41,6 +41,7 @@ pub enum InputMode {
 
 impl InputMode {
     /// Returns true for Configure tab bar and all 5 sub-screens
+    #[must_use]
     pub fn is_configure(self) -> bool {
         matches!(
             self,
@@ -57,6 +58,7 @@ impl InputMode {
     }
 
     /// Returns true for configure sub-screens only (not the tab bar)
+    #[must_use]
     pub fn is_configure_sub_screen(self) -> bool {
         matches!(
             self,
@@ -71,7 +73,8 @@ impl InputMode {
         )
     }
 
-    /// Convert a ConfigureSubScreen to the corresponding InputMode
+    /// Convert a `ConfigureSubScreen` to the corresponding `InputMode`
+    #[must_use]
     pub fn from_configure_sub_screen(sub: ConfigureSubScreen) -> Self {
         match sub {
             ConfigureSubScreen::Directories => InputMode::ConfigureDirectories,
@@ -85,7 +88,8 @@ impl InputMode {
         }
     }
 
-    /// Return the corresponding ConfigureSubScreen, if this is a configure sub-screen mode
+    /// Return the corresponding `ConfigureSubScreen`, if this is a configure sub-screen mode
+    #[must_use]
     pub fn configure_sub_screen(self) -> Option<ConfigureSubScreen> {
         match self {
             InputMode::ConfigureDirectories => Some(ConfigureSubScreen::Directories),

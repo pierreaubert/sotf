@@ -19,6 +19,7 @@ fn common_prefix(suggestions: &[String]) -> String {
 }
 
 /// Which autocomplete generator to use.
+#[derive(Debug, Clone, Copy)]
 pub enum AutocompleteKind {
     /// Filesystem path completion from `generate_autocomplete_suggestions_for_input`
     FilePath,
@@ -105,7 +106,7 @@ impl App {
         }
     }
 
-    /// Handle Shift+Tab (BackTab) — cycle backward through menu.
+    /// Handle Shift+Tab (`BackTab`) — cycle backward through menu.
     pub fn zsh_backtab_complete(&mut self, set_input: fn(&mut Self, String)) {
         if !self.autocomplete.menu_active || self.autocomplete.suggestions.is_empty() {
             return;
@@ -178,8 +179,7 @@ impl App {
         } else if let Some(parent) = path.parent() {
             let prefix = path
                 .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
+                .map_or_default(|s| s.to_string_lossy().to_string());
             (parent.to_path_buf(), prefix)
         } else {
             (std::path::PathBuf::from("."), expanded_input.clone())

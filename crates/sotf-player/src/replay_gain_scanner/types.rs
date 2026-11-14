@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-/// ReplayGain application mode
+/// `ReplayGain` application mode
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ReplayGainMode {
     Track,

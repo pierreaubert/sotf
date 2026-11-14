@@ -37,6 +37,9 @@ pub trait Manager {
     type Response;
 
     /// Handle a state-modifying event
+    ///
+    /// # Errors
+    /// Returns an error if event handling cannot update playback or queue state.
     fn handle_event(&mut self, event: Self::Event) -> Result<(), ManagerError>;
 
     /// handle a read-only query

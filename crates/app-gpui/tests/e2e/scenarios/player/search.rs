@@ -10,6 +10,7 @@ use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 use std::path::PathBuf;
 
+#[derive(Debug)]
 pub struct SearchScenario;
 
 impl TestScenario for SearchScenario {
@@ -170,6 +171,7 @@ async fn test_search_flow(cx: &mut gpui::TestAppContext) {
     assert!(result.is_ok());
 }
 
+#[derive(Debug)]
 pub struct SearchInputKeepsFocusScenario;
 
 impl TestScenario for SearchInputKeepsFocusScenario {
@@ -231,6 +233,7 @@ async fn test_search_input_keeps_focus_between_keystrokes(cx: &mut gpui::TestApp
     assert!(result.is_ok());
 }
 
+#[derive(Debug)]
 pub struct SearchInputAccumulatesFromLibraryTabScenario;
 
 impl TestScenario for SearchInputAccumulatesFromLibraryTabScenario {
@@ -292,6 +295,7 @@ async fn test_search_input_accumulates_from_library_tab(cx: &mut gpui::TestAppCo
     assert!(result.is_ok());
 }
 
+#[derive(Debug)]
 pub struct SearchInputCanBeClickedScenario;
 
 impl TestScenario for SearchInputCanBeClickedScenario {
@@ -356,6 +360,7 @@ async fn test_search_input_can_be_clicked(cx: &mut gpui::TestAppContext) {
     assert!(result.is_ok());
 }
 
+#[derive(Debug)]
 pub struct SearchInputRequiresClickScenario;
 
 impl TestScenario for SearchInputRequiresClickScenario {
@@ -417,6 +422,7 @@ async fn test_search_input_requires_click(cx: &mut gpui::TestAppContext) {
     assert!(result.is_ok());
 }
 
+#[derive(Debug)]
 pub struct SearchSortTabsClickableScenario;
 
 impl TestScenario for SearchSortTabsClickableScenario {

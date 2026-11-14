@@ -1,8 +1,13 @@
 use super::types::ModeSelectorInfo;
 use sotf_plugins::layout_solver::solve_control_groups_scaled;
 use sotf_plugins::param_specs::{ParamSpec, ParamType};
-use sotf_plugins::plugin_layout::*;
+use sotf_plugins::plugin_layout::{ControlGroup, ControlType, GroupOverflow, PluginLayout};
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub(super) fn mode_visible_groups(
     layout: &'static PluginLayout,
     values: &[f64],
@@ -60,7 +65,7 @@ pub(super) fn solve_main_groups(
             log::error!("invalid generated plugin group layout ({error}); showing all groups");
             return (groups, Vec::new());
         }
-    };
+    }
     // Roles stay stable across resize and active editing. Explicit secondary
     // groups use inline disclosure; primary groups wrap instead of vanishing.
     let (overflow, mut visible): (Vec<&'static ControlGroup>, Vec<&'static ControlGroup>) =
@@ -97,10 +102,11 @@ pub(super) fn detect_mode_selector(
         }
         let spec = &group.controls[0];
         let param = params.get(spec.param_index)?;
-        let labels = match (spec.control_type, param.param_type) {
-            (ControlType::ButtonSet { labels }, ParamType::Choice { .. }) => labels,
-            (ControlType::Selector, ParamType::Choice { labels, .. }) => labels,
-            _ => continue,
+        let ((ControlType::ButtonSet { labels }, ParamType::Choice { .. })
+        | (ControlType::Selector, ParamType::Choice { labels, .. })) =
+            (spec.control_type, param.param_type)
+        else {
+            continue;
         };
         // Confirm at least one later group title matches a label — otherwise
         // this isn't really a mode selector and we should leave the layout alone.

@@ -19,3 +19,4 @@ sotf-host = { workspace = true }
 sotf-plugins = { workspace = true, default-features = false }
 
 [lints]
+workspace = true

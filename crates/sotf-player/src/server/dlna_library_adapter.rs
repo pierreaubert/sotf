@@ -5,7 +5,7 @@ use super::track::track_to_media_track;
 use sotf_dlna::MediaServerAdapter;
 use std::sync::Arc;
 
-/// Adapter bridging DLNA ContentDirectory requests to the SOTF library.
+/// Adapter bridging DLNA `ContentDirectory` requests to the SOTF library.
 pub(super) struct DlnaLibraryAdapter {
     pub(super) state: Arc<ServerState>,
 }
@@ -13,7 +13,7 @@ pub(super) struct DlnaLibraryAdapter {
 impl MediaServerAdapter for DlnaLibraryAdapter {
     fn browse_albums(&self, start: u32, count: u32) -> (Vec<sotf_dlna::MediaAlbum>, u32) {
         let library = self.state.library.lock();
-        let total = library.albums.len() as u32;
+        let total = u32::try_from(library.albums.len()).unwrap_or(u32::MAX);
         let albums: Vec<sotf_dlna::MediaAlbum> = library
             .albums
             .iter()
@@ -28,7 +28,7 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
                 title: a.title.clone(),
                 artist: a.artist(),
                 year: a.year,
-                track_count: a.tracks.len() as u32,
+                track_count: u32::try_from(a.tracks.len()).unwrap_or(u32::MAX),
             })
             .collect();
         (albums, total)
@@ -84,7 +84,7 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
             }
         }
 
-        let total = results.len() as u32;
+        let total = u32::try_from(results.len()).unwrap_or(u32::MAX);
         let page: Vec<_> = results
             .into_iter()
             .skip(start as usize)
@@ -99,14 +99,16 @@ impl MediaServerAdapter for DlnaLibraryAdapter {
 
     fn album_count(&self) -> u32 {
         let library = self.state.library.lock();
-        library.albums.len() as u32
+        u32::try_from(library.albums.len()).unwrap_or(u32::MAX)
     }
 
     fn content_directory_update_id(&self) -> u32 {
-        self.state
-            .library_version
-            .load(std::sync::atomic::Ordering::Relaxed)
-            .min(u32::MAX as u64) as u32
+        u32::try_from(
+            self.state
+                .library_version
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
+        .unwrap_or(u32::MAX)
     }
 
     fn media_path(&self, track_id: &str) -> Option<sotf_dlna::MediaSource> {

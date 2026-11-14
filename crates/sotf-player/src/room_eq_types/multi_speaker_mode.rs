@@ -9,10 +9,12 @@ pub enum MultiSpeakerMode {
 }
 
 impl MultiSpeakerMode {
+    #[must_use]
     pub fn all() -> &'static [MultiSpeakerMode] {
         &[MultiSpeakerMode::Sequential, MultiSpeakerMode::Combined]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             MultiSpeakerMode::Sequential => "Sequential (per-channel)",
@@ -20,6 +22,7 @@ impl MultiSpeakerMode {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             MultiSpeakerMode::Sequential => "Optimize each speaker independently, one at a time",

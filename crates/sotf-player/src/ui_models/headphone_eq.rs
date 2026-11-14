@@ -48,7 +48,7 @@ pub struct HeadphoneEqScreenModel {
     pub loss_type: String,
     /// Target curve selection (preset name or "custom").
     pub target_preset: String,
-    /// Path to custom target file (if target_preset == "custom").
+    /// Path to custom target file (if `target_preset` == "custom").
     pub custom_target_path: String,
 
     // === Step 2: Configuration ===
@@ -148,6 +148,7 @@ impl Default for HeadphoneEqScreenModel {
 impl HeadphoneEqScreenModel {
     /// Bounds of the active catalog response, excluding invalid samples.
     /// File-mode data is not inferred from a previously downloaded response.
+    #[must_use]
     pub fn measurement_frequency_bounds(&self) -> Option<(f64, f64)> {
         if self.measurement_source != HeadphoneMeasurementSource::Spinorama {
             return None;
@@ -168,6 +169,7 @@ impl HeadphoneEqScreenModel {
     }
     /// Identity of every selected optimization input, independent of progress,
     /// navigation and export formatting. Capture this when starting a run.
+    #[must_use]
     pub fn optimization_input_snapshot(&self) -> serde_json::Value {
         serde_json::json!({
             "source": format!("{:?}", self.measurement_source),
@@ -182,10 +184,10 @@ impl HeadphoneEqScreenModel {
     }
 
     /// Return the UI-normalized loss type ("flat" or "score").
+    #[must_use]
     pub fn ui_loss_type(&self) -> &'static str {
         match self.optimizer_config.loss.as_str() {
             "flat" | "headphone-flat" => "flat",
-            "score" | "headphone-score" => "score",
             _ => "score",
         }
     }
@@ -203,16 +205,19 @@ impl HeadphoneEqScreenModel {
     }
 
     /// True when the selected target preset requires a custom target file.
+    #[must_use]
     pub fn requires_custom_target_path(&self) -> bool {
         self.target_preset == "custom"
     }
 
     /// True when a non-empty custom target path has been provided.
+    #[must_use]
     pub fn has_custom_target_path(&self) -> bool {
         !self.custom_target_path.trim().is_empty()
     }
 
     /// Check if we can proceed from the current step.
+    #[must_use]
     pub fn can_advance(&self) -> bool {
         match self.step {
             HeadphoneEqStep::MeasurementTarget => {
@@ -228,6 +233,7 @@ impl HeadphoneEqScreenModel {
     }
 
     /// Check if optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.optimization_status == OptimizationStatus::Running
     }
@@ -268,9 +274,7 @@ impl HeadphoneEqScreenModel {
             .cloned()
             .collect();
 
-        if !exact_matches.is_empty() {
-            self.headphone_suggestions = exact_matches;
-        } else {
+        if exact_matches.is_empty() {
             let mut scored: Vec<(String, f64)> = self
                 .available_headphones
                 .iter()
@@ -281,12 +285,15 @@ impl HeadphoneEqScreenModel {
                 .collect();
             scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
             self.headphone_suggestions = scored.into_iter().map(|(s, _)| s).collect();
+        } else {
+            self.headphone_suggestions = exact_matches;
         }
 
         self.headphone_suggestions.truncate(50);
     }
 
     /// Check if headphones cache needs refresh (older than 1 hour or not loaded).
+    #[must_use]
     pub fn needs_headphone_refresh(&self) -> bool {
         if self.available_headphones.is_empty() {
             return true;
@@ -298,6 +305,10 @@ impl HeadphoneEqScreenModel {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Search ranking averages word-match scores"
+)]
 fn headphone_fuzzy_match_score(query: &str, name: &str) -> Option<f64> {
     let query_lower = query.to_lowercase();
     let name_lower = name.to_lowercase();

@@ -26,7 +26,7 @@ pub enum WaveformScanMessage {
 /// Waveform scanner with thread pool for background processing
 #[derive(Debug)]
 pub struct WaveformScanner {
-    _workers: Vec<thread::JoinHandle<()>>,
+    workers: Vec<thread::JoinHandle<()>>,
     task_tx: Sender<PathBuf>,
     message_rx: Receiver<WaveformScanMessage>,
     stop_tx: Sender<()>,
@@ -34,6 +34,14 @@ pub struct WaveformScanner {
 
 impl WaveformScanner {
     /// Create a new scanner with the given number of worker threads
+    #[expect(
+        clippy::too_many_lines,
+        reason = "The constructor owns worker startup and each worker lifecycle"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "The public worker constructor owns its configuration and clones handles for each worker "
+    )]
     pub fn new(num_threads: usize, db_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Self {
         let (task_tx, task_rx) = channel::unbounded::<PathBuf>();
         let (message_tx, message_rx) = channel::unbounded::<WaveformScanMessage>();
@@ -51,17 +59,13 @@ impl WaveformScanner {
             let pause_flag = Arc::clone(&pause_flag);
 
             let worker = thread::spawn(move || {
-                log::info!("[Waveform Worker {}] Started", worker_id);
+                log::info!("[Waveform Worker {worker_id}] Started");
 
                 // Open database once per worker thread (not per track)
                 let db = match MusicDatabase::open(&db_path) {
                     Ok(db) => db,
                     Err(e) => {
-                        log::error!(
-                            "[Waveform Worker {}] Failed to open database: {}",
-                            worker_id,
-                            e
-                        );
+                        log::error!("[Waveform Worker {worker_id}] Failed to open database: {e}");
                         return;
                     }
                 };
@@ -69,7 +73,7 @@ impl WaveformScanner {
                 'worker_loop: loop {
                     // Check if we should stop
                     if stop_rx.try_recv().is_ok() {
-                        log::info!("[Waveform Worker {}] Stopping", worker_id);
+                        log::info!("[Waveform Worker {worker_id}] Stopping");
                         break;
                     }
 
@@ -87,12 +91,9 @@ impl WaveformScanner {
                     // Block on (task, stop) concurrently — N workers wait at
                     // once without serializing through a Mutex<Receiver>.
                     let path = channel::select! {
-                        recv(task_rx) -> msg => match msg {
-                            Ok(path) => path,
-                            Err(_) => {
-                                log::info!("[Waveform Worker {}] Task channel closed", worker_id);
-                                break;
-                            }
+                        recv(task_rx) -> msg => if let Ok(path) = msg { path } else {
+                            log::info!("[Waveform Worker {worker_id}] Task channel closed");
+                            break;
                         },
                         recv(stop_rx) -> _ => {
                             log::info!("[Waveform Worker {}] Stopping (select)", worker_id);
@@ -122,7 +123,7 @@ impl WaveformScanner {
                                 );
                                 let _ = message_tx.send(WaveformScanMessage::Error {
                                     path: path.clone(),
-                                    error: format!("Database error: {}", e),
+                                    error: format!("Database error: {e}"),
                                 });
                                 continue;
                             }
@@ -165,21 +166,17 @@ impl WaveformScanner {
 
                 // Checkpoint WAL before exiting to prevent unbounded growth
                 if let Err(e) = db.checkpoint_wal() {
-                    log::warn!(
-                        "[Waveform Worker {}] WAL checkpoint failed: {}",
-                        worker_id,
-                        e
-                    );
+                    log::warn!("[Waveform Worker {worker_id}] WAL checkpoint failed: {e}");
                 }
 
-                log::info!("[Waveform Worker {}] Finished", worker_id);
+                log::info!("[Waveform Worker {worker_id}] Finished");
             });
 
             workers.push(worker);
         }
 
         Self {
-            _workers: workers,
+            workers,
             task_tx,
             message_rx,
             stop_tx,
@@ -199,6 +196,7 @@ impl WaveformScanner {
     }
 
     /// Try to receive a message (non-blocking)
+    #[must_use]
     pub fn try_recv(&self) -> Option<WaveformScanMessage> {
         self.message_rx.try_recv().ok()
     }
@@ -206,7 +204,7 @@ impl WaveformScanner {
     /// Stop all workers
     pub fn stop(&self) {
         // Send stop signal to all workers
-        for _ in 0..self._workers.len() {
+        for _ in 0..self.workers.len() {
             let _ = self.stop_tx.send(());
         }
     }
@@ -242,6 +240,7 @@ impl Default for WaveformScanManager {
 }
 
 impl WaveformScanManager {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -266,14 +265,14 @@ impl WaveformScanManager {
 
     /// Get the effective number of threads to use.
     fn effective_num_threads(&self) -> usize {
-        self.num_threads.unwrap_or_else(|| {
-            std::thread::available_parallelism()
-                .map(|n| n.get().min(4))
-                .unwrap_or(2)
-        })
+        self.num_threads
+            .unwrap_or_else(|| std::thread::available_parallelism().map_or(2, |n| n.get().min(4)))
     }
 
     /// Clear all waveform data and rescan every track.
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_force_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.in_progress {
             return Ok(());
@@ -288,6 +287,9 @@ impl WaveformScanManager {
     }
 
     /// Start scanning all tracks in the database that are missing waveform data
+    ///
+    /// # Errors
+    /// Returns an error if the database path is unavailable or scan data cannot be queried or updated.
     pub fn start_scan(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         // Skip if already in progress
         if self.in_progress {
@@ -317,7 +319,7 @@ impl WaveformScanManager {
 
         // Create scanner with configured thread count
         let num_threads = self.effective_num_threads();
-        log::info!("Waveform scanner using {} threads", num_threads);
+        log::info!("Waveform scanner using {num_threads} threads");
         let scanner = Arc::new(WaveformScanner::new(
             num_threads,
             db_path,
@@ -368,10 +370,7 @@ impl WaveformScanManager {
                     self.in_progress = false;
                     self.scanner = None;
                     log::info!(
-                        "Waveform scan complete: {}/{} succeeded, {} failed",
-                        succeeded,
-                        total,
-                        failed
+                        "Waveform scan complete: {succeeded}/{total} succeeded, {failed} failed"
                     );
                     return;
                 }
@@ -401,6 +400,11 @@ impl WaveformScanManager {
     }
 
     /// Get progress as a percentage
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Progress is an approximate floating-point percentage of completed tracks"
+    )]
     pub fn progress(&self) -> f32 {
         if self.total == 0 {
             return 0.0;

@@ -32,7 +32,10 @@ pub(super) fn recording_step_next_wrap(
 }
 
 pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingField) -> String {
-    use RecordingField::*;
+    use RecordingField::{
+        ChannelInput, CtcLoopbackInput, Duration, Level, NumPositions, NumRecordingChannels,
+        NumSweeps, SweepEnd, SweepStart,
+    };
     match field {
         Duration
             if app.recording.model.signal_type
@@ -55,8 +58,7 @@ pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingFiel
             .model
             .recording_config
             .ctc_loopback_input_channel
-            .map(|c| (c + 1).to_string())
-            .unwrap_or_else(|| "1".to_string()),
+            .map_or_else(|| "1".to_string(), |c| (c + 1).to_string()),
         NumSweeps => app.recording.model.num_sweeps.to_string(),
         NumPositions => app
             .recording
@@ -70,8 +72,7 @@ pub(crate) fn recording_field_value_string_kind(app: &App, field: &RecordingFiel
             .recording_config
             .channel_mappings
             .get(*i)
-            .map(|c| (c + 1).to_string())
-            .unwrap_or_else(|| "1".to_string()),
+            .map_or_else(|| "1".to_string(), |c| (c + 1).to_string()),
         _ => String::new(),
     }
 }

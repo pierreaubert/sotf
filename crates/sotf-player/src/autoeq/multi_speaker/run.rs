@@ -19,7 +19,7 @@ pub use roomeq_workflow::RoomPipelineRequest;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Run room optimization using roomeq_workflow
+/// Run room optimization using `roomeq_workflow`
 ///
 /// This is the primary entry point for multi-channel room optimization.
 /// Uses parallel processing via rayon for all speakers.
@@ -31,6 +31,9 @@ use std::path::Path;
 ///
 /// # Returns
 /// Result containing per-channel DSP chains and optimization metrics
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn run_room_optimization(
     config: &RoomConfig,
     sample_rate: f64,
@@ -41,6 +44,9 @@ pub fn run_room_optimization(
 
 /// Run room optimization and write generated FIR/convolution artifacts into
 /// `output_dir` when provided.
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
 pub fn run_room_optimization_with_output_dir(
     config: &RoomConfig,
     sample_rate: f64,
@@ -65,8 +71,15 @@ pub fn run_room_optimization_with_output_dir(
 /// fall back to WAV-onset detection inside the optimizer.
 ///
 /// The map uses raw channel names (the same keys as `config.speakers`) and
-/// arrival times in milliseconds. Time alignment (delay = max_arrival -
-/// channel_arrival) is computed downstream by the autoeq speaker_eq path.
+/// arrival times in milliseconds. Time alignment (delay = `max_arrival` -
+/// `channel_arrival`) is computed downstream by the autoeq `speaker_eq` path.
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Shared configuration APIs deliberately use the standard application HashMap and HashSet types "
+)]
 pub fn run_room_optimization_with_probe_arrivals(
     config: &RoomConfig,
     sample_rate: f64,
@@ -84,6 +97,13 @@ pub fn run_room_optimization_with_probe_arrivals(
 
 /// Run room optimization with probe arrivals and an optional artifact output
 /// directory for generated FIR/convolution WAV files.
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Shared configuration APIs deliberately use the standard application HashMap and HashSet types "
+)]
 pub fn run_room_optimization_with_probe_arrivals_and_output_dir(
     config: &RoomConfig,
     sample_rate: f64,
@@ -104,7 +124,7 @@ pub fn run_room_optimization_with_probe_arrivals_and_output_dir(
 /// Run multi-speaker optimization (legacy API)
 ///
 /// This function provides backward compatibility with the old API.
-/// Internally converts to RoomConfig and calls optimize_room.
+/// Internally converts to `RoomConfig` and calls `optimize_room`.
 ///
 /// # Arguments
 /// * `config` - Multi-speaker optimization configuration
@@ -112,6 +132,13 @@ pub fn run_room_optimization_with_probe_arrivals_and_output_dir(
 ///
 /// # Returns
 /// Result containing per-speaker filters and combined metrics
+///
+/// # Errors
+/// Returns an error if measurement loading, configuration validation, or optimization fails.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Optimization setup keeps the complete backend configuration together"
+)]
 pub fn run_multi_speaker_optimization(
     config: &MultiSpeakerOptimizationConfig,
     callback: Option<MultiSpeakerOptimizationCallback>,
@@ -143,7 +170,7 @@ pub fn run_multi_speaker_optimization(
         crossovers: None,
         target_curve: None,
         optimizer: OptimizerConfig {
-            upper_band_acoustic_bounds: Default::default(),
+            upper_band_acoustic_bounds: std::collections::HashMap::default(),
             loss_type: format!("{:?}", config.args.loss).to_lowercase(),
             algorithm: config.args.algo.clone(),
             strategy: config.args.strategy.clone(),
@@ -217,9 +244,9 @@ pub fn run_multi_speaker_optimization(
             // Keep evolving RoomEQ acceptance/protection settings at their defaults.
             ..Default::default()
         },
-        provenance: Default::default(),
+        provenance: roomeq_model::ProvenanceConfig::default(),
         recording_config: None,
-        measured_impulse_responses: Default::default(),
+        measured_impulse_responses: std::collections::BTreeMap::default(),
         ctc: None,
         reporting: None,
         cea2034_cache: None,

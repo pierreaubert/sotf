@@ -36,7 +36,6 @@ pub struct ParsedRequest {
     /// All headers, with names lower-cased. Currently unused by callers
     /// but kept so future endpoint logic can inspect e.g. `range`,
     /// `connection`, `user-agent` without re-reading the stream.
-    #[allow(dead_code)]
     pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
 }
@@ -53,7 +52,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
         read_line_capped(reader, &mut request_line, MAX_HEADER_LINE),
     )
     .await
-    .map_err(|_| "read timeout (request line)".to_string())??;
+    .map_err(|_error| "read timeout (request line)".to_string())??;
     if n == 0 {
         return Err("empty request".to_string());
     }
@@ -69,7 +68,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
     let mut content_length: usize = 0;
     loop {
         if headers.len() >= MAX_HEADERS {
-            return Err(format!("too many headers (> {})", MAX_HEADERS));
+            return Err(format!("too many headers (> {MAX_HEADERS})"));
         }
         let mut line = String::new();
         tokio::time::timeout(
@@ -77,7 +76,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
             read_line_capped(reader, &mut line, MAX_HEADER_LINE),
         )
         .await
-        .map_err(|_| "read timeout (header)".to_string())??;
+        .map_err(|_error| "read timeout (header)".to_string())??;
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
@@ -87,10 +86,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
             Some(k) => k.trim().to_string(),
             None => continue,
         };
-        let value = split
-            .next()
-            .map(|v| v.trim().to_string())
-            .unwrap_or_default();
+        let value = split.next().map_or_default(|v| v.trim().to_string());
         let key_lc = key.to_ascii_lowercase();
         if key_lc == "content-length" {
             // Parse early so we can reject before allocating the body.
@@ -101,8 +97,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
 
     if content_length > MAX_BODY {
         return Err(format!(
-            "Content-Length {} exceeds cap {}",
-            content_length, MAX_BODY
+            "Content-Length {content_length} exceeds cap {MAX_BODY}"
         ));
     }
 
@@ -112,7 +107,7 @@ pub async fn read_http_request<R: AsyncRead + Unpin>(
         body.resize(content_length, 0);
         tokio::time::timeout(READ_TIMEOUT, reader.read_exact(&mut body))
             .await
-            .map_err(|_| "read timeout (body)".to_string())?
+            .map_err(|_error| "read timeout (body)".to_string())?
             .map_err(|e| e.to_string())?;
     }
 
@@ -144,7 +139,7 @@ async fn read_line_capped<R: AsyncRead + Unpin>(
         }
         read += n;
         if read > cap {
-            return Err(format!("header line exceeds cap {} bytes", cap));
+            return Err(format!("header line exceeds cap {cap} bytes"));
         }
         line.push(buf[0] as char);
         if buf[0] == b'\n' {

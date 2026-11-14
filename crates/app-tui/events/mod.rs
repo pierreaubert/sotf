@@ -64,6 +64,7 @@ use queue::handle_queue_keys;
 use search::handle_search_mode;
 use tools::handle_tools_keys;
 
+#[derive(Debug)]
 pub enum AppEvent {
     Tick,
     Key(KeyEvent),
@@ -71,24 +72,33 @@ pub enum AppEvent {
     MediaControl(MediaControlEvent),
 }
 
+///
+/// # Errors
+/// Returns an error if terminal polling or event reading fails.
 pub fn handle_events(
     timeout: Duration,
     media_controls: Option<&TuiMediaControls>,
 ) -> std::io::Result<Option<AppEvent>> {
     // Check media control events first (non-blocking)
-    if let Some(event) = media_controls.and_then(|mc| mc.poll_event()) {
+    if let Some(event) =
+        media_controls.and_then(super::media_controls::TuiMediaControls::poll_event)
+    {
         return Ok(Some(AppEvent::MediaControl(event)));
     }
 
     if event::poll(timeout)? {
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => Ok(Some(AppEvent::Key(key))),
-            Event::Resize(_, _) => Ok(Some(AppEvent::Resize)),
-            Event::Mouse(_) => Ok(None), // Mouse support is explicitly deferred for this release.
-            _ => Ok(None),
-        }
+        Ok(app_event_from_terminal(&event::read()?))
     } else {
         Ok(Some(AppEvent::Tick))
+    }
+}
+
+fn app_event_from_terminal(event: &Event) -> Option<AppEvent> {
+    match event {
+        Event::Key(key) if key.kind == KeyEventKind::Press => Some(AppEvent::Key(*key)),
+        Event::Resize(_, _) => Some(AppEvent::Resize),
+        // Mouse support is explicitly deferred for this release.
+        _ => None,
     }
 }
 
@@ -129,16 +139,38 @@ pub fn handle_key_event(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
 #[cfg(test)]
 mod p1_event_policy_tests {
+    use super::{AppEvent, app_event_from_terminal};
+    use crossterm::event::{
+        Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent,
+        MouseEventKind,
+    };
+
     #[test]
     fn mouse_support_is_explicitly_deferred() {
-        let source = include_str!("mod.rs");
-        let production_source = source
-            .split("#[cfg(test)]")
-            .next()
-            .expect("source before tests");
-        assert!(production_source.contains("Event::Mouse(_) => Ok(None)"));
-        assert!(production_source.contains("Mouse support is explicitly deferred"));
-        assert!(!production_source.contains("EnableMouseCapture"));
+        let event = Event::Mouse(MouseEvent {
+            kind: MouseEventKind::Down(MouseButton::Left),
+            column: 4,
+            row: 2,
+            modifiers: KeyModifiers::NONE,
+        });
+        assert!(app_event_from_terminal(&event).is_none());
+    }
+
+    #[test]
+    fn terminal_mapping_preserves_key_press_and_resize_events() {
+        let key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+        assert!(
+            matches!(app_event_from_terminal(&Event::Key(key)), Some(AppEvent::Key(mapped)) if mapped == key)
+        );
+        assert!(matches!(
+            app_event_from_terminal(&Event::Resize(80, 24)),
+            Some(AppEvent::Resize)
+        ));
+        let release = KeyEvent {
+            kind: KeyEventKind::Release,
+            ..key
+        };
+        assert!(app_event_from_terminal(&Event::Key(release)).is_none());
     }
 }
 
@@ -146,6 +178,10 @@ mod p1_event_policy_tests {
 ///
 /// Returns `Some(cmd)` when the key is handled (cmd may be `None`),
 /// or `None` when the key is not a shared key.
+#[expect(
+    clippy::option_option,
+    reason = "The outer option distinguishes an uninitialized or unhandled value from an initialized absent value"
+)]
 fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerCommand>> {
     // Screen-specific bindings take precedence over root conveniences. This
     // makes Plugins `u` and Shift+Up/Down reachable instead of being consumed
@@ -185,6 +221,10 @@ fn handle_shared_keys(app: &mut App, key: KeyEvent) -> Option<Option<PlayerComma
     None
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub(super) fn dispatch_shared_command(
     app: &mut App,
     key: KeyEvent,
@@ -232,9 +272,7 @@ pub(super) fn dispatch_shared_command(
                 KeyCode::Char('O') => (Screen::Devices, InputMode::Normal),
                 KeyCode::Char('Y') => (Screen::Playlists, InputMode::Normal),
                 KeyCode::Char('T') => (Screen::Tools, InputMode::Normal),
-                KeyCode::Char('C') | KeyCode::Char('N') => {
-                    (Screen::Configure, InputMode::Configure)
-                }
+                KeyCode::Char('C' | 'N') => (Screen::Configure, InputMode::Configure),
                 _ => unreachable!("non-screen chord resolved as SwitchScreen: {key:?}"),
             };
             app.switch_screen(screen);
@@ -257,7 +295,7 @@ pub(super) fn dispatch_shared_command(
             None
         }
         SharedCommand::AdjustVolume => {
-            if matches!(key.code, KeyCode::Char('+') | KeyCode::Char('=')) {
+            if matches!(key.code, KeyCode::Char('+' | '=')) {
                 app.increase_volume();
             } else {
                 app.decrease_volume();
@@ -408,7 +446,7 @@ fn handle_normal_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
 fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
-        KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+        KeyCode::Esc | KeyCode::Char('?' | 'q') => {
             app.exit_overlay_mode();
             None
         }
@@ -418,7 +456,7 @@ fn handle_help_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
 
 fn handle_error_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
     match key.code {
-        KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ') | KeyCode::Char('q') => {
+        KeyCode::Esc | KeyCode::Enter | KeyCode::Char(' ' | 'q') => {
             app.exit_overlay_mode();
             app.ui.error_message = None;
             None
@@ -476,7 +514,7 @@ fn handle_channel_conflict_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCo
                     let mut indices: Vec<usize> = conflicts.iter().map(|c| c.index).collect();
                     indices.sort_unstable_by(|a, b| b.cmp(a));
                     for idx in &indices {
-                        app.plugin_rack.graph.remove_plugin_by_index(*idx).ok();
+                        let _ = app.plugin_rack.graph.remove_plugin_by_index(*idx);
                     }
                     log::info!(
                         "[TUI] Removed {} incompatible plugin(s) (channel conflict)",
@@ -524,7 +562,7 @@ pub enum PlayerCommand {
 pub(crate) mod tests {
     use super::*;
     use crate::theme::Theme;
-    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use crossterm::event::{KeyEventState, KeyModifiers};
 
     pub(crate) fn key(code: KeyCode) -> KeyEvent {
         KeyEvent {

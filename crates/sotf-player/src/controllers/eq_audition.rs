@@ -37,6 +37,14 @@ pub struct EqAudition {
 }
 
 impl EqAudition {
+    /// Start.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported filters, invalid playback settings, or an incompatible audition graph.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Audition setup validates and builds its temporary graph atomically"
+    )]
     pub fn start(
         graph: &mut PluginGraph,
         filters: &[(String, f64, f64, f64)],
@@ -150,20 +158,27 @@ impl EqAudition {
         })
     }
 
+    #[must_use]
     pub fn is_pending(&self) -> bool {
         self.pending.is_some()
     }
+    #[must_use]
     pub fn is_canceling(&self) -> bool {
         self.pending
             .as_ref()
             .is_some_and(|pending| pending.kind == ChangeKind::CancelStart)
     }
+    #[must_use]
     pub fn is_stopping(&self) -> bool {
         self.pending
             .as_ref()
             .is_some_and(|pending| pending.kind == ChangeKind::Stop)
     }
 
+    /// Set corrected.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported filters, invalid playback settings, or an incompatible audition graph.
     pub fn set_corrected(
         &mut self,
         graph: &mut PluginGraph,
@@ -180,6 +195,10 @@ impl EqAudition {
         Ok(())
     }
 
+    /// Set preamp.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported filters, invalid playback settings, or an incompatible audition graph.
     pub fn set_preamp(&mut self, graph: &mut PluginGraph, preamp_db: f64) -> Result<(), String> {
         if !preamp_db.is_finite() || !(-120.0..=self.max_preamp_db).contains(&preamp_db) {
             return Err("Preamp must retain the calculated EQ headroom".into());
@@ -199,6 +218,10 @@ impl EqAudition {
         Ok(())
     }
 
+    /// Stop.
+    ///
+    /// # Errors
+    /// Returns an error for unsupported filters, invalid playback settings, or an incompatible audition graph.
     pub fn stop(&mut self, graph: &mut PluginGraph) -> Result<(), String> {
         self.note_external_changes(graph);
         let previous = self.pending.clone();

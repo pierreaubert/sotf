@@ -9,7 +9,7 @@ pub(super) struct Args {
     pub(super) command: Option<Command>,
     /// Path to a .scn scenario file (legacy single-scenario mode).
     pub(super) script: Option<PathBuf>,
-    /// Base URL of the running SotF dev API.
+    /// Base URL of the running `SotF` dev API.
     #[arg(long)]
     pub(super) url: Option<String>,
     /// Print every verb + result.
@@ -19,7 +19,7 @@ pub(super) struct Args {
 
 #[derive(Subcommand, Debug)]
 pub(super) enum Command {
-    /// Start SotF with --qa and run every scenario in a suite TOML file.
+    /// Start `SotF` with --qa and run every scenario in a suite TOML file.
     RunSuite {
         /// Path to a suite TOML file.
         suite: PathBuf,

@@ -5,7 +5,7 @@ use crate::app::types::PreferencesSetting;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{FontWeight, KeyDownEvent, div};
 use gpui_ui_kit::{
     AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState, Button, ButtonSize,
     ButtonVariant, Spinner,
@@ -47,7 +47,9 @@ impl PlayerView {
                         .map_err(|error| error.to_string())?;
                     if let Some(enabled) = enabled {
                         if config.providers.is_empty() {
-                            config.providers.push(Default::default());
+                            config.providers.push(
+                                sotf_audio_player::metadata::MetadataProviderConfig::default(),
+                            );
                         }
                         config.providers[0].enabled = enabled;
                         sotf_audio_player::config::save_metadata_services_config(&config)
@@ -81,6 +83,10 @@ impl PlayerView {
         .detach();
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_metadata_settings_content(
         &self,
         cx: &mut Context<Self>,

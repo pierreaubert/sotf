@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use super::model::{Action, FUZZ_SCHEMA_VERSION, TraceEvent};
 
+#[derive(Debug)]
 pub struct TraceWriter {
     path: PathBuf,
     writer: BufWriter<File>,
@@ -13,6 +14,10 @@ pub struct TraceWriter {
 }
 
 impl TraceWriter {
+    /// Creates a new trace file.
+    ///
+    /// # Errors
+    /// Returns an error if directory creation or file opening fails.
     pub fn create(path: impl Into<PathBuf>, sync_data: bool) -> Result<Self, TraceError> {
         let path = path.into();
         if let Some(parent) = path.parent() {
@@ -30,6 +35,10 @@ impl TraceWriter {
         })
     }
 
+    /// Writes and flushes a trace event.
+    ///
+    /// # Errors
+    /// Returns an error if serialization, writing, flushing, or synchronization fails.
     pub fn append(&mut self, event: &TraceEvent) -> Result<(), TraceError> {
         serde_json::to_writer(&mut self.writer, event)?;
         self.writer.write_all(b"\n")?;
@@ -40,11 +49,16 @@ impl TraceWriter {
         Ok(())
     }
 
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
 }
 
+/// Reads complete events from a trace file.
+///
+/// # Errors
+/// Returns an error for I/O failures, malformed complete events, or unsupported schemas.
 pub fn read_trace(path: &Path) -> Result<Vec<TraceEvent>, TraceError> {
     let file = File::open(path)?;
     let mut events = Vec::new();
@@ -73,6 +87,7 @@ pub fn read_trace(path: &Path) -> Result<Vec<TraceEvent>, TraceError> {
     Ok(events)
 }
 
+#[must_use]
 pub fn resolved_actions(events: &[TraceEvent]) -> Vec<Action> {
     events
         .iter()

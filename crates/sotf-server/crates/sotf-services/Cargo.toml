@@ -11,3 +11,4 @@ categories.workspace = true
 [dependencies]
 
 [lints]
+workspace = true

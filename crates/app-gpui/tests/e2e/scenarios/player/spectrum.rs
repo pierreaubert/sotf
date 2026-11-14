@@ -6,6 +6,7 @@ use sotf_audio_player_gpui::ui::PlayerView;
 use std::error::Error;
 
 /// Test Spectrum analyzer screen navigation and display
+#[derive(Debug)]
 pub struct SpectrumScreenScenario;
 
 impl TestScenario for SpectrumScreenScenario {

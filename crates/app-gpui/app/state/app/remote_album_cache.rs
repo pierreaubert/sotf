@@ -21,6 +21,7 @@ impl Default for RemoteAlbumCache {
 }
 
 impl RemoteAlbumCache {
+    #[must_use]
     pub fn with_limit(max_albums: usize) -> Self {
         Self {
             max_albums: max_albums.max(1),
@@ -31,14 +32,17 @@ impl RemoteAlbumCache {
         }
     }
 
+    #[must_use]
     pub fn max_albums(&self) -> usize {
         self.max_albums
     }
 
+    #[must_use]
     pub fn metadata_len(&self) -> usize {
         self.metadata.len()
     }
 
+    #[must_use]
     pub fn artwork_len(&self) -> usize {
         self.artwork.len()
     }
@@ -61,6 +65,7 @@ impl RemoteAlbumCache {
         evict_lru(&mut self.metadata, &mut self.metadata_lru, self.max_albums);
     }
 
+    #[must_use]
     pub fn metadata(
         &self,
         server_id: &str,

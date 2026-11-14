@@ -100,3 +100,9 @@ impl<'a> AppDriver<'a> {
         self.cx.run_until_parked();
     }
 }
+
+impl std::fmt::Debug for AppDriver<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AppDriver").finish_non_exhaustive()
+    }
+}

@@ -1,12 +1,12 @@
-//! AutoEQ form theme definition.
+//! `AutoEQ` form theme definition.
 
-use gpui::*;
+use gpui::Rgba;
 use gpui_ui_kit::number_input::NumberInputTheme;
 use gpui_ui_kit::select::SelectTheme;
 use gpui_ui_kit::theme::Theme;
 use gpui_ui_kit::toggle::ToggleTheme;
 
-/// Theme for the AutoEQ form
+/// Theme for the `AutoEQ` form
 #[derive(Debug, Clone)]
 pub struct AutoEqFormTheme {
     /// Card background
@@ -27,7 +27,7 @@ pub struct AutoEqFormTheme {
     pub border: Rgba,
     /// Text muted color
     pub text_muted: Rgba,
-    /// NumberInput theme
+    /// `NumberInput` theme
     pub number_input_theme: NumberInputTheme,
     /// Select theme
     pub select_theme: SelectTheme,
@@ -41,6 +41,7 @@ impl Default for AutoEqFormTheme {
 
 impl AutoEqFormTheme {
     /// Build a `ToggleTheme` from this form theme.
+    #[must_use]
     pub fn toggle_theme(&self) -> ToggleTheme {
         ToggleTheme {
             checked_bg: self.toggle_checked_bg,

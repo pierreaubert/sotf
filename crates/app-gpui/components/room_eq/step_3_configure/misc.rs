@@ -8,7 +8,7 @@ use crate::components::autoeq::{
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackSpacing, Text, TextSize, TextWeight,
     VStack,
@@ -32,6 +32,18 @@ impl PlayerView {
     /// Full wizard — all parameters in Acoustic + Optimizer blocks.
     /// This is the pre-existing Configure layout, now gated behind
     /// `wizard_mode == Full`.
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_full_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();
@@ -222,7 +234,6 @@ impl PlayerView {
             .on_opt_mode_change({
                 let state = self.state.clone();
                 move |mode, _window, cx| {
-                    use crate::app::types::room_eq::RoomEqOptimizationMode;
                     state.update(cx, |state, cx| {
                         state
                             .app
@@ -397,12 +408,10 @@ impl PlayerView {
                             .room_eq_state
                             .optimizer_config
                             .sample_rate;
-                        let snapped = if raw > current {
-                            next_sample_rate(current)
-                        } else if raw < current {
-                            prev_sample_rate(current)
-                        } else {
-                            current
+                        let snapped = match raw.partial_cmp(&current) {
+                            Some(std::cmp::Ordering::Greater) => next_sample_rate(current),
+                            Some(std::cmp::Ordering::Less) => prev_sample_rate(current),
+                            _ => current,
                         };
                         state
                             .app
@@ -1753,7 +1762,6 @@ impl PlayerView {
                     use sotf_audio_player::autoeq::DetailLevel;
                     state.update(cx, |state, cx| {
                         state.app.measurement_state.room_eq_state.detail_level = match level {
-                            "simple" => DetailLevel::Simple,
                             "intermediate" => DetailLevel::Intermediate,
                             "expert" => DetailLevel::Expert,
                             _ => DetailLevel::Simple,
@@ -1787,7 +1795,7 @@ impl PlayerView {
                                 c.bo_initial_samples = params.bo_initial_samples;
                                 c.bo_batch_size = params.bo_batch_size;
                                 c.bo_posterior_std_threshold = params.bo_posterior_std_threshold;
-                                c.bo_acquisition = params.bo_acquisition.clone();
+                                c.bo_acquisition.clone_from(&params.bo_acquisition);
                                 c.bo_ehvi = params.bo_ehvi;
                                 c.refine = params.refine;
                             }
@@ -1828,7 +1836,7 @@ impl PlayerView {
                     };
 
                     Button::new(
-                        SharedString::from(format!("cfg-select-mode-{:?}", mode)),
+                        SharedString::from(format!("cfg-select-mode-{mode:?}")),
                         short_name,
                     )
                     .variant(if is_selected {
@@ -1906,11 +1914,23 @@ impl PlayerView {
     /// autoeq defaults (3 ms / 120 ms) unless a future iteration wires
     /// dedicated numeric editors. The full-detail Step-3 form is already
     /// dense, so the card keeps its inputs as cycling buttons.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_possible_wrap,
+        clippy::cast_sign_loss,
+        reason = "Display values deliberately quantize bounded coordinates, choices, and progress ratios"
+    )]
     pub(super) fn render_epa_temporal_masking_card(
         &self,
         read_only: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        const WEIGHT_CHOICES: &[f64] = &[0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5];
+
         use sotf_audio_player::room_eq_types::{EpaTemporalMaskingConfig, EpaTemporalProfile};
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
@@ -1926,8 +1946,6 @@ impl PlayerView {
             .epa_temporal_masking
             .clone();
         let _ = state;
-
-        const WEIGHT_CHOICES: &[f64] = &[0.0, 0.05, 0.1, 0.15, 0.2, 0.3, 0.5];
 
         // Snap then step on the WEIGHT_CHOICES table, clamping at both ends
         // so dialing down from the default doesn't wrap to the maximum.
@@ -2170,22 +2188,21 @@ impl PlayerView {
 
     /// Render slope recommendation based on L and R channel measurements.
     /// Shows computed slope and recommended range.
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "UI hooks and feature-gated state are retained across application configurations"
+    )]
     pub(super) fn render_slope_recommendation(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let theme = state.app.ui_state.theme.clone();
         let room_eq = &state.app.measurement_state.room_eq_state;
 
-        let (slope, rec_min, rec_max) = match room_eq.compute_lr_slope() {
-            Some((s, rmin, rmax)) => (s, rmin, rmax),
-            None => return div().into_any_element(),
+        let Some((slope, rec_min, rec_max)) = room_eq.compute_lr_slope() else {
+            return div().into_any_element();
         };
 
-        let slope_text = format!("Current slope: {:.2} dB/oct", slope);
-        let rec_text = format!(
-            "Slope recommendation: [{:.2}, {:.2}] dB/oct",
-            rec_min, rec_max
-        );
+        let slope_text = format!("Current slope: {slope:.2} dB/oct");
+        let rec_text = format!("Slope recommendation: [{rec_min:.2}, {rec_max:.2}] dB/oct");
 
         VStack::new()
             .spacing(StackSpacing::Xs)
@@ -2255,10 +2272,10 @@ impl PlayerView {
         Card::new()
             .background(theme.surface)
             .header_background(theme.background_secondary)
-            .border(if !validation.is_valid {
-                theme.error
-            } else {
+            .border(if validation.is_valid {
                 theme.warning
+            } else {
+                theme.error
             })
             .header(
                 Text::new(translations.roomeq_configuration_check)
@@ -2270,6 +2287,10 @@ impl PlayerView {
     }
 
     /// Render the list of channel configurations
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(super) fn render_channel_config_list(
         &self,
         read_only: bool,
@@ -2328,7 +2349,7 @@ impl PlayerView {
                                             config
                                                 .crossover_freq_hints
                                                 .iter()
-                                                .map(|value| value.to_string())
+                                                .map(std::string::ToString::to_string)
                                                 .collect::<Vec<_>>()
                                                 .join(", ")
                                         )))
@@ -2393,6 +2414,10 @@ impl PlayerView {
     /// fields via `apply_simple_preset` at optimization time.
     /// Simple wizard — all options inside a single Card with descriptions
     /// below each dropdown, matching the agreed ASCII diagram layout.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_simple_configure(&self, cx: &mut Context<Self>) -> impl IntoElement {
         use sotf_audio_player::room_eq_types::{
             RoomEqEasyLayout, SimpleCrossoverChoice, SimpleLossChoice, SimpleProcessingChoice,
@@ -2748,7 +2773,7 @@ fn simple_dropdown_row(
         )
         .child(
             gpui::div()
-                .id(SharedString::from(format!("simple-cfg-{}", current_value)))
+                .id(SharedString::from(format!("simple-cfg-{current_value}")))
                 .px(d.pad_x)
                 .py(px(6.0)) // intentional: between pad_y_half (4) and pad_y (8), matches selector pill
                 .rounded(d.r_md)
@@ -2769,6 +2794,10 @@ fn simple_dropdown_row(
 /// (used to snap+step), `write` stores the new value back, and `step` is the
 /// shared snap-and-clamp helper. The +/- buttons clamp at the ends of the
 /// preset table so users don't wrap around.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_weight_stepper(
     id_prefix: &'static str,
     current: f64,

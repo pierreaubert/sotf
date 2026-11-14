@@ -48,8 +48,8 @@ where
         }
         Err(err) => {
             log::warn!(
-                "[server] API media metadata error for {:?}: {}",
-                source.path,
+                "[server] API media metadata error for {}: {}",
+                source.path.display(),
                 err
             );
             let response = api_error_response(404, "media track not found");
@@ -61,24 +61,20 @@ where
     };
 
     let file_len = metadata.len();
-    let range = match api_parse_range_header(range_header, file_len) {
-        Ok(range) => range,
-        Err(()) => {
-            let header = format!(
-                "HTTP/1.1 416 Range Not Satisfiable\r\n\
-                 Content-Range: bytes */{}\r\n\
-                 Content-Length: 0\r\n\
-                 Accept-Ranges: bytes\r\n\
-                 Cache-Control: no-store\r\n\
-                 Connection: close\r\n\
-                 \r\n",
-                file_len
-            );
-            return stream
-                .write_all(header.as_bytes())
-                .await
-                .map_err(|err| err.to_string());
-        }
+    let Ok(range) = api_parse_range_header(range_header, file_len) else {
+        let header = format!(
+            "HTTP/1.1 416 Range Not Satisfiable\r\n\
+             Content-Range: bytes */{file_len}\r\n\
+             Content-Length: 0\r\n\
+             Accept-Ranges: bytes\r\n\
+             Cache-Control: no-store\r\n\
+             Connection: close\r\n\
+             \r\n"
+        );
+        return stream
+            .write_all(header.as_bytes())
+            .await
+            .map_err(|err| err.to_string());
     };
 
     let (status, status_text, start, end) = match range {
@@ -88,7 +84,7 @@ where
     };
     let body_len = if file_len == 0 { 0 } else { end - start + 1 };
     let content_range = if status == 206 {
-        format!("Content-Range: bytes {}-{}/{}\r\n", start, end, file_len)
+        format!("Content-Range: bytes {start}-{end}/{file_len}\r\n")
     } else {
         String::new()
     };
@@ -133,7 +129,9 @@ where
     let mut remaining = len;
     let mut buf = vec![0u8; 64 * 1024];
     while remaining > 0 {
-        let to_read = remaining.min(buf.len() as u64) as usize;
+        let to_read = usize::try_from(remaining)
+            .unwrap_or(usize::MAX)
+            .min(buf.len());
         let n = file
             .read(&mut buf[..to_read])
             .await
@@ -170,14 +168,13 @@ where
     let mut rx = state.events.subscribe();
 
     let snapshot = api_state_json(state, &adapter);
-    let snapshot_body = format!("event: state\ndata: {}\n\n", snapshot);
+    let snapshot_body = format!("event: state\ndata: {snapshot}\n\n");
     let headers = format!(
         "HTTP/1.1 200 OK\r\n\
          Content-Type: text/event-stream\r\n\
          Cache-Control: no-cache\r\n\
          Connection: keep-alive\r\n\
-         \r\n{}",
-        snapshot_body
+         \r\n{snapshot_body}"
     );
     stream
         .write_all(headers.as_bytes())
@@ -208,7 +205,7 @@ where
                         // Client fell behind; send a full state refresh so they
                         // can catch up without missing critical mutations.
                         let refresh = api_state_json(state, &adapter);
-                        let frame = format!("event: state\ndata: {}\n\n", refresh);
+                        let frame = format!("event: state\ndata: {refresh}\n\n");
                         if stream.write_all(frame.as_bytes()).await.is_err() {
                             break;
                         }

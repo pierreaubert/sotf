@@ -1,3 +1,4 @@
+const LATEST_VERSION: i64 = 22;
 use super::misc::current_timestamp;
 use crate::config;
 use rusqlite::{Connection, Result as SqlResult, params};
@@ -21,6 +22,7 @@ impl MusicDatabase {
     /// Linux: ~/.config/sotf/music.db
     /// macOS: ~/Library/Application Support/org.spinorama.sotf/music.db
     /// Windows: ~/.config/sotf/music.db
+    #[must_use]
     pub fn default_path() -> Option<PathBuf> {
         config::get_music_db_path()
     }
@@ -29,13 +31,15 @@ impl MusicDatabase {
     ///
     /// # Security
     /// The database path must be within the application's config directory.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn open<P: AsRef<Path>>(path: P) -> SqlResult<Self> {
         let path = path.as_ref();
 
         // Security validation: ensure we're opening the database within config directory
-        crate::security::validate_write_path(path).map_err(|e| {
-            rusqlite::Error::InvalidPath(std::path::PathBuf::from(format!("{}", e)))
-        })?;
+        crate::security::validate_write_path(path)
+            .map_err(|e| rusqlite::Error::InvalidPath(std::path::PathBuf::from(format!("{e}"))))?;
 
         Self::open_internal(path)
     }
@@ -48,9 +52,12 @@ impl MusicDatabase {
     }
 
     /// Open an existing database for a secondary (read-only-intent) instance.
-    /// Uses normal open (not SQLITE_OPEN_READ_ONLY) because read-only connections
+    /// Uses normal open (not `SQLITE_OPEN_READ_ONLY`) because read-only connections
     /// can't access uncommitted WAL data from the writer's shared memory map.
     /// Skips WAL pragma (already set by the primary writer) and schema migration.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn open_secondary<P: AsRef<Path>>(path: P) -> SqlResult<Self> {
         let path = path.as_ref();
         let conn = Connection::open(path)?;
@@ -69,7 +76,7 @@ impl MusicDatabase {
         conn.pragma_update(None, "journal_mode", "WAL")?;
 
         let mode: String = conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
-        log::debug!("SQLite journal mode: {}", mode);
+        log::debug!("SQLite journal mode: {mode}");
 
         // Set a busy timeout to avoid "database is locked" errors during concurrent access
         // 5 seconds is a reasonable default for desktop applications
@@ -99,29 +106,26 @@ impl MusicDatabase {
 
         // Get current schema version
         let current_version = self.get_schema_version()?;
-        log::info!("Current database schema version: {}", current_version);
+        log::info!("Current database schema version: {current_version}");
 
         // Define all migrations
-        const LATEST_VERSION: i64 = 22;
         let migrations = super::schema::get_migrations(self);
 
         // Apply migrations sequentially from current version to latest
         for version in (current_version + 1)..=LATEST_VERSION {
-            log::info!("Applying migration to version {}...", version);
+            log::info!("Applying migration to version {version}...");
             if let Some(migration) = migrations.get(&version) {
                 (migration.apply)(self)?;
                 self.update_schema_version(version, migration.description)?;
-                log::info!("Successfully applied migration to version {}", version);
+                log::info!("Successfully applied migration to version {version}");
             } else {
-                log::error!("Migration for version {} not found", version);
+                log::error!("Migration for version {version} not found");
             }
         }
 
         if current_version < LATEST_VERSION {
             log::info!(
-                "Database schema updated from version {} to {}",
-                current_version,
-                LATEST_VERSION
+                "Database schema updated from version {current_version} to {LATEST_VERSION}"
             );
         }
 
@@ -138,8 +142,8 @@ impl MusicDatabase {
 
         match result {
             Ok(Some(version)) => Ok(version),
-            Ok(None) => Ok(0), // Fresh database, no version yet
-            Err(rusqlite::Error::SqliteFailure(_, _)) => Ok(0), // Table doesn't exist yet
+            Ok(None) | Err(rusqlite::Error::SqliteFailure(_, _)) => Ok(0), // Fresh database, no version yet
+            // Table doesn't exist yet
             Err(e) => Err(e),
         }
     }
@@ -155,7 +159,13 @@ impl MusicDatabase {
     }
 
     /// Get migration history for debugging/inspection
-    #[allow(dead_code)]
+    #[allow(
+        dead_code,
+        reason = "Diagnostic and compatibility helpers are retained across platform and feature configurations"
+    )]
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_migration_history(&self) -> SqlResult<Vec<(i64, u64, String)>> {
         let mut stmt = self.conn.prepare(
             "SELECT version, applied_at, description FROM schema_version ORDER BY version",
@@ -165,7 +175,7 @@ impl MusicDatabase {
             .query_map([], |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
-                    row.get::<_, i64>(1)? as u64,
+                    crate::database::misc::row_unsigned::<u64>(row, 1)?,
                     row.get::<_, String>(2)?,
                 ))
             })?

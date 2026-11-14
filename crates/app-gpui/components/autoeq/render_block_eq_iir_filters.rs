@@ -15,15 +15,17 @@
         .theme(theme.number_input_theme.clone());
 
     if let Some(ref handler) = on_num_filters_change_rc {
-        let h = handler.clone();
+        let h = std::rc::Rc::clone(handler);
         num_filters_input =
             num_filters_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
     }
 
-    if !hide_sample_rate {
+    if hide_sample_rate {
+        block_out = block_out.child(num_filters_input);
+    } else {
         let mut sample_rate_input = NumberInput::new((base_id.clone(), "sample-rate"))
             .scroll_requires_alt(true)
-            .value(config.eq_design.sample_rate as f64)
+            .value(f64::from(config.eq_design.sample_rate))
             .min(ParamLimits::SAMPLE_RATE.min)
             .max(ParamLimits::SAMPLE_RATE.max)
             .step(ParamLimits::SAMPLE_RATE.step)
@@ -35,7 +37,7 @@
             .theme(theme.number_input_theme.clone());
 
         if let Some(ref handler) = on_sample_rate_change_rc {
-            let h = handler.clone();
+            let h = std::rc::Rc::clone(handler);
             sample_rate_input =
                 sample_rate_input.on_change(move |v, w, cx| h(v.round() as usize, w, cx));
         }
@@ -50,7 +52,5 @@
                     .child(sample_rate_input),
             )
         };
-    } else {
-        block_out = block_out.child(num_filters_input);
     }
 }

@@ -6,7 +6,10 @@
 //!
 //! All imports point to the production crate — no mirror types.
 
-#[allow(dead_code)]
+#[allow(
+    dead_code,
+    reason = "UI hooks and feature-gated state are retained across application configurations"
+)]
 mod common;
 
 #[path = "component_tests/misc.rs"]

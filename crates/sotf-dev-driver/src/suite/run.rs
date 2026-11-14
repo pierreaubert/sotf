@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) fn run_suite(path: &Path, verbose: bool) -> Result<()> {
     let suite_started = Instant::now();
-    let source = fs::read_to_string(path).with_context(|| format!("reading {path:?}"))?;
+    let source = fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
     let suite: SuiteFile = toml::from_str(&source).context("parsing suite TOML")?;
     if suite.scenarios.is_empty() {
         bail!("suite has no [[scenario]] entries");
@@ -34,7 +34,7 @@ pub(crate) fn run_suite(path: &Path, verbose: bool) -> Result<()> {
         .runner
         .artifacts_dir
         .join(format!("run-{}", unix_timestamp()));
-    fs::create_dir_all(&run_dir).with_context(|| format!("creating {run_dir:?}"))?;
+    fs::create_dir_all(&run_dir).with_context(|| format!("creating {}", run_dir.display()))?;
 
     let mut passed = 0usize;
     let mut skipped = 0usize;
@@ -92,7 +92,7 @@ pub(crate) fn run_suite(path: &Path, verbose: bool) -> Result<()> {
         &summary_path,
         serde_json::to_vec_pretty(&summary).expect("JSON suite summary is serializable"),
     )
-    .with_context(|| format!("writing {summary_path:?}"))?;
+    .with_context(|| format!("writing {}", summary_path.display()))?;
     write_junit_report(
         &run_dir,
         &outcomes,
@@ -129,7 +129,7 @@ fn write_junit_report(
 ) -> Result<()> {
     let report = junit_report(outcomes, passed, skipped, failed, suite_duration_ms);
     let path = run_dir.join("junit.xml");
-    fs::write(&path, report).with_context(|| format!("writing {path:?}"))
+    fs::write(&path, report).with_context(|| format!("writing {}", path.display()))
 }
 
 fn junit_report(
@@ -157,7 +157,7 @@ fn junit_report(
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let suite_time = suite_duration_ms as f64 / 1_000.0;
+    let suite_time = std::time::Duration::from_millis(suite_duration_ms).as_secs_f64();
     format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<testsuite name=\"sotf-gpui\" tests=\"{}\" failures=\"{failed}\" skipped=\"{skipped}\" time=\"{suite_time:.3}\">\n{cases}\n</testsuite>\n",
         passed + skipped + failed
@@ -167,7 +167,7 @@ fn junit_report(
 fn write_html_report(run_dir: &Path, outcomes: &[serde_json::Value]) -> Result<()> {
     let report = html_report(outcomes);
     let path = run_dir.join("summary.html");
-    fs::write(&path, report).with_context(|| format!("writing {path:?}"))
+    fs::write(&path, report).with_context(|| format!("writing {}", path.display()))
 }
 
 fn html_report(outcomes: &[serde_json::Value]) -> String {
@@ -196,7 +196,8 @@ fn html_report(outcomes: &[serde_json::Value]) -> String {
 }
 
 fn duration_seconds(outcome: &serde_json::Value) -> f64 {
-    outcome["timings"]["total_ms"].as_u64().unwrap_or(0) as f64 / 1_000.0
+    std::time::Duration::from_millis(outcome["timings"]["total_ms"].as_u64().unwrap_or(0))
+        .as_secs_f64()
 }
 
 fn timing_summary(outcome: &serde_json::Value) -> String {
@@ -254,6 +255,10 @@ fn html_escape(value: &str) -> String {
         .replace('\'', "&#39;")
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Scenario setup and cleanup share ownership of the isolated target process"
+)]
 fn run_one(
     runner: &RunnerConfig,
     scenario: &ScenarioConfig,
@@ -275,8 +280,9 @@ fn run_one(
     let scenario_dir = run_dir.join(safe_name(&scenario.name));
     let qa_dir = scenario_dir.join("qa");
     let seeded_library = scenario_dir.join("library");
-    fs::create_dir_all(&qa_dir).with_context(|| format!("creating {qa_dir:?}"))?;
-    fs::create_dir_all(&scenario_dir).with_context(|| format!("creating {scenario_dir:?}"))?;
+    fs::create_dir_all(&qa_dir).with_context(|| format!("creating {}", qa_dir.display()))?;
+    fs::create_dir_all(&scenario_dir)
+        .with_context(|| format!("creating {}", scenario_dir.display()))?;
 
     if scenario.seed_demo_audio {
         copy_audio_fixtures(&runner.demo_audio_dir, &seeded_library)?;
@@ -349,7 +355,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/ui-environment",
-                json!({
+                &json!({
                     "theme": scenario.theme,
                     "language": scenario.language,
                     "font_scale": scenario.font_scale,
@@ -365,7 +371,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/playback/output",
-                json!({ "enabled": true }),
+                &json!({ "enabled": true }),
             )
             .context("enabling isolated playback output")?;
         }
@@ -375,7 +381,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/seed",
-                json!({ "library_dirs": [seeded_library] }),
+                &json!({ "library_dirs": [seeded_library] }),
             )
             .context("seeding QA library directories")?;
         }
@@ -385,7 +391,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/remote-server",
-                server.registration_json(),
+                &server.registration_json(),
             )
             .context("registering fixture remote server")?;
         }
@@ -399,7 +405,7 @@ fn run_one(
                     &client,
                     &base_url,
                     "/qa/capture/virtual",
-                    json!({
+                    &json!({
                         "profile": fake.profile.as_deref().unwrap_or("clean"),
                         "output_directory": qa_dir
                             .join("recordings")
@@ -413,7 +419,7 @@ fn run_one(
                     &client,
                     &base_url,
                     "/qa/recording/fake-capture",
-                    json!({
+                    &json!({
                         "channels": fake.channels,
                         "points": fake.points,
                         "profile": fake.profile,
@@ -446,7 +452,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/headphone/discovery-fixture",
-                json!({ "catalog": &config.catalog, "downloads": downloads }),
+                &json!({ "catalog": &config.catalog, "downloads": downloads }),
             )
             .context("installing Headphone EQ discovery fixture")?;
         }
@@ -482,7 +488,7 @@ fn run_one(
                 &client,
                 &base_url,
                 "/qa/spinorama/discovery-fixture",
-                json!({
+                &json!({
                     "catalog": &config.catalog,
                     "catalog_delay_ms": config.catalog_delay_ms,
                 "catalog_failures": config.catalog_failures,
@@ -519,7 +525,7 @@ fn run_one(
                     "start": config.start,
                 })
             };
-            post_json(&client, &base_url, endpoint, payload).context("loading RoomEQ fixture")?;
+            post_json(&client, &base_url, endpoint, &payload).context("loading RoomEQ fixture")?;
         }
         timings.fixtures_ms = Some(elapsed_ms(fixtures_started));
 
@@ -533,7 +539,7 @@ fn run_one(
             Some(&run_id),
             Some(qa_dir.to_str().context("QA directory is not valid UTF-8")?),
         )
-        .with_context(|| format!("running {:?}", scenario.path))?;
+        .with_context(|| format!("running {}", scenario.path.display()))?;
         let budget_result = script_report.ensure_budgets();
         timings.operations = script_report.named;
         timings.script_ms = Some(elapsed_ms(script_started));
@@ -567,7 +573,7 @@ fn run_one(
     }
 
     let shutdown_started = Instant::now();
-    let _ = post_json(&client, &base_url, "/quit", json!({}));
+    let _ = post_json(&client, &base_url, "/quit", &json!({}));
     wait_or_kill(&mut child, Duration::from_secs(5))?;
     timings.shutdown_ms = Some(elapsed_ms(shutdown_started));
 

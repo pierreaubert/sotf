@@ -1,5 +1,8 @@
 use crate::driver::AppDriver;
-#[allow(unused_imports)]
+#[allow(
+    unused_imports,
+    reason = "Feature-specific modules share their imports across build configurations"
+)]
 use gpui::*;
 use sotf_audio::plugins::{PluginSettings, PluginType};
 use sotf_audio_player_gpui::components::plugins::editing::PluginEditingManager;
@@ -27,6 +30,7 @@ fn controller_param_value(settings: &PluginSettings, param_idx: usize) -> Option
     settings.param_value(param_idx)
 }
 
+#[derive(Debug)]
 pub struct PluginRackPage<'a, 'b> {
     driver: &'a mut AppDriver<'b>,
 }

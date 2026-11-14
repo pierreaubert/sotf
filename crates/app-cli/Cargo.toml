@@ -86,3 +86,4 @@ sotf-testkit = { workspace = true }
 sotf-player = { workspace = true, features = ["testing"] }
 
 [lints]
+workspace = true

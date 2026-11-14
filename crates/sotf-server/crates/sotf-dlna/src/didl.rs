@@ -5,6 +5,7 @@
 // DIDL-Lite is the XML format used by UPnP ContentDirectory to describe
 // media items (tracks, albums, containers/folders).
 
+use std::fmt::Write as _;
 /// A media item for DIDL-Lite serialization.
 #[derive(Debug, Clone)]
 pub struct DidlItem {
@@ -40,13 +41,14 @@ pub fn didl_lite(containers: &[DidlContainer], items: &[DidlItem]) -> String {
     );
 
     for c in containers {
-        xml.push_str(&format!(
+        let _ = write!(
+            xml,
             r#"<container id="{id}" parentID="{parent}" restricted="1" childCount="{count}"><dc:title>{title}</dc:title><upnp:class>object.container.album.musicAlbum</upnp:class></container>"#,
             id = xml_escape(&c.id),
             parent = xml_escape(&c.parent_id),
             count = c.child_count,
-            title = xml_escape(&c.title),
-        ));
+            title = xml_escape(&c.title)
+        );
     }
 
     for item in items {
@@ -55,55 +57,60 @@ pub fn didl_lite(containers: &[DidlContainer], items: &[DidlItem]) -> String {
             xml_escape(&item.mime_type)
         );
         if let Some(dur) = item.duration {
-            let h = (dur as u64) / 3600;
-            let m = ((dur as u64) % 3600) / 60;
+            #[expect(
+                clippy::cast_possible_truncation,
+                clippy::cast_sign_loss,
+                reason = "Protocol durations use saturated nonnegative whole seconds"
+            )]
+            let whole_seconds = dur as u64;
+            let h = whole_seconds / 3600;
+            let m = (whole_seconds % 3600) / 60;
             let s = dur % 60.0;
-            res_attrs.push_str(&format!(r#" duration="{:02}:{:02}:{:06.3}""#, h, m, s));
+            let _ = write!(res_attrs, r#" duration="{h:02}:{m:02}:{s:06.3}""#);
         }
         if let Some(sr) = item.sample_rate {
-            res_attrs.push_str(&format!(r#" sampleFrequency="{}""#, sr));
+            let _ = write!(res_attrs, r#" sampleFrequency="{sr}""#);
         }
         if let Some(ch) = item.channels {
-            res_attrs.push_str(&format!(r#" nrAudioChannels="{}""#, ch));
+            let _ = write!(res_attrs, r#" nrAudioChannels="{ch}""#);
         }
         if let Some(bd) = item.bit_depth {
-            res_attrs.push_str(&format!(r#" bitsPerSample="{}""#, bd));
+            let _ = write!(res_attrs, r#" bitsPerSample="{bd}""#);
         }
         if let Some(fs) = item.file_size {
-            res_attrs.push_str(&format!(r#" size="{}""#, fs));
+            let _ = write!(res_attrs, r#" size="{fs}""#);
         }
 
-        xml.push_str(&format!(
+        let _ = write!(
+            xml,
             r#"<item id="{id}" parentID="{parent}" restricted="1"><dc:title>{title}</dc:title>"#,
             id = xml_escape(&item.id),
             parent = xml_escape(&item.parent_id),
-            title = xml_escape(&item.title),
-        ));
+            title = xml_escape(&item.title)
+        );
         if let Some(ref artist) = item.artist {
-            xml.push_str(&format!("<dc:creator>{}</dc:creator>", xml_escape(artist)));
-            xml.push_str(&format!(
-                "<upnp:artist>{}</upnp:artist>",
-                xml_escape(artist)
-            ));
+            let _ = write!(xml, "<dc:creator>{}</dc:creator>", xml_escape(artist));
+            let _ = write!(xml, "<upnp:artist>{}</upnp:artist>", xml_escape(artist));
         }
         if let Some(ref album) = item.album {
-            xml.push_str(&format!("<upnp:album>{}</upnp:album>", xml_escape(album)));
+            let _ = write!(xml, "<upnp:album>{}</upnp:album>", xml_escape(album));
         }
         if let Some(ref genre) = item.genre {
-            xml.push_str(&format!("<upnp:genre>{}</upnp:genre>", xml_escape(genre)));
+            let _ = write!(xml, "<upnp:genre>{}</upnp:genre>", xml_escape(genre));
         }
         if let Some(track) = item.track_number {
-            xml.push_str(&format!(
-                "<upnp:originalTrackNumber>{}</upnp:originalTrackNumber>",
-                track
-            ));
+            let _ = write!(
+                xml,
+                "<upnp:originalTrackNumber>{track}</upnp:originalTrackNumber>"
+            );
         }
         xml.push_str("<upnp:class>object.item.audioItem.musicTrack</upnp:class>");
-        xml.push_str(&format!(
+        let _ = write!(
+            xml,
             "<res {}>{}</res>",
             res_attrs,
             xml_escape(&item.resource_url)
-        ));
+        );
         xml.push_str("</item>");
     }
 

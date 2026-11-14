@@ -23,9 +23,10 @@ pub(super) fn room_callback_observer(
     })
 }
 
-/// Build a RoomConfig from speaker curves
+/// Build a `RoomConfig` from speaker curves
 ///
-/// Convenience function to create a RoomConfig from in-memory curves.
+/// Convenience function to create a `RoomConfig` from in-memory curves.
+#[must_use]
 pub fn build_room_config_from_curves(
     speakers: &[(String, autoeq_core::Curve)],
     optimizer: OptimizerConfig,
@@ -45,23 +46,24 @@ pub fn build_room_config_from_curves(
         crossovers: None,
         target_curve: None,
         optimizer,
-        provenance: Default::default(),
+        provenance: roomeq_model::ProvenanceConfig::default(),
         recording_config: None,
-        measured_impulse_responses: Default::default(),
+        measured_impulse_responses: std::collections::BTreeMap::default(),
         ctc: None,
         reporting: None,
         cea2034_cache: None,
     }
 }
 
-/// Create default optimizer config from autoeq_optim_types::OptimizationConfig
+/// Create default optimizer config from `autoeq_optim_types::OptimizationConfig`
+#[must_use]
 pub fn optimizer_config_from_args(
     args: &autoeq_optim_types::OptimizationConfig,
 ) -> OptimizerConfig {
     let is_bo_algorithm =
         args.algo.eq_ignore_ascii_case("autoeq:bo") || args.algo.eq_ignore_ascii_case("bo");
     OptimizerConfig {
-        upper_band_acoustic_bounds: Default::default(),
+        upper_band_acoustic_bounds: std::collections::HashMap::default(),
         loss_type: format!("{:?}", args.loss).to_lowercase(),
         algorithm: args.algo.clone(),
         strategy: args.strategy.clone(),

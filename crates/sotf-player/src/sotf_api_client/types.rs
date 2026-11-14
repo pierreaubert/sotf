@@ -32,6 +32,10 @@ pub struct SotfApiCapabilities {
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent persisted options and status flags retain their existing schema "
+)]
 pub struct SotfApiFeatureFlags {
     pub playback_control: bool,
     pub queue_editing: bool,
@@ -247,8 +251,12 @@ pub(super) struct CompletePairingRequest {
     pub(super) name: String,
 }
 
+/// Normalized api base url.
+///
+/// # Errors
+/// Returns an error if the address is not a valid HTTP or HTTPS API URL.
 pub fn normalized_api_base_url(base_url: impl Into<String>) -> SotfApiResult<String> {
-    normalize_base_url(base_url.into())
+    normalize_base_url(&base_url.into())
 }
 
 /// Parse a single SSE frame (lines separated by `\n`, not `\n\n`).

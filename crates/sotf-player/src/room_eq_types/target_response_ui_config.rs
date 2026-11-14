@@ -12,7 +12,7 @@ pub struct TargetResponseUiConfig {
     /// Whether any target shaping is applied. When `false` the optimiser
     /// sees a flat target regardless of the other fields.
     pub enabled: bool,
-    /// Target shape: "flat" | "harman" | "custom" | "file" | "from_measurement".
+    /// Target shape: "flat" | "harman" | "custom" | "file" | "`from_measurement`".
     pub shape: String,
     /// Slope in dB/octave (used when `shape == "custom"`).
     pub slope_db_per_octave: f64,

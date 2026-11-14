@@ -3,6 +3,11 @@ use super::misc::finite_positive_frequency_range;
 use super::room::room_eq_phase_points;
 use super::room_eq_report_curve::RoomEqReportCurve;
 
+#[must_use]
+#[expect(
+    clippy::similar_names,
+    reason = "Related UI values retain the domain names used by their paired controls"
+)]
 pub fn sum_room_eq_responses_db(
     main: &[(f64, f64)],
     sub: &[(f64, f64)],

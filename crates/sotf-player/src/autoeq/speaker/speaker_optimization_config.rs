@@ -16,7 +16,7 @@ pub struct SpeakerOptimizationConfig {
     pub crossover_type: Option<CrossoverType>,
     /// Initial crossover frequency hints (optional)
     pub crossover_freq_hints: Vec<f64>,
-    /// Optimization arguments (use Args::speaker_defaults() as base)
+    /// Optimization arguments (use `Args::speaker_defaults()` as base)
     pub args: autoeq_optim_types::OptimizationConfig,
     /// Callback configuration
     pub callback_config: Option<CallbackConfig>,

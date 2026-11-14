@@ -12,6 +12,10 @@ impl App {
         )
     }
 
+    /// Previews headphone eq.
+    ///
+    /// # Errors
+    /// Returns an error if the audition result is stale, playback settings changed, or the audition graph cannot be updated.
     pub fn preview_headphone_eq(&mut self, corrected: bool) -> Result<(), String> {
         if self.ui_state.current_screen != Screen::HeadphoneEq
             || self.measurement_state.headphone_eq_state.step != HeadphoneEqStep::Listen
@@ -59,6 +63,10 @@ impl App {
         Ok(())
     }
 
+    /// Sets headphone audition preamp.
+    ///
+    /// # Errors
+    /// Returns an error if the audition result is stale, playback settings changed, or the audition graph cannot be updated.
     pub fn set_headphone_audition_preamp(&mut self, preamp_db: f64) -> Result<(), String> {
         if self.ui_state.current_screen != Screen::HeadphoneEq
             || self.measurement_state.headphone_eq_state.step != HeadphoneEqStep::Listen
@@ -80,6 +88,10 @@ impl App {
         Ok(())
     }
 
+    /// Stops headphone audition.
+    ///
+    /// # Errors
+    /// Returns an error if the audition result is stale, playback settings changed, or the audition graph cannot be updated.
     pub fn stop_headphone_audition(&mut self) -> Result<(), String> {
         if let Some(audition) = &mut self.measurement_state.headphone_eq_state.audition {
             audition.stop(&mut self.plugin_state.graph)?;
@@ -90,10 +102,17 @@ impl App {
     }
 
     /// Also covers navigation paths that directly change the screen or step.
+    ///
+    /// # Errors
+    /// Returns an error if the audition result is stale, playback settings changed, or the audition graph cannot be updated.
     pub fn synchronize_headphone_audition(&mut self) -> Result<(), String> {
         self.synchronize_headphone_audition_with_input_check(true)
     }
 
+    #[expect(
+        clippy::float_cmp,
+        reason = "Sample rates are exact integer-valued configuration identities"
+    )]
     pub(crate) fn synchronize_headphone_audition_with_input_check(
         &mut self,
         check_inputs: bool,
@@ -116,7 +135,7 @@ impl App {
             .headphone_eq_state
             .audition
             .as_ref()
-            .is_some_and(|audition| audition.is_pending())
+            .is_some_and(sotf_audio_player::controllers::eq_audition::EqAudition::is_pending)
         {
             self.plugin_state.update_state.pending_plugin_update =
                 Some(PluginUpdateType::Structural);

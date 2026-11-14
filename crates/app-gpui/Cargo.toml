@@ -393,3 +393,4 @@ name = "room_eq_config_tests"
 path = "tests/room_eq_config_tests.rs"
 
 [lints]
+workspace = true

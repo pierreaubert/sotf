@@ -11,12 +11,16 @@
 use crate::app::types::room_eq::DelayDetectionStatus;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_ui_kit::{
     Card, HStack, Input, StackAlign, StackSpacing, Text, TextSize, TextWeight, VStack,
 };
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_room_eq_delay_detection(
         &self,
         cx: &mut Context<Self>,
@@ -117,50 +121,46 @@ impl PlayerView {
                 }
 
                 let view = cx.entity().clone();
-                let row =
-                    HStack::new()
-                        .spacing(StackSpacing::Md)
-                        .align(StackAlign::Center)
-                        .child(
-                            div().w(px(80.0)).child(
-                                Text::label(ch.channel_name.clone()).color(theme.text_primary),
-                            ),
-                        )
-                        .child(
-                            div().w(px(90.0)).child(
-                                Text::new(format!("{:.2}", arrival))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            ),
-                        )
-                        .child(
-                            div().w(px(80.0)).child(
-                                Text::new(format!("{:+.1}", ch.gain_db))
-                                    .size(TextSize::Xs)
-                                    .color(theme.text_secondary),
-                            ),
-                        )
-                        .child(
-                            div()
-                                .w(px(80.0))
-                                .child(Text::label(format!("{:+.1}", ch.snr_db)).color(snr_color)),
-                        )
-                        .child(
-                            HStack::new()
-                                .spacing(StackSpacing::Xs)
-                                .align(StackAlign::Center)
-                                .child(
-                                    div()
-                                        .w(px(80.0))
-                                        .on_mouse_down(MouseButton::Left, |_, _, cx| {
-                                            cx.stop_propagation();
-                                        })
-                                        .child(
-                                            Input::new(SharedString::from(format!(
-                                                "delay_input_{}",
-                                                i
-                                            )))
-                                            .value(format!("{:.2}", align))
+                let row = HStack::new()
+                    .spacing(StackSpacing::Md)
+                    .align(StackAlign::Center)
+                    .child(
+                        div()
+                            .w(px(80.0))
+                            .child(Text::label(ch.channel_name.clone()).color(theme.text_primary)),
+                    )
+                    .child(
+                        div().w(px(90.0)).child(
+                            Text::new(format!("{arrival:.2}"))
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        ),
+                    )
+                    .child(
+                        div().w(px(80.0)).child(
+                            Text::new(format!("{:+.1}", ch.gain_db))
+                                .size(TextSize::Xs)
+                                .color(theme.text_secondary),
+                        ),
+                    )
+                    .child(
+                        div()
+                            .w(px(80.0))
+                            .child(Text::label(format!("{:+.1}", ch.snr_db)).color(snr_color)),
+                    )
+                    .child(
+                        HStack::new()
+                            .spacing(StackSpacing::Xs)
+                            .align(StackAlign::Center)
+                            .child(
+                                div()
+                                    .w(px(80.0))
+                                    .on_mouse_down(MouseButton::Left, |_, _, cx| {
+                                        cx.stop_propagation();
+                                    })
+                                    .child(
+                                        Input::new(SharedString::from(format!("delay_input_{i}")))
+                                            .value(format!("{align:.2}"))
                                             .placeholder("0.00")
                                             .on_text_change({
                                                 let view = view.clone();
@@ -215,12 +215,12 @@ impl PlayerView {
                                                     });
                                                 }
                                             }),
-                                        ),
-                                )
-                                .when(low, |el| {
-                                    el.child(Text::new("⚠").size(TextSize::Xs).color(theme.warning))
-                                }),
-                        );
+                                    ),
+                            )
+                            .when(low, |el| {
+                                el.child(Text::new("⚠").size(TextSize::Xs).color(theme.warning))
+                            }),
+                    );
 
                 rows = rows.child(row);
             }

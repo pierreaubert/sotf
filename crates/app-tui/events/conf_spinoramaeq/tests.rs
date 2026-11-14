@@ -1,6 +1,5 @@
 #[cfg(test)]
 pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
-    use crate::app::SpinoramaStep;
     match s {
         SpinoramaStep::Select => SpinoramaStep::Select, // no wrap
         SpinoramaStep::Configure => SpinoramaStep::Select,
@@ -12,7 +11,6 @@ pub(crate) fn spinorama_step_prev(s: crate::app::SpinoramaStep) -> crate::app::S
 
 #[cfg(test)]
 pub(crate) fn spinorama_step_next(s: crate::app::SpinoramaStep) -> crate::app::SpinoramaStep {
-    use crate::app::SpinoramaStep;
     match s {
         SpinoramaStep::Select => SpinoramaStep::Configure,
         SpinoramaStep::Configure => SpinoramaStep::Optimize,

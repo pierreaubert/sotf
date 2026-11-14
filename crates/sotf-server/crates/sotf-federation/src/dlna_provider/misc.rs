@@ -1,10 +1,10 @@
-/// Maximum number of pagination iterations against a single ContentDirectory
+/// Maximum number of pagination iterations against a single `ContentDirectory`
 /// container before we bail out. Protects against misbehaving servers that
 /// ignore `StartingIndex` and serve the same page indefinitely.
 pub const MAX_BROWSE_ITERATIONS: u32 = 1000;
 
 /// Returns true for `urn:schemas-upnp-org:service:ContentDirectory:<digits>`
-/// (case-insensitive on the URN itself, since UPnP devices vary in casing).
+/// (case-insensitive on the URN itself, since `UPnP` devices vary in casing).
 pub(super) fn is_content_directory_service_type(s: &str) -> bool {
     let lower = s.trim().to_ascii_lowercase();
     let Some(rest) = lower.strip_prefix("urn:schemas-upnp-org:service:contentdirectory:") else {

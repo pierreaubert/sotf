@@ -26,6 +26,7 @@ impl Default for ServersTuiState {
 }
 
 impl ServersTuiState {
+    #[must_use]
     pub fn with_config(config: ServerConfig) -> Self {
         Self {
             config,

@@ -1,9 +1,9 @@
 use sotf_plugins::layout_solver::SolvedLayout;
-use sotf_plugins::plugin_layout::*;
+use sotf_plugins::plugin_layout::{ControlGroup, ControlSpec, PluginLayout};
 
 /// Information about a detected mode-selector group within `layout.main`.
 pub(super) struct ModeSelectorInfo {
-    /// Index into `layout.main` of the untitled ButtonSet group.
+    /// Index into `layout.main` of the untitled `ButtonSet` group.
     pub(super) main_idx: usize,
     /// PARAMS index of the Choice param driving the selector.
     pub(super) param_idx: usize,

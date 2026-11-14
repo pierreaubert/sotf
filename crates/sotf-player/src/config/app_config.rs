@@ -38,7 +38,7 @@ impl Default for AppConfig {
     }
 }
 
-/// Apply all necessary migrations to bring AppConfig to the latest version
+/// Apply all necessary migrations to bring `AppConfig` to the latest version
 pub(super) fn migrate_app_config(
     config: AppConfig,
 ) -> Result<AppConfig, Box<dyn std::error::Error>> {

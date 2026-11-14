@@ -1,6 +1,6 @@
 use super::misc::capitalize_first;
 use super::player_adapter::PlayerAdapter;
-use crate::protocol::*;
+use crate::protocol::{MpdCommand, MpdError, MpdErrorCode, MpdResponse, kv};
 
 /// Playback state as seen by MPD clients.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,12 +21,15 @@ impl std::fmt::Display for MpdPlayState {
 }
 
 /// Handle a single MPD command and produce a response.
+#[expect(
+    clippy::too_many_lines,
+    reason = "This function is the MPD command dispatch table"
+)]
 pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdResponse {
     match cmd {
         // Connection
-        MpdCommand::Ping => MpdResponse::ok(),
-        MpdCommand::Close => MpdResponse::ok(), // handled at session level
-        MpdCommand::Password(_) => MpdResponse::ok(), // no auth for now
+        // handled at session level
+        // no auth for now
 
         // Playback control
         MpdCommand::Play(pos) => match adapter.play(*pos) {
@@ -84,20 +87,15 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
         },
 
         // Playback options (accept but ignore for now)
-        MpdCommand::Random(_)
-        | MpdCommand::Repeat(_)
-        | MpdCommand::Single(_)
-        | MpdCommand::Consume(_) => MpdResponse::ok(),
-
         // Status
         MpdCommand::Status => {
             let s = adapter.status();
             let mut kvs = vec![
                 kv("volume", s.volume),
-                kv("repeat", if s.repeat { 1 } else { 0 }),
-                kv("random", if s.random { 1 } else { 0 }),
-                kv("single", if s.single { 1 } else { 0 }),
-                kv("consume", if s.consume { 1 } else { 0 }),
+                kv("repeat", i32::from(s.repeat)),
+                kv("random", i32::from(s.random)),
+                kv("single", i32::from(s.single)),
+                kv("consume", i32::from(s.consume)),
                 kv("playlist", s.playlist_version),
                 kv("playlistlength", s.playlist_length),
                 kv("state", s.state),
@@ -125,11 +123,15 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
                 } else {
                     0.0
                 };
-                kvs.push(kv("elapsed", format!("{:.3}", elapsed)));
-                kvs.push(kv("duration", format!("{:.3}", duration)));
+                kvs.push(kv("elapsed", format!("{elapsed:.3}")));
+                kvs.push(kv("duration", format!("{duration:.3}")));
                 kvs.push(kv(
                     "time",
-                    format!("{}:{}", elapsed as u64, duration as u64),
+                    format!(
+                        "{}:{}",
+                        super::misc::whole_seconds(elapsed),
+                        super::misc::whole_seconds(duration)
+                    ),
                 ));
             }
             if let Some(ref audio) = s.audio {
@@ -171,7 +173,7 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
                     None => MpdResponse::Error(MpdError::new(
                         MpdErrorCode::NoExist,
                         "playlistid",
-                        &format!("No such song with id: {}", id),
+                        &format!("No such song with id: {id}"),
                     )),
                 }
             } else {
@@ -238,22 +240,10 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             let (songs, total_time) = adapter.count(filters);
             MpdResponse::ok_with(vec![
                 kv("songs", songs),
-                kv("playtime", total_time.max(0.0) as u64),
+                kv("playtime", super::misc::whole_seconds(total_time.max(0.0))),
             ])
         }
-        MpdCommand::ListAll(path) => {
-            let entries = adapter.lsinfo(path.as_deref());
-            let mut kvs = Vec::new();
-            for entry in entries {
-                if entry.is_directory {
-                    kvs.push(kv("directory", &entry.path));
-                } else {
-                    kvs.push(kv("file", &entry.path));
-                }
-            }
-            MpdResponse::ok_with(kvs)
-        }
-        MpdCommand::LsInfo(path) => {
+        MpdCommand::ListAll(path) | MpdCommand::LsInfo(path) => {
             let entries = adapter.lsinfo(path.as_deref());
             let mut kvs = Vec::new();
             for entry in entries {
@@ -277,10 +267,6 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             kv("plugin", "cpal"),
             kv("outputenabled", 1),
         ]),
-        MpdCommand::EnableOutput(_)
-        | MpdCommand::DisableOutput(_)
-        | MpdCommand::ToggleOutput(_) => MpdResponse::ok(),
-
         // Reflection
         MpdCommand::Commands => {
             let cmds = [
@@ -335,7 +321,6 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
             let kvs = cmds.iter().map(|c| kv("command", c)).collect();
             MpdResponse::ok_with(kvs)
         }
-        MpdCommand::NotCommands => MpdResponse::ok(),
         MpdCommand::TagTypes => {
             let tags = [
                 "Artist",
@@ -372,11 +357,22 @@ pub fn handle_command(cmd: &MpdCommand, adapter: &dyn PlayerAdapter) -> MpdRespo
         }
 
         // Command lists — handled at session level, not here
-        MpdCommand::CommandListBegin
-        | MpdCommand::CommandListOkBegin
-        | MpdCommand::CommandListEnd => MpdResponse::ok(),
-
         // Idle — handled at session level
-        MpdCommand::Idle(_) | MpdCommand::NoIdle => MpdResponse::ok(),
+        MpdCommand::Ping
+        | MpdCommand::Close
+        | MpdCommand::Password(_)
+        | MpdCommand::Random(_)
+        | MpdCommand::Repeat(_)
+        | MpdCommand::Single(_)
+        | MpdCommand::Consume(_)
+        | MpdCommand::EnableOutput(_)
+        | MpdCommand::DisableOutput(_)
+        | MpdCommand::ToggleOutput(_)
+        | MpdCommand::NotCommands
+        | MpdCommand::CommandListBegin
+        | MpdCommand::CommandListOkBegin
+        | MpdCommand::CommandListEnd
+        | MpdCommand::Idle(_)
+        | MpdCommand::NoIdle => MpdResponse::ok(),
     }
 }

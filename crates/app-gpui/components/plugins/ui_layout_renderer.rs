@@ -26,6 +26,7 @@ use sotf_plugins::plugin_layout::ColumnRole;
 
 /// Whether the generated layout currently has atomic groups in overflow.
 #[doc(hidden)]
+#[must_use]
 pub fn generated_layout_group_ids(
     settings: &PluginSettings,
     available_width: f32,

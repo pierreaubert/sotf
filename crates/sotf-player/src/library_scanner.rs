@@ -66,7 +66,7 @@ pub enum LibraryScanMessage {
 fn count_supported_audio_files(directories: &[PathBuf], cancellation_token: &AtomicBool) -> usize {
     let mut total = 0;
     for directory in directories {
-        for entry in WalkDir::new(directory).follow_links(true).into_iter() {
+        for entry in WalkDir::new(directory).follow_links(true) {
             if cancellation_token.load(Ordering::Relaxed) {
                 return total;
             }
@@ -112,6 +112,7 @@ impl LibraryScanner {
     /// The scan runs in a background thread and sends progress updates via messages.
     /// The scan results are saved to the database, so after completion the caller
     /// should reload the library from the database.
+    #[must_use]
     pub fn start(directories: Vec<PathBuf>) -> Self {
         Self::start_with_options(directories, false, None)
     }
@@ -124,7 +125,8 @@ impl LibraryScanner {
     /// Start a new background library scan with force option
     ///
     /// If `force` is true, all files will be rescanned regardless of modification time.
-    /// ReplayGain values are preserved in the database (not overwritten).
+    /// `ReplayGain` values are preserved in the database (not overwritten).
+    #[must_use]
     pub fn start_force(directories: Vec<PathBuf>) -> Self {
         Self::start_with_options(directories, true, None)
     }
@@ -142,7 +144,7 @@ impl LibraryScanner {
     ) -> Self {
         let (message_tx, message_rx) = mpsc::channel::<LibraryScanMessage>();
         let cancellation_token = Arc::new(AtomicBool::new(false));
-        let cancellation_token_clone = cancellation_token.clone();
+        let cancellation_token_clone = std::sync::Arc::clone(&cancellation_token);
 
         let pause_flag_clone = pause_flag.clone();
 
@@ -171,9 +173,9 @@ impl LibraryScanner {
             let mut library = match MusicLibrary::with_database() {
                 Ok(lib) => lib,
                 Err(e) => {
-                    log::error!("[LibraryScanner] Failed to create library: {}", e);
+                    log::error!("[LibraryScanner] Failed to create library: {e}");
                     let _ = message_tx.send(LibraryScanMessage::Error {
-                        message: format!("Failed to create library: {}", e),
+                        message: format!("Failed to create library: {e}"),
                     });
                     return;
                 }
@@ -193,7 +195,7 @@ impl LibraryScanner {
             // Track progress
             let message_tx_clone = message_tx.clone();
             let throttler = Arc::new(ProgressThrottler::new());
-            let scan_token = cancellation_token_clone.clone();
+            let scan_token = std::sync::Arc::clone(&cancellation_token_clone);
 
             // Run the scan with progress callback and pause support
             // Use incremental=true (skip unchanged files) unless force is set
@@ -222,9 +224,7 @@ impl LibraryScanner {
                     let album_count = library.albums.len();
 
                     log::info!(
-                        "[LibraryScanner] Scan complete: {} tracks in {} albums",
-                        track_count,
-                        album_count
+                        "[LibraryScanner] Scan complete: {track_count} tracks in {album_count} albums"
                     );
 
                     let _ = message_tx.send(LibraryScanMessage::Complete {
@@ -233,9 +233,9 @@ impl LibraryScanner {
                     });
                 }
                 Err(e) => {
-                    log::error!("[LibraryScanner] Scan failed: {}", e);
+                    log::error!("[LibraryScanner] Scan failed: {e}");
                     let _ = message_tx.send(LibraryScanMessage::Error {
-                        message: format!("Scan failed: {}", e),
+                        message: format!("Scan failed: {e}"),
                     });
                 }
             }
@@ -256,6 +256,7 @@ impl LibraryScanner {
     }
 
     /// Try to receive a message without blocking
+    #[must_use]
     pub fn try_recv(&self) -> Option<LibraryScanMessage> {
         self.message_rx.lock().ok()?.try_recv().ok()
     }

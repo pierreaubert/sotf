@@ -5,7 +5,7 @@ use crate::app::state::app::PlaylistDialog;
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{SharedString, WeakEntity, div};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, Heading, Input, InputSize, StackSpacing, Text,
     TextSize, TextWeight, VStack,
@@ -26,6 +26,10 @@ macro_rules! dev_track {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_playlists_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let text = PlaylistTranslations::for_language(self.state.read(cx).app.ui_state.language);
@@ -100,7 +104,7 @@ impl PlayerView {
                             .on_click({
                                 let import_view = view.clone();
                                 move |_, cx| {
-                                    import_view.update(cx, |this, cx| this.import_playlist(cx));
+                                    import_view.update(cx, crate::ui::PlayerView::import_playlist);
                                 }
                             }),
                         "playlist.import"
@@ -155,7 +159,7 @@ impl PlayerView {
             let save_view = view.clone();
             let cancel_view = view.clone();
             result = result.child(
-                Card::new().style(|card| card.flex_none()).content(
+                Card::new().style(gpui::Styled::flex_none).content(
                     VStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(
@@ -175,7 +179,7 @@ impl PlayerView {
                                 .on_text_change(move |value, _, cx| {
                                     input_view.update(cx, |this, cx| {
                                         this.state.update(cx, |state, _| {
-                                            state.app.playlist.name_input = value.to_string()
+                                            state.app.playlist.name_input = value.to_string();
                                         });
                                     });
                                 }),
@@ -209,7 +213,8 @@ impl PlayerView {
                                         .on_click_event(move |_, window, cx| {
                                             cancel_view.update(cx, |this, cx| {
                                                 this.state.update(cx, |state, _| {
-                                                    state.app.playlist.dialog = PlaylistDialog::None
+                                                    state.app.playlist.dialog =
+                                                        PlaylistDialog::None;
                                                 });
                                                 this.focus_handle.focus(window, cx);
                                                 cx.notify();
@@ -225,7 +230,7 @@ impl PlayerView {
             let confirm_view = view.clone();
             let cancel_view = view.clone();
             result = result.child(
-                Card::new().style(|card| card.flex_none()).content(
+                Card::new().style(gpui::Styled::flex_none).content(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(Text::new(text.delete_confirmation).color(theme.error))
@@ -254,7 +259,7 @@ impl PlayerView {
                                 .on_click_event(move |_, window, cx| {
                                     cancel_view.update(cx, |this, cx| {
                                         this.state.update(cx, |state, _| {
-                                            state.app.playlist.dialog = PlaylistDialog::None
+                                            state.app.playlist.dialog = PlaylistDialog::None;
                                         });
                                         this.focus_handle.focus(window, cx);
                                         cx.notify();
@@ -268,7 +273,7 @@ impl PlayerView {
         if playlists.is_empty() {
             result = result.child(
                 Card::new()
-                    .style(|card| card.flex_none())
+                    .style(gpui::Styled::flex_none)
                     .content(Text::new(text.empty_state).color(theme.text_secondary)),
             );
         }
@@ -278,7 +283,7 @@ impl PlayerView {
             let name = playlist.name;
             let count = playlist_track_counts.get(index).copied().unwrap_or(0);
             result = result.child(
-                Card::new().style(|card| card.flex_none()).content(
+                Card::new().style(gpui::Styled::flex_none).content(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
                         .child(
@@ -317,7 +322,7 @@ impl PlayerView {
                                     this.state.update(cx, |state, _| {
                                         state.app.playlist.controller.selected_playlist_index =
                                             index;
-                                        state.app.playlist.name_input = name.clone();
+                                        state.app.playlist.name_input.clone_from(&name);
                                         state.app.playlist.dialog = PlaylistDialog::Rename;
                                     });
                                     cx.notify();
@@ -354,7 +359,7 @@ impl PlayerView {
                                 let add_view = view.clone();
                                 move |_, cx| {
                                     add_view.update(cx, |this, cx| {
-                                        this.add_current_track_to_playlist(cx)
+                                        this.add_current_track_to_playlist(cx);
                                     });
                                 }
                             }),
@@ -372,7 +377,7 @@ impl PlayerView {
                             let add_library_view = view.clone();
                             move |_, cx| {
                                 add_library_view.update(cx, |this, cx| {
-                                    this.add_selected_library_album_to_playlist(cx)
+                                    this.add_selected_library_album_to_playlist(cx);
                                 });
                             }
                         }),
@@ -387,7 +392,7 @@ impl PlayerView {
                                 let add_queue_view = view.clone();
                                 move |_, cx| {
                                     add_queue_view.update(cx, |this, cx| {
-                                        this.add_selected_queue_album_to_playlist(cx)
+                                        this.add_selected_queue_album_to_playlist(cx);
                                     });
                                 }
                             }),
@@ -433,7 +438,7 @@ impl PlayerView {
                                 let export_view = view.clone();
                                 move |_, cx| {
                                     export_view
-                                        .update(cx, |this, cx| this.export_active_playlist(cx));
+                                        .update(cx, crate::ui::PlayerView::export_active_playlist);
                                 }
                             }),
                         "playlist.export_active"
@@ -482,8 +487,7 @@ impl PlayerView {
                     .track_path
                     .file_name()
                     .and_then(|name| name.to_str())
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| entry.track_path.display().to_string());
+                    .map_or_else(|| entry.track_path.display().to_string(), str::to_owned);
                 let track_label = resolved
                     .as_ref()
                     .and_then(|track| track.title.clone())
@@ -491,13 +495,15 @@ impl PlayerView {
                 let duration = resolved
                     .as_ref()
                     .and_then(|track| track.duration_secs)
-                    .map(|seconds| format!("{}:{:02}", seconds / 60, seconds % 60))
-                    .unwrap_or_else(|| "—".into());
+                    .map_or_else(
+                        || "—".into(),
+                        |seconds| format!("{}:{:02}", seconds / 60, seconds % 60),
+                    );
                 let play_path = entry.track_path.clone();
                 let queue_path = entry.track_path.clone();
                 let play_track_view = view.clone();
                 let queue_track_view = view.clone();
-                let row = Card::new().style(|card| card.flex_none()).content(
+                let row = Card::new().style(gpui::Styled::flex_none).content(
                     div()
                         .flex()
                         .flex_wrap()
@@ -518,7 +524,7 @@ impl PlayerView {
                                     .disabled(resolved.is_none())
                                     .on_click(move |_, cx| {
                                         play_track_view.update(cx, |this, cx| {
-                                            this.activate_playlist_track(&play_path, true, cx)
+                                            this.activate_playlist_track(&play_path, true, cx);
                                         });
                                     }),
                                 )
@@ -533,7 +539,7 @@ impl PlayerView {
                                 .disabled(resolved.is_none())
                                 .on_click(move |_, cx| {
                                     queue_track_view.update(cx, |this, cx| {
-                                        this.activate_playlist_track(&queue_path, false, cx)
+                                        this.activate_playlist_track(&queue_path, false, cx);
                                     });
                                 }),
                             format!("playlist.track_queue.{index}")
@@ -550,7 +556,7 @@ impl PlayerView {
                             .disabled(index == 0)
                             .on_click(move |_, cx| {
                                 up_view.update(cx, |this, cx| {
-                                    this.move_playlist_track(index, true, cx)
+                                    this.move_playlist_track(index, true, cx);
                                 });
                             }),
                             format!("playlist.track_up.{index}")
@@ -567,7 +573,7 @@ impl PlayerView {
                             .disabled(index + 1 >= track_count)
                             .on_click(move |_, cx| {
                                 down_view.update(cx, |this, cx| {
-                                    this.move_playlist_track(index, false, cx)
+                                    this.move_playlist_track(index, false, cx);
                                 });
                             }),
                             format!("playlist.track_down.{index}")
@@ -891,8 +897,7 @@ impl PlayerView {
                 .playlist
                 .controller
                 .active_playlist()
-                .map(|playlist| playlist.name.clone())
-                .unwrap_or_else(|| "playlist".to_string());
+                .map_or_else(|| "playlist".to_string(), |playlist| playlist.name.clone());
             let file_name = format!("{name}.m3u8");
             cx.spawn(async move |view: WeakEntity<PlayerView>, cx| {
                 let Some(file) = rfd::AsyncFileDialog::new()
@@ -936,6 +941,10 @@ impl PlayerView {
     }
 
     #[cfg(feature = "dev-api")]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn import_playlist_from_path(
         &mut self,
         path: &std::path::Path,
@@ -963,6 +972,10 @@ impl PlayerView {
     }
 
     #[cfg(feature = "dev-api")]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn export_playlist_to_path(
         &mut self,
         path: &std::path::Path,
@@ -1072,10 +1085,10 @@ impl PlayerView {
             let album = app
                 .filtered_albums()
                 .get(app.library_state.selected_index)
-                .cloned()
+                .copied()
                 .cloned();
             match album {
-                Some(album) => Self::add_album_to_active_playlist(app, album),
+                Some(album) => Self::add_album_to_active_playlist(app, &album),
                 None => app.playlist.error = Some(text.select_library_album_first().to_string()),
             }
         });
@@ -1091,14 +1104,14 @@ impl PlayerView {
                 .get(app.queue_state.selected_index)
                 .map(|entry| entry.album.clone());
             match album {
-                Some(album) => Self::add_album_to_active_playlist(app, album),
+                Some(album) => Self::add_album_to_active_playlist(app, &album),
                 None => app.playlist.error = Some(text.select_queue_album_first().to_string()),
             }
         });
         cx.notify();
     }
 
-    fn add_album_to_active_playlist(app: &mut crate::app::App, album: sotf_audio_player::Album) {
+    fn add_album_to_active_playlist(app: &mut crate::app::App, album: &sotf_audio_player::Album) {
         let text = PlaylistTranslations::for_language(app.ui_state.language);
         let playlist_index = app.playlist.controller.selected_playlist_index;
         let result = app
@@ -1109,7 +1122,7 @@ impl PlayerView {
             .and_then(|db| {
                 app.playlist
                     .controller
-                    .add_album_to_playlist(db, playlist_index, &album)
+                    .add_album_to_playlist(db, playlist_index, album)
             });
         match result {
             Ok(()) => {

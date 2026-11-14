@@ -17,7 +17,10 @@ use crate::components::design::Ds;
 use crate::components::themed_tooltip;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    AnyElement, App, ElementId, Entity, FontWeight, MouseButton, Rgba, ScrollHandle, SharedString,
+    div, px, rems,
+};
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Select, SelectOption,
     SelectSize, Slider, SliderSize, Text,
@@ -33,6 +36,10 @@ struct MatrixGeometry {
     msd_button_size: f32,
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn matrix_geometry(state: &MatrixRenderState<'_>) -> MatrixGeometry {
     let scale = state.layout_scale.max(0.01);
     let base_cell_size = CELL_SIZE * scale;
@@ -56,6 +63,11 @@ fn matrix_geometry(state: &MatrixRenderState<'_>) -> MatrixGeometry {
 }
 
 /// Render the Matrix plugin
+#[must_use]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_matrix_plugin(
     d: &Ds,
     entity: Entity<AppState>,
@@ -111,6 +123,10 @@ pub fn render_matrix_plugin(
         .child(Text::caption(text.label("Off silences the route; On starts at 0 dB. Alt+wheel adjusts gain; double-click a cell to clear it.")))
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_route_selectors(
     d: &Ds,
     entity: Entity<AppState>,
@@ -220,6 +236,18 @@ fn render_route_selectors(
         }))
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_selected_cell_editor(
     d: &Ds,
     entity: Entity<AppState>,
@@ -274,7 +302,7 @@ fn render_selected_cell_editor(
                     output_idx,
                     polarity * db_to_linear(value),
                     cx,
-                )
+                );
             }
         })
         .on_reset({
@@ -287,13 +315,13 @@ fn render_selected_cell_editor(
                     output_idx,
                     polarity,
                     cx,
-                )
+                );
             }
         });
     let exact = NumberInput::new("matrix-selected-gain")
-        .value(current_db as f64)
-        .min(MIN_DB as f64)
-        .max(MAX_DB as f64)
+        .value(f64::from(current_db))
+        .min(f64::from(MIN_DB))
+        .max(f64::from(MAX_DB))
         .step(0.1)
         .decimals(1)
         .unit("dB")
@@ -312,7 +340,7 @@ fn render_selected_cell_editor(
                     output_idx,
                     polarity * db_to_linear(value as f32),
                     cx,
-                )
+                );
             }
         });
     let route = ButtonSet::new(("matrix-route-enabled", plugin_instance_id))
@@ -337,7 +365,7 @@ fn render_selected_cell_editor(
                         0.0
                     },
                     cx,
-                )
+                );
             }
         });
     let phase = ButtonSet::new(("matrix-route-polarity", plugin_instance_id))
@@ -365,7 +393,7 @@ fn render_selected_cell_editor(
                     gain.abs()
                 },
                 cx,
-            )
+            );
         });
     #[cfg(feature = "dev-api")]
     let (slider, exact, route, phase) = {
@@ -460,6 +488,14 @@ fn set_selected_gain(
 }
 
 /// Render the matrix grid with input columns and output rows, plus M/S/D sidebar
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_matrix_grid(
     d: &Ds,
     entity: Entity<AppState>,
@@ -551,6 +587,14 @@ fn render_matrix_grid(
 }
 
 /// Render the M/S/D sidebar column
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_msd_sidebar(
     d: &Ds,
     entity: Entity<AppState>,
@@ -694,7 +738,7 @@ fn render_msd_button(
 
     let button = div()
         .id(ElementId::Name(
-            format!("msd-{}-{}-{:?}", plugin_idx, group_first_channel, label).into(),
+            format!("msd-{plugin_idx}-{group_first_channel}-{label:?}").into(),
         ))
         .min_w(rems(1.5))
         .min_h(rems(1.5))
@@ -780,6 +824,10 @@ fn render_msd_button(
 }
 
 /// Render a single row of the matrix grid
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_matrix_row(
     d: &Ds,
     entity: Entity<AppState>,
@@ -837,6 +885,14 @@ fn render_matrix_row(
 }
 
 /// Render a single matrix cell
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_matrix_cell(
     d: &Ds,
     entity: Entity<AppState>,
@@ -887,7 +943,7 @@ fn render_matrix_cell(
 
     let cell = div()
         .id(ElementId::Name(
-            format!("matrix-cell-{}-{}-{}", plugin_idx, input_idx, output_idx).into(),
+            format!("matrix-cell-{plugin_idx}-{input_idx}-{output_idx}").into(),
         ))
         .w(px(cell_size))
         .flex_shrink_0()

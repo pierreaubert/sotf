@@ -1,11 +1,16 @@
-//! Opens or exports the shared AutoEQ RoomEQ report.
+//! Opens or exports the shared `AutoEQ` `RoomEQ` report.
 
 // Rust guideline compliant 2026-02-21
+
+use std::fmt::Write as _;
 
 use super::PlayerView;
 use crate::app::types::RoomEqResultIdentity;
 use autoeq_report_gpui::native::{NativeReport, ReportView};
-use gpui::{prelude::*, *};
+use gpui::{
+    App, AppContext, AsyncApp, Entity, Subscription, TitlebarOptions, Window, WindowOptions, div,
+    prelude::*,
+};
 #[cfg(all(
     feature = "report-webview",
     any(target_os = "macos", target_os = "windows")
@@ -55,6 +60,10 @@ impl PlayerView {
         self.prepare_shared_room_eq_report(true, cx);
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
     fn prepare_shared_room_eq_report(&mut self, save: bool, cx: &mut Context<Self>) {
         let (result, artifacts, quality, dark, snapshot, labels) = {
             let app = &self.state.read(cx).app;
@@ -137,7 +146,7 @@ impl PlayerView {
                         return;
                     }
                 }
-                let native_document = document.clone();
+                let native_document = std::sync::Arc::clone(&document);
                 let report = cx
                     .background_executor()
                     .spawn(async move { NativeReport::try_complete(native_document) })
@@ -171,7 +180,7 @@ impl PlayerView {
             }
             Err(error) => {
                 let _ = view.update(cx, |view, cx| {
-                    view.report_error(format!("Cannot open AutoEQ report: {error:#}"), cx)
+                    view.report_error(format!("Cannot open AutoEQ report: {error:#}"), cx);
                 });
             }
         })
@@ -236,7 +245,7 @@ async fn save_exported_report(
 
 fn open_native_report_window(
     report: NativeReport,
-    _save_label: &'static str,
+    save_label: &'static str,
     dark: bool,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
@@ -250,14 +259,14 @@ fn open_native_report_window(
         },
         move |_, cx| {
             #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
-            let document = report.document().clone();
+            let document = std::sync::Arc::clone(report.document());
             let view = cx.new(|_| ReportView::from_prepared(report).with_dark_appearance(dark));
             cx.new(|_| NativeReportWindow {
                 view,
                 #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
                 document,
                 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                save_label: _save_label,
+                save_label,
                 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
                 saving: false,
                 #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
@@ -288,7 +297,7 @@ impl NativeReportWindow {
         }
         self.saving = true;
         self.save_error = None;
-        let document = self.document.clone();
+        let document = std::sync::Arc::clone(&self.document);
         let label = self.save_label;
         cx.notify();
         cx.spawn(async move |view, cx| {
@@ -308,7 +317,7 @@ impl NativeReportWindow {
 }
 
 impl Render for NativeReportWindow {
-    fn render(&mut self, _: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let root = div().size_full().flex().flex_col();
         #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
         let root = root.child(
@@ -317,7 +326,7 @@ impl Render for NativeReportWindow {
                 .child(
                     gpui_ui_kit::Button::new("save-native-report", self.save_label)
                         .disabled(self.saving)
-                        .on_click_event(_cx.listener(|view, _, _, cx| view.save(cx))),
+                        .on_click_event(cx.listener(|view, _, _, cx| view.save(cx))),
                 )
                 .when_some(self.save_error.as_ref(), |element, error| {
                     element.child(error.clone())
@@ -333,29 +342,7 @@ fn capture_quality_report(
     use sotf_report_host::capture_quality::CaptureQualityReport;
     let mut report = CaptureQualityReport::default();
     for channel in channels {
-        if !channel.driver_measurement_sets.is_empty() {
-            for (driver_index, driver) in channel.driver_measurement_sets.iter().enumerate() {
-                for (index, result) in std::iter::once(&driver.measurement)
-                    .chain(driver.multi_mic_measurements.iter())
-                    .enumerate()
-                {
-                    report.sources.push(capture_quality_source(
-                        &format!(
-                            "{} / {}",
-                            channel.channel_name,
-                            driver
-                                .name
-                                .as_deref()
-                                .map(str::to_owned)
-                                .unwrap_or_else(|| format!("driver {}", driver_index + 1))
-                        ),
-                        index,
-                        result,
-                        driver.provenance.get(index),
-                    ));
-                }
-            }
-        } else {
+        if channel.driver_measurement_sets.is_empty() {
             for (index, result) in std::iter::once(&channel.measurement)
                 .chain(channel.multi_mic_measurements.iter())
                 .enumerate()
@@ -367,93 +354,112 @@ fn capture_quality_report(
                     channel.provenance.get(index),
                 ));
             }
+        } else {
+            for (driver_index, driver) in channel.driver_measurement_sets.iter().enumerate() {
+                for (index, result) in std::iter::once(&driver.measurement)
+                    .chain(driver.multi_mic_measurements.iter())
+                    .enumerate()
+                {
+                    report.sources.push(capture_quality_source(
+                        &format!(
+                            "{} / {}",
+                            channel.channel_name,
+                            driver.name.as_deref().map_or_else(
+                                || format!("driver {}", driver_index + 1),
+                                str::to_owned
+                            )
+                        ),
+                        index,
+                        result,
+                        driver.provenance.get(index),
+                    ));
+                }
+            }
         }
     }
     report
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 fn capture_quality_source(
     channel: &str,
     index: usize,
     result: &sotf_audio_player::recording_types::RecordingResult,
     provenance: Option<&sotf_audio_player::room_eq_types::MeasurementProvenance>,
 ) -> sotf_report_host::capture_quality::CaptureQualitySource {
+    use sha2::{Digest, Sha256};
+
     use sotf_audio_player::capture_quality as capture;
     use sotf_report_host::capture_quality as report;
-    let findings = result
-        .quality
-        .as_ref()
-        .map(|quality| {
-            quality
-                .findings
-                .iter()
-                .map(|finding| {
-                    let unit = match finding.unit {
-                        capture::QualityUnit::Percent => "%",
-                        capture::QualityUnit::Decibels => "dB",
-                        capture::QualityUnit::Samples => "samples",
-                        capture::QualityUnit::Count => "count",
-                    }
-                    .to_owned();
-                    report::CaptureQualityFinding {
-                        metric: match finding.metric {
-                            capture::QualityMetric::TotalHarmonicDistortion => {
-                                report::CaptureQualityMetric::Thd
-                            }
-                            capture::QualityMetric::BroadbandSnr => {
-                                report::CaptureQualityMetric::BroadbandSnr
-                            }
-                            capture::QualityMetric::BandSnr => {
-                                report::CaptureQualityMetric::Other("Band SNR".into())
-                            }
-                            capture::QualityMetric::Clipping => {
-                                report::CaptureQualityMetric::Other("Clipped samples".into())
-                            }
-                            capture::QualityMetric::TimingMarkers => {
-                                report::CaptureQualityMetric::Other("Timing markers".into())
-                            }
-                        },
-                        status: match finding.status {
-                            capture::QualityStatus::Pass => report::CaptureQualityStatus::Pass,
-                            capture::QualityStatus::Warning => {
-                                report::CaptureQualityStatus::Warning
-                            }
-                            capture::QualityStatus::Unknown => {
-                                report::CaptureQualityStatus::Unknown
-                            }
-                        },
-                        value: finding.measured,
-                        unit: unit.clone(),
-                        band: finding.band.map(|band| report::CaptureQualityBand {
-                            low_hz: band.low_hz,
-                            high_hz: band.high_hz,
+    let findings = result.quality.as_ref().map_or_default(|quality| {
+        quality
+            .findings
+            .iter()
+            .map(|finding| {
+                let unit = match finding.unit {
+                    capture::QualityUnit::Percent => "%",
+                    capture::QualityUnit::Decibels => "dB",
+                    capture::QualityUnit::Samples => "samples",
+                    capture::QualityUnit::Count => "count",
+                }
+                .to_owned();
+                report::CaptureQualityFinding {
+                    metric: match finding.metric {
+                        capture::QualityMetric::TotalHarmonicDistortion => {
+                            report::CaptureQualityMetric::Thd
+                        }
+                        capture::QualityMetric::BroadbandSnr => {
+                            report::CaptureQualityMetric::BroadbandSnr
+                        }
+                        capture::QualityMetric::BandSnr => {
+                            report::CaptureQualityMetric::Other("Band SNR".into())
+                        }
+                        capture::QualityMetric::Clipping => {
+                            report::CaptureQualityMetric::Other("Clipped samples".into())
+                        }
+                        capture::QualityMetric::TimingMarkers => {
+                            report::CaptureQualityMetric::Other("Timing markers".into())
+                        }
+                    },
+                    status: match finding.status {
+                        capture::QualityStatus::Pass => report::CaptureQualityStatus::Pass,
+                        capture::QualityStatus::Warning => report::CaptureQualityStatus::Warning,
+                        capture::QualityStatus::Unknown => report::CaptureQualityStatus::Unknown,
+                    },
+                    value: finding.measured,
+                    unit: unit.clone(),
+                    band: finding.band.map(|band| report::CaptureQualityBand {
+                        low_hz: band.low_hz,
+                        high_hz: band.high_hz,
+                    }),
+                    method: Some(format!("{:?}", finding.method)),
+                    policy: Some(format!("{:?}", finding.policy)),
+                    threshold: finding
+                        .threshold
+                        .map(|threshold| report::CaptureQualityThreshold {
+                            comparison: match threshold.comparison {
+                                capture::ThresholdComparison::AtMost => {
+                                    report::CaptureThresholdComparison::LessThanOrEqual
+                                }
+                                capture::ThresholdComparison::AtLeast => {
+                                    report::CaptureThresholdComparison::GreaterThanOrEqual
+                                }
+                                capture::ThresholdComparison::EqualTo => {
+                                    report::CaptureThresholdComparison::EqualTo
+                                }
+                            },
+                            value: threshold.value,
+                            unit,
                         }),
-                        method: Some(format!("{:?}", finding.method)),
-                        policy: Some(format!("{:?}", finding.policy)),
-                        threshold: finding.threshold.map(|threshold| {
-                            report::CaptureQualityThreshold {
-                                comparison: match threshold.comparison {
-                                    capture::ThresholdComparison::AtMost => {
-                                        report::CaptureThresholdComparison::LessThanOrEqual
-                                    }
-                                    capture::ThresholdComparison::AtLeast => {
-                                        report::CaptureThresholdComparison::GreaterThanOrEqual
-                                    }
-                                    capture::ThresholdComparison::EqualTo => {
-                                        report::CaptureThresholdComparison::EqualTo
-                                    }
-                                },
-                                value: threshold.value,
-                                unit,
-                            }
-                        }),
-                        unknown_reason: finding.unknown_reason.clone(),
-                        recommendation: finding.recommendation.clone(),
-                    }
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
+                    unknown_reason: finding.unknown_reason.clone(),
+                    recommendation: finding.recommendation.clone(),
+                }
+            })
+            .collect::<Vec<_>>()
+    });
     let findings = if findings.is_empty() {
         vec![report::CaptureQualityFinding {
             metric: report::CaptureQualityMetric::Other("Capture quality".into()),
@@ -476,12 +482,14 @@ fn capture_quality_source(
     };
     // Bind the viewer identity to this measured source, including its provenance
     // and evidence. A later retake produces a different report identity.
-    use sha2::{Digest, Sha256};
     let source = serde_json::json!({"channel":channel,"index":index,"provenance":provenance,"measurement":result});
-    let source_id = Sha256::digest(source.to_string().as_bytes())
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+    let source_id = Sha256::digest(source.to_string().as_bytes()).iter().fold(
+        String::with_capacity(64),
+        |mut hex, byte| {
+            let _ = write!(&mut hex, "{byte:02x}");
+            hex
+        },
+    );
     report::CaptureQualitySource {
         source_id,
         channel: Some(channel.into()),

@@ -5,7 +5,7 @@ use crate::app::{AppState, ToastMessage};
 use crate::components::design::Ds;
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Empty, Entity, SharedString, div, rems};
 use gpui_ui_kit::{
     ButtonSet, ButtonSetOption, ButtonSetSize, NumberInput, NumberInputSize, Select, SelectOption,
     SelectSize, Slider, SliderSize, Text, WithTooltip,
@@ -30,6 +30,10 @@ pub(super) fn external_engine_index(
 #[cfg(feature = "dev-api")]
 use crate::app::dev_api::DevTrackExt;
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Parameter submission accepts an owned parameter identifier from the control callback"
+)]
 fn submit(
     entity: &Entity<AppState>,
     instance_id: usize,
@@ -98,6 +102,10 @@ fn submit(
 ///
 /// Missing or invalid values remain visibly unavailable. Changes are submitted
 /// through the owning player actor; this component never edits saved state.
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 pub fn render_parameters(
     entity: Entity<AppState>,
     data: &ExternalPluginEditorData,
@@ -147,7 +155,22 @@ pub fn render_parameters(
     panel.into_any_element()
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 fn render_parameter(
     d: &Ds,
     entity: Entity<AppState>,
@@ -191,8 +214,10 @@ fn render_parameter(
             .choices
             .iter()
             .find(|choice| &choice.value == value)
-            .map(|choice| choice.label.clone())
-            .unwrap_or_else(|| format!("{value} {}", parameter.unit).trim().to_owned());
+            .map_or_else(
+                || format!("{value} {}", parameter.unit).trim().to_owned(),
+                |choice| choice.label.clone(),
+            );
         let text = format!("{display} · Read only");
         let caption = WithTooltip::new(
             div()
@@ -385,7 +410,7 @@ fn render_parameter(
                 let slider = Slider::new(("external-slider", instance_id * 1000 + index))
                     .value(control.current as f32)
                     .range(min, max)
-                    .step(parameter.step.filter(|step| step.is_finite() && *step > 0.0).map(|step| step as f32).unwrap_or(if control.integer { 1.0 } else { 0.0 }))
+                    .step(parameter.step.filter(|step| step.is_finite() && *step > 0.0).map_or(if control.integer { 1.0 } else { 0.0 }, |step| step as f32))
                     .logarithmic(parameter.logarithmic && min > 0.0)
                     .width(142.0)
                     .size(SliderSize::Sm)

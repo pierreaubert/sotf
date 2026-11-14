@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::SharedString;
 use gpui_themes::AccessibilityPalette;
 
 pub(super) fn accessibility_value(palette: AccessibilityPalette) -> &'static str {

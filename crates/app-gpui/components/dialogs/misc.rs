@@ -2,6 +2,7 @@ use crate::app::Screen;
 use crate::app::i18n::{KeybindingTranslations, Language};
 use crate::app::keybindings::{KeymapPreset, get_documented_keybindings_for_screen};
 
+#[must_use]
 pub fn get_keybindings_for_screen(
     screen: Screen,
     language: Language,

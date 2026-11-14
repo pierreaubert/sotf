@@ -50,6 +50,7 @@ pub enum SotfServerEvent {
 
 impl SotfServerEvent {
     /// Serialize the event to a JSON payload suitable for an SSE `data:` field.
+    #[must_use]
     pub fn to_json(&self) -> String {
         serde_json::to_string(self).unwrap_or_else(|_| "{\"error\":\"serialization\"}".to_string())
     }
@@ -62,6 +63,7 @@ impl SotfServerEvent {
 pub type EventBroadcaster = tokio::sync::broadcast::Sender<SotfServerEvent>;
 
 /// Create a new event broadcaster with the default capacity.
+#[must_use]
 pub fn new_event_broadcaster(capacity: usize) -> EventBroadcaster {
     tokio::sync::broadcast::channel(capacity).0
 }

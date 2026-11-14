@@ -110,6 +110,7 @@ mod tests {
 }
 
 impl MissingFileEntry {
+    #[must_use]
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -122,11 +123,13 @@ pub struct MissingFileReview {
 }
 
 impl MissingFileReview {
+    #[must_use]
     pub fn entries(&self) -> &[MissingFileEntry] {
         &self.entries
     }
 
     /// Paths whose existence could not be established, never removal candidates.
+    #[must_use]
     pub fn unavailable_paths(&self) -> &[PathBuf] {
         &self.unavailable_paths
     }
@@ -135,6 +138,9 @@ impl MissingFileReview {
 impl MusicDatabase {
     /// Inspect local records without changing the database or touching audio files.
     /// Provider-backed records and relative/virtual paths are not file candidates.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn review_missing_files(&self) -> rusqlite::Result<MissingFileReview> {
         let mut statement = self.conn.prepare(
             "SELECT id, path, uuid FROM tracks t WHERE NOT EXISTS (
@@ -167,6 +173,9 @@ impl MusicDatabase {
     /// Remove only reviewed records that still have the same identity and are
     /// still missing. Newly missing, restored and provider-backed tracks survive.
     /// Call only after confirmation; the snapshot can safely be applied twice.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn remove_reviewed_missing_files(
         &mut self,
         review: &MissingFileReview,

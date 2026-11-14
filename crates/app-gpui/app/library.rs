@@ -162,6 +162,9 @@ impl App {
     }
 
     /// Full rescan of the library
+    ///
+    /// # Errors
+    /// Returns an error if scanning cannot start or filesystem and library database operations fail.
     pub fn rescan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.library_state.scan_in_progress {
             return Ok(());
@@ -193,12 +196,11 @@ impl App {
         Ok(())
     }
 
-    /// Scan for ReplayGain
+    /// Scan for `ReplayGain`
     pub fn scan_replay_gain(&mut self) {
         if let Err(e) = self.scan.ctrl.replay_gain_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                "Failed to start ReplayGain scan: {}",
-                e
+                "Failed to start ReplayGain scan: {e}"
             )));
         } else if self.scan.ctrl.replay_gain_manager.in_progress {
             self.scan.status_hidden = false;
@@ -209,8 +211,7 @@ impl App {
     pub fn scan_bliss(&mut self) {
         if let Err(e) = self.scan.ctrl.bliss_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                "Failed to start bliss analysis scan: {}",
-                e
+                "Failed to start bliss analysis scan: {e}"
             )));
         } else if self.scan.ctrl.bliss_manager.in_progress {
             self.scan.status_hidden = false;
@@ -221,8 +222,7 @@ impl App {
     pub fn compute_waveform(&mut self) {
         if let Err(e) = self.scan.ctrl.waveform_manager.start_scan() {
             self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                "Failed to start waveform analysis: {}",
-                e
+                "Failed to start waveform analysis: {e}"
             )));
         } else if self.scan.ctrl.waveform_manager.in_progress {
             self.scan.status_hidden = false;
@@ -235,8 +235,7 @@ impl App {
             Ok(removed) => {
                 if removed > 0 {
                     self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                        "Removed {} missing tracks from database",
-                        removed
+                        "Removed {removed} missing tracks from database"
                     )));
                 } else {
                     self.ui_state.toast_message =
@@ -245,8 +244,7 @@ impl App {
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                    "Failed to clean database: {}",
-                    e
+                    "Failed to clean database: {e}"
                 )));
             }
         }
@@ -260,14 +258,12 @@ impl App {
                 self.scan.needs_rescan = false;
                 self.install_external_plugin_runtime_sandbox();
                 self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                    "Cleared local library data ({} tracks removed)",
-                    removed
+                    "Cleared local library data ({removed} tracks removed)"
                 )));
             }
             Err(e) => {
                 self.ui_state.toast_message = Some(ToastMessage::error(format!(
-                    "Failed to clear local library data: {}",
-                    e
+                    "Failed to clear local library data: {e}"
                 )));
             }
         }
@@ -320,7 +316,7 @@ impl App {
 
     /// Start library scan (sets up progress tracking flags)
     pub fn start_library_scan(&mut self) {
-        self.scan_library().ok();
+        let _ = self.scan_library();
     }
 
     /// Cancel the ongoing library scan
@@ -332,6 +328,9 @@ impl App {
     }
 
     /// Scan the library with progress tracking
+    ///
+    /// # Errors
+    /// Returns an error if scanning cannot start or filesystem and library database operations fail.
     pub fn scan_library(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         if self.library_state.scan_in_progress {
             return Ok(());
@@ -392,17 +391,16 @@ impl App {
                         self.scan.progress_eta_secs = Some(0);
                         self.scan.progress_phase = "Complete".to_string();
                         self.ui_state.toast_message = Some(ToastMessage::success(format!(
-                            "Scan complete. Library now has {} tracks in {} albums.",
-                            tracks, albums
+                            "Scan complete. Library now has {tracks} tracks in {albums} albums."
                         )));
                         done = true;
                         reload_needed = true;
                     }
                     sotf_audio_player::LibraryScanMessage::Error { message } => {
-                        log::error!("Library scan failed: {}", message);
+                        log::error!("Library scan failed: {message}");
                         self.settings.library.scan_error = Some(message.clone());
                         self.ui_state.toast_message =
-                            Some(ToastMessage::error(format!("Scan failed: {}", message)));
+                            Some(ToastMessage::error(format!("Scan failed: {message}")));
                         done = true;
                     }
                 }
@@ -422,7 +420,7 @@ impl App {
         }
 
         if reload_needed && let Err(e) = self.load_library_from_database() {
-            log::error!("Failed to reload library after scan: {}", e);
+            log::error!("Failed to reload library after scan: {e}");
             self.settings.library.scan_error = Some(e.to_string());
             self.ui_state.toast_message = Some(ToastMessage::error(
                 "Scan complete but failed to reload library.",
@@ -430,6 +428,12 @@ impl App {
         }
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn update_library_scan_timing(&mut self) {
         let Some(started_at) = self.scan.started_at else {
             return;
@@ -445,15 +449,11 @@ impl App {
 
         let tracks = self.library_state.scan_progress_tracks;
         self.scan.progress_tracks_per_sec = tracks as f32 / elapsed as f32;
-        self.scan.progress_eta_secs =
-            if self.scan.total_files > tracks && self.scan.progress_tracks_per_sec > 0.0 {
-                Some(
-                    ((self.scan.total_files - tracks) as f32 / self.scan.progress_tracks_per_sec)
-                        as u64,
-                )
-            } else {
-                None
-            };
+        self.scan.progress_eta_secs = (self.scan.total_files > tracks
+            && self.scan.progress_tracks_per_sec > 0.0)
+            .then(|| {
+                ((self.scan.total_files - tracks) as f32 / self.scan.progress_tracks_per_sec) as u64
+            });
     }
 
     /// Get flattened directory tree for display

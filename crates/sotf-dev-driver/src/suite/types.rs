@@ -82,7 +82,7 @@ pub(super) struct FixtureServerConfig {
 
 #[derive(Debug, Deserialize)]
 pub(super) struct FakeRecordingConfig {
-    /// Optional RoomConfig JSON imported through the production completion path.
+    /// Optional `RoomConfig` JSON imported through the production completion path.
     pub(super) import_json: Option<String>,
     /// Acoustic fixture profile passed to the real recording/analyze path.
     pub(super) profile: Option<String>,
@@ -112,7 +112,7 @@ pub(super) struct RoomEqConfig {
     pub(super) population: usize,
     #[serde(default = "default_true")]
     pub(super) start: bool,
-    /// Arrange a recording fixture, then require the RoomEQ UI to load it.
+    /// Arrange a recording fixture, then require the `RoomEQ` UI to load it.
     #[serde(default)]
     pub(super) ui_driven: bool,
     /// Optional intentionally invalid recording fixture used to verify the

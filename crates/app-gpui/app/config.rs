@@ -324,7 +324,7 @@ pub struct Config {
     /// Number of scanner threads for waveform/bliss/replaygain (None = auto-detect)
     #[serde(default)]
     pub scanner_threads: Option<u8>,
-    /// Maximum number of CPU cores SotF is allowed to use (None = all available)
+    /// Maximum number of CPU cores `SotF` is allowed to use (None = all available)
     #[serde(default)]
     pub max_cpu_cores: Option<u8>,
     /// Minimum font size in pixels (None = default 12px)
@@ -340,7 +340,7 @@ pub struct Config {
     #[serde(default)]
     pub seen_hints: Vec<String>,
     /// Selected design system language (`None` = platform default).
-    /// Supported values: "neutral", "apple_hig", "material3", "fluent".
+    /// Supported values: "neutral", "`apple_hig`", "material3", "fluent".
     #[serde(default)]
     pub design_language: Option<String>,
     /// Plugin chassis theme: rack default + per-plugin overrides. Independent
@@ -364,18 +364,23 @@ fn default_font_scale() -> f32 {
     1.0
 }
 
+#[must_use]
 pub fn default_volume() -> f32 {
     crate::app::constants::ui::DEFAULT_CONFIG_VOLUME
 }
 
 impl Config {
+    /// Loads .
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn load() -> Result<Self, ConfigError> {
         let path = sotf_audio_player::config::get_gpui_state_path()
             .ok_or(ConfigError::NoConfigDirectory)?;
 
         if !path.exists() {
             return Ok(Self {
-                audio: Default::default(),
+                audio: sotf_audio_player::ui_models::audio_preferences::AudioPreferences::default(),
                 directories: Vec::new(),
                 last_loaded_plugin_preset: None,
                 theme: ThemeId::default(),
@@ -430,6 +435,10 @@ impl Config {
         Ok(config)
     }
 
+    /// Saves .
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn save(&self) -> Result<(), ConfigError> {
         let path = sotf_audio_player::config::get_gpui_state_path()
             .ok_or(ConfigError::NoConfigDirectory)?;
@@ -437,6 +446,9 @@ impl Config {
     }
 
     /// Replace a complete configuration without truncating the previous file.
+    ///
+    /// # Errors
+    /// Returns an error if application settings cannot be read, validated, serialized, or written.
     pub fn save_to_path(&self, path: &std::path::Path) -> Result<(), ConfigError> {
         use std::io::Write;
         self.audio

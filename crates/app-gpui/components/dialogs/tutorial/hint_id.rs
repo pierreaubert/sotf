@@ -12,6 +12,7 @@ pub enum HintId {
 }
 
 impl HintId {
+    #[must_use]
     pub fn localized_title(&self, language: crate::app::i18n::Language) -> &'static str {
         use crate::app::i18n::Language;
 
@@ -33,6 +34,7 @@ impl HintId {
         }
     }
 
+    #[must_use]
     pub fn localized_message(&self, language: crate::app::i18n::Language) -> &'static str {
         use crate::app::i18n::Language;
 
@@ -80,6 +82,7 @@ impl HintId {
 }
 
 impl HintId {
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             HintId::StudioFirstVisit => "studio_first_visit",
@@ -89,6 +92,7 @@ impl HintId {
         }
     }
 
+    #[must_use]
     pub fn title(&self) -> &'static str {
         match self {
             HintId::StudioFirstVisit => "Plugin Rack",
@@ -98,6 +102,7 @@ impl HintId {
         }
     }
 
+    #[must_use]
     pub fn message(&self) -> &'static str {
         match self {
             HintId::StudioFirstVisit => {

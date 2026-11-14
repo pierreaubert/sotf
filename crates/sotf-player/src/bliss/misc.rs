@@ -11,6 +11,10 @@ pub const BLISS_FEATURES_COUNT: usize = audio_features::FEATURES_COUNT;
 pub(super) const ANALYSIS_SAMPLE_RATE: u32 = 22050;
 
 /// Decode an audio file to mono 22050 Hz samples for analysis
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Analysis downmix averages and resampler sizing use floating-point frame ratios"
+)]
 pub(super) fn decode_for_analysis(path: &Path) -> Result<Vec<f32>, String> {
     let mut decoder = create_decoder(path).map_err(|e| e.to_string())?;
 
@@ -57,6 +61,15 @@ pub(super) fn decode_for_analysis(path: &Path) -> Result<Vec<f32>, String> {
 }
 
 /// Resample audio to the target sample rate using rubato
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Analysis downmix averages and resampler sizing use floating-point frame ratios"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "The resampling ratio intentionally quantizes the estimated output capacity to frames"
+)]
 pub(super) fn resample(
     samples: &[f32],
     source_rate: u32,
@@ -66,7 +79,7 @@ pub(super) fn resample(
         return Ok(samples.to_vec());
     }
 
-    let resample_ratio = target_rate as f64 / source_rate as f64;
+    let resample_ratio = f64::from(target_rate) / f64::from(source_rate);
     let chunk_size = 1024;
 
     // Match Rubato 1's two sub-chunks and Blackman-Harris filter explicitly.

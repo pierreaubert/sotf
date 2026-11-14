@@ -14,6 +14,10 @@ pub struct SotfRemoteConnection {
 }
 
 impl SotfRemoteConnection {
+    /// Validate.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn validate(&self) -> SotfApiResult<SotfRemoteConnectionInfo> {
         let health = self.client.health().await?;
         let discovery = self.client.discovery().await?;
@@ -27,6 +31,10 @@ impl SotfRemoteConnection {
         })
     }
 
+    /// Refresh.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn refresh(&self) -> SotfApiResult<SotfRemoteSnapshot> {
         let state = self.client.state().await?;
         let queue = self.client.queue().await?;
@@ -41,14 +49,25 @@ impl SotfRemoteConnection {
         })
     }
 
+    /// Refresh state.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn refresh_state(&self) -> SotfApiResult<SotfApiState> {
         self.client.state().await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn refresh_queue(&self) -> SotfApiResult<SotfApiQueue> {
         self.client.queue().await
     }
 
+    /// Refresh album page.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn refresh_album_page(
         &self,
         offset: usize,
@@ -61,10 +80,18 @@ impl SotfRemoteConnection {
             .await
     }
 
+    /// Album artwork.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn album_artwork(&self, album_id: &str) -> SotfApiResult<Vec<u8>> {
         self.client.album_artwork(album_id).await
     }
 
+    /// Transport.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn transport(
         &self,
         command: SotfRemoteTransportCommand,
@@ -79,14 +106,24 @@ impl SotfRemoteConnection {
         }
     }
 
+    /// Seek.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn seek(&self, position_secs: f64) -> SotfApiResult<SotfApiCommandResponse> {
         self.client.seek(position_secs).await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn set_volume(&self, volume: u8) -> SotfApiResult<SotfApiCommandResponse> {
         self.client.set_volume(volume).await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn add_album_to_queue(
         &self,
         album_id: impl Into<String>,
@@ -95,14 +132,25 @@ impl SotfRemoteConnection {
         self.client.queue_add_album(album_id, play_now).await
     }
 
+    /// Clear queue.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn clear_queue(&self) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.client.queue_clear().await
     }
 
+    /// Delete queue item.
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn delete_queue_item(&self, index: usize) -> SotfApiResult<SotfApiQueueEditResponse> {
         self.client.queue_delete(index).await
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the remote request fails, is rejected, or returns an invalid response.
     pub async fn jump_to_queue_item(
         &self,
         index: usize,

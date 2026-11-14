@@ -2,7 +2,7 @@ use super::hint_id::HintId;
 use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName, IconSize};
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{App, ClickEvent, FontWeight, Window, div};
 use gpui_ui_kit::{IconButton, IconButtonSize, IconButtonVariant};
 
 /// Contextual hint state — shown as a dismissible banner at the top of the relevant screen.

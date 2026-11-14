@@ -18,6 +18,11 @@ use std::collections::{BTreeMap, HashMap};
 /// session-relative `wav_path` / `csv_path` so the autoeq optimizer can
 /// pick up the WAV for FDW analysis even though the SPL data lives in
 /// the CSV file.
+#[must_use]
+#[expect(
+    clippy::implicit_hasher,
+    reason = "Shared configuration APIs deliberately use the standard application HashMap and HashSet types "
+)]
 pub fn build_speakers_from_recordings(
     recordings: &[ChannelRecording],
     channel_names: &[String],
@@ -90,21 +95,19 @@ pub fn build_speakers_from_recordings(
             continue;
         }
 
-        let speaker_name = channel_speakers
-            .and_then(|m| m.get(&base_name))
-            .map(|s| s.to_string());
+        let speaker_name = channel_speakers.and_then(|m| m.get(&base_name)).cloned();
 
-        let source = if measurement_refs.len() == 1 {
+        let source = if let [measurement] = measurement_refs.as_slice() {
             MeasurementSource::Single(MeasurementSingle {
-                measurement: measurement_refs.into_iter().next().unwrap(),
+                measurement: measurement.clone(),
                 speaker_name,
-                provenance: Default::default(),
+                provenance: autoeq_core::MeasurementProvenance::default(),
             })
         } else {
             MeasurementSource::Multiple(MeasurementMultiple {
                 measurements: measurement_refs,
                 speaker_name,
-                provenance: Default::default(),
+                provenance: autoeq_core::MeasurementProvenance::default(),
                 estimated_position: None,
             })
         };

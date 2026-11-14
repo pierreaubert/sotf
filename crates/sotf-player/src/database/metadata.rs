@@ -7,6 +7,9 @@ impl MusicDatabase {
     // ==================== Normalized Metadata Methods ====================
 
     /// Get all genres in the library
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_all_genres(&self) -> SqlResult<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
@@ -22,6 +25,9 @@ impl MusicDatabase {
     }
 
     /// Get all composers in the library
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_all_composers(&self) -> SqlResult<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
@@ -37,6 +43,9 @@ impl MusicDatabase {
     }
 
     /// Get all conductors in the library
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_all_conductors(&self) -> SqlResult<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
@@ -52,6 +61,9 @@ impl MusicDatabase {
     }
 
     /// Get all performers in the library
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_all_performers(&self) -> SqlResult<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
@@ -67,6 +79,9 @@ impl MusicDatabase {
     }
 
     /// Get all ensembles in the library
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_all_ensembles(&self) -> SqlResult<Vec<(i64, String)>> {
         let mut stmt = self
             .conn
@@ -82,6 +97,9 @@ impl MusicDatabase {
     }
 
     /// Get tracks by genre
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_tracks_by_genre(&self, genre_id: i64) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.path FROM tracks t
@@ -100,6 +118,9 @@ impl MusicDatabase {
     }
 
     /// Get tracks by composer
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_tracks_by_composer(&self, composer_id: i64) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.path FROM tracks t
@@ -118,6 +139,9 @@ impl MusicDatabase {
     }
 
     /// Get tracks by conductor
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_tracks_by_conductor(&self, conductor_id: i64) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.path FROM tracks t
@@ -136,6 +160,9 @@ impl MusicDatabase {
     }
 
     /// Get tracks by performer
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_tracks_by_performer(&self, performer_id: i64) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.path FROM tracks t
@@ -154,6 +181,9 @@ impl MusicDatabase {
     }
 
     /// Get tracks by ensemble
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_tracks_by_ensemble(&self, ensemble_id: i64) -> SqlResult<Vec<PathBuf>> {
         let mut stmt = self.conn.prepare(
             "SELECT t.path FROM tracks t
@@ -172,6 +202,9 @@ impl MusicDatabase {
     }
 
     /// Get genre for a track (returns first if multiple)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_track_genre(&self, track_path: &Path) -> SqlResult<Option<String>> {
         let path_str = track_path.to_string_lossy();
         let result = self.conn.query_row(
@@ -192,6 +225,9 @@ impl MusicDatabase {
     }
 
     /// Get all genres for a track
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_track_genres(&self, track_path: &Path) -> SqlResult<Vec<String>> {
         let path_str = track_path.to_string_lossy();
         let mut stmt = self.conn.prepare(
@@ -210,6 +246,9 @@ impl MusicDatabase {
     }
 
     /// Get albums by genre (returns album IDs)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_albums_by_genre(&self, genre_id: i64) -> SqlResult<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT t.album_id FROM tracks t
@@ -226,6 +265,9 @@ impl MusicDatabase {
     }
 
     /// Get albums by composer (returns album IDs)
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
     pub fn get_albums_by_composer(&self, composer_id: i64) -> SqlResult<Vec<i64>> {
         let mut stmt = self.conn.prepare(
             "SELECT DISTINCT t.album_id FROM tracks t

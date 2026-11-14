@@ -2,6 +2,10 @@ use crate::sotf_api_client::{SotfApiAlbum, SotfApiAlbumTracks, SotfApiClient, So
 use sotf_audio::decoder::AudioSource;
 use sotf_federation::{ProviderAlbum, ProviderTrack};
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Federation exposes integer metadata durations as approximate seconds"
+)]
 pub(super) fn sotf_api_album_to_provider_album(
     client: &SotfApiClient,
     album: SotfApiAlbum,

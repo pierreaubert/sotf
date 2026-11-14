@@ -10,6 +10,7 @@ pub struct MpdError {
 }
 
 impl MpdError {
+    #[must_use]
     pub fn new(code: MpdErrorCode, command: &str, message: &str) -> Self {
         Self {
             code,
@@ -19,14 +20,16 @@ impl MpdError {
         }
     }
 
+    #[must_use]
     pub fn unknown_command(cmd: &str) -> Self {
         Self::new(
             MpdErrorCode::UnknownCmd,
             cmd,
-            &format!("unknown command \"{}\"", cmd),
+            &format!("unknown command \"{cmd}\""),
         )
     }
 
+    #[must_use]
     pub fn format(&self) -> String {
         format!(
             "ACK [{}@{}] {{{}}} {}\n",
@@ -36,7 +39,7 @@ impl MpdError {
 }
 
 /// Errors raised by the quoted-token state machine. Surfaced through
-/// `next_token_result`; `require_string` rewrites them as ACK_ERROR_ARG.
+/// `next_token_result`; `require_string` rewrites them as `ACK_ERROR_ARG`.
 #[derive(Debug, Clone, Copy)]
 pub(super) enum TokenizerError {
     /// A quoted token never reached its closing quote.

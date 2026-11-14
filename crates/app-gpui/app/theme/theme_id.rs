@@ -18,6 +18,7 @@ pub enum ThemeId {
 }
 
 impl ThemeId {
+    #[must_use]
     pub fn all() -> &'static [ThemeId] {
         &[
             ThemeId::Dark,
@@ -32,6 +33,7 @@ impl ThemeId {
         ]
     }
 
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             ThemeId::Dark => "Dark",
@@ -46,6 +48,7 @@ impl ThemeId {
         }
     }
 
+    #[must_use]
     pub fn accessibility_palette(&self) -> AccessibilityPalette {
         match self {
             ThemeId::BlackAndWhite => AccessibilityPalette::HighContrast,
@@ -56,6 +59,7 @@ impl ThemeId {
         }
     }
 
+    #[must_use]
     pub fn mode_preference(&self) -> ThemeModePreference {
         match self {
             ThemeId::Light => ThemeModePreference::Light,
@@ -63,6 +67,7 @@ impl ThemeId {
         }
     }
 
+    #[must_use]
     pub fn for_appearance(appearance: ThemeAppearance) -> ThemeId {
         match appearance {
             ThemeAppearance::Light => ThemeId::Light,
@@ -70,6 +75,7 @@ impl ThemeId {
         }
     }
 
+    #[must_use]
     pub fn for_accessibility_palette(
         palette: AccessibilityPalette,
         appearance: ThemeAppearance,
@@ -83,6 +89,7 @@ impl ThemeId {
         }
     }
 
+    #[must_use]
     pub fn next(&self) -> ThemeId {
         match self {
             ThemeId::Dark => ThemeId::Light,

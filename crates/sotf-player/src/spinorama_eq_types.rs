@@ -13,6 +13,7 @@ pub enum SpinoramaStep {
 }
 
 impl SpinoramaStep {
+    #[must_use]
     pub fn all() -> &'static [SpinoramaStep] {
         &[
             SpinoramaStep::SelectSpeaker,
@@ -22,6 +23,7 @@ impl SpinoramaStep {
         ]
     }
 
+    #[must_use]
     pub fn index(&self) -> usize {
         match self {
             SpinoramaStep::SelectSpeaker => 0,
@@ -31,6 +33,7 @@ impl SpinoramaStep {
         }
     }
 
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             SpinoramaStep::SelectSpeaker => "Select",
@@ -40,6 +43,7 @@ impl SpinoramaStep {
         }
     }
 
+    #[must_use]
     pub fn next(&self) -> Option<SpinoramaStep> {
         match self {
             SpinoramaStep::SelectSpeaker => Some(SpinoramaStep::Configure),
@@ -49,6 +53,7 @@ impl SpinoramaStep {
         }
     }
 
+    #[must_use]
     pub fn previous(&self) -> Option<SpinoramaStep> {
         match self {
             SpinoramaStep::SelectSpeaker => None,
@@ -68,6 +73,7 @@ pub enum SpinoramaOptimizationMode {
 }
 
 impl SpinoramaOptimizationMode {
+    #[must_use]
     pub fn all() -> &'static [SpinoramaOptimizationMode] {
         &[
             SpinoramaOptimizationMode::FlatOnPir,
@@ -75,6 +81,7 @@ impl SpinoramaOptimizationMode {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             SpinoramaOptimizationMode::FlatOnPir => "Target",
@@ -82,6 +89,7 @@ impl SpinoramaOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn description(&self) -> &'static str {
         match self {
             SpinoramaOptimizationMode::FlatOnPir => "Flatten the Estimated In-Room Response curve",
@@ -91,6 +99,7 @@ impl SpinoramaOptimizationMode {
         }
     }
 
+    #[must_use]
     pub fn to_loss_string(&self) -> &'static str {
         match self {
             SpinoramaOptimizationMode::FlatOnPir => "speaker-flat",
@@ -110,6 +119,7 @@ pub enum SpinoramaTargetCurve {
 }
 
 impl SpinoramaTargetCurve {
+    #[must_use]
     pub fn all() -> &'static [SpinoramaTargetCurve] {
         &[
             SpinoramaTargetCurve::OnAxis,
@@ -119,6 +129,7 @@ impl SpinoramaTargetCurve {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             SpinoramaTargetCurve::OnAxis => "ON (On-Axis)",
@@ -128,6 +139,7 @@ impl SpinoramaTargetCurve {
         }
     }
 
+    #[must_use]
     pub fn short_name(&self) -> &'static str {
         match self {
             SpinoramaTargetCurve::OnAxis => "ON",
@@ -137,6 +149,7 @@ impl SpinoramaTargetCurve {
         }
     }
 
+    #[must_use]
     pub fn api_name(&self) -> &'static str {
         match self {
             SpinoramaTargetCurve::OnAxis => "On Axis",
@@ -149,6 +162,10 @@ impl SpinoramaTargetCurve {
 
 /// Optimizer configuration for Spinorama EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent persisted options and status flags retain their existing schema "
+)]
 pub struct SpinoramaOptimizerConfig {
     pub mode: SpinoramaOptimizationMode,
     pub target_curve: SpinoramaTargetCurve,

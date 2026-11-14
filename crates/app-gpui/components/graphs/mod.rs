@@ -18,17 +18,22 @@ pub mod speaker_graphs;
 pub mod spectrum_graphs;
 
 /// Format a frequency value for display (e.g., "1.5 kHz", "200 Hz")
+#[must_use]
+#[expect(
+    clippy::float_cmp,
+    reason = "Exact integral values select the compact axis-label format"
+)]
 pub fn format_frequency(freq: f64) -> String {
     if freq >= 1000.0 {
         let khz = freq / 1000.0;
         if khz == khz.floor() {
-            format!("{:.0} kHz", khz)
+            format!("{khz:.0} kHz")
         } else {
-            format!("{:.1} kHz", khz)
+            format!("{khz:.1} kHz")
         }
     } else if freq == freq.floor() {
-        format!("{:.0} Hz", freq)
+        format!("{freq:.0} Hz")
     } else {
-        format!("{:.1} Hz", freq)
+        format!("{freq:.1} Hz")
     }
 }

@@ -18,6 +18,12 @@ fn with_alpha(rgba: Rgba, alpha: f32) -> Rgba {
 }
 
 /// Convert Rgba to u32 color value for gpui-px charts
+#[must_use]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Normalized theme colors are quantized to eight-bit RGB channels"
+)]
 pub fn rgba_to_u32(rgba: Rgba) -> u32 {
     let r = (rgba.r * 255.0) as u32;
     let g = (rgba.g * 255.0) as u32;
@@ -26,6 +32,7 @@ pub fn rgba_to_u32(rgba: Rgba) -> u32 {
 }
 
 /// Render an empty-state placeholder with an icon and message.
+#[must_use]
 pub fn render_empty_state(icon: IconName, message: &str, theme: &Theme) -> gpui::AnyElement {
     gpui::div()
         .flex()
@@ -41,38 +48,46 @@ pub fn render_empty_state(icon: IconName, message: &str, theme: &Theme) -> gpui:
 
 /// Color accessor functions for graph theming
 pub mod colors {
-    use super::*;
+    use super::{Rgba, Theme};
 
+    #[must_use]
     pub fn input(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.input
     }
 
+    #[must_use]
     pub fn target(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.target
     }
 
+    #[must_use]
     pub fn filter(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.filter_response
     }
 
+    #[must_use]
     pub fn corrected(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.corrected
     }
 
+    #[must_use]
     pub fn error(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.error
     }
 
+    #[must_use]
     pub fn deviation(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.deviation
     }
 
+    #[must_use]
     pub fn secondary_line(theme: &Theme) -> Rgba {
         theme.plugin_palette.graph_colors.secondary_line
     }
 }
 
-/// Convert theme to gpui-px ChartTheme
+/// Convert theme to gpui-px `ChartTheme`
+#[must_use]
 pub fn theme_to_chart_theme(theme: &Theme) -> ChartTheme {
     ChartTheme {
         plot_background: theme.surface,

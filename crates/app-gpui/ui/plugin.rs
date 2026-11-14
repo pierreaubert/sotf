@@ -1,7 +1,7 @@
 // Macro for quick-add plugin handlers - reduces boilerplate for identical patterns
 macro_rules! quick_add_plugin_handler {
     ($fn_name:ident, $action:ty, $plugin_type:expr) => {
-        #[allow(dead_code)]
+        #[allow(dead_code, reason = "UI hooks and feature-gated state are retained across application configurations")]
         fn $fn_name(&mut self, _: &$action, _: &mut Window, cx: &mut Context<Self>) {
             self.state.update(cx, |state, _cx| {
                 if state.app.is_plugin_available(&$plugin_type) {
@@ -136,11 +136,7 @@ impl PlayerView {
     }
 
     #[cfg(feature = "dev-api")]
-    fn record_action_rejection(
-        state: &mut AppState,
-        action: &PluginUpdateType,
-        reason: &str,
-    ) {
+    fn record_action_rejection(state: &mut AppState, action: &PluginUpdateType, reason: &str) {
         let PluginUpdateType::Action {
             node_id,
             param_index,
@@ -148,21 +144,28 @@ impl PlayerView {
             value,
             request_id,
             ..
-        } = action else {
+        } = action
+        else {
             return;
         };
         let target = node_id.and_then(|node_id| {
-            state.app.plugin_state.graph.nodes.get(&node_id).map(|node| {
-                (
-                    node.plugin.id,
-                    state
-                        .app
-                        .plugin_state
-                        .graph
-                        .get_engine_index(node_id)
-                        .unwrap_or(usize::MAX),
-                )
-            })
+            state
+                .app
+                .plugin_state
+                .graph
+                .nodes
+                .get(&node_id)
+                .map(|node| {
+                    (
+                        node.plugin.id,
+                        state
+                            .app
+                            .plugin_state
+                            .graph
+                            .get_engine_index(node_id)
+                            .unwrap_or(usize::MAX),
+                    )
+                })
         });
         let update = &mut state.app.plugin_state.update_state;
         update.last_parameter_receipt = Some(crate::app::state::plugin::DevParameterReceipt {
@@ -418,10 +421,22 @@ impl PlayerView {
 
     /// Apply a pending plugin update to the audio engine.
     /// Called from the timer callback when there's a pending update.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the ordered UI workflow and its state updates in one operation"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned commands in the application state and plugin update interfaces"
+    )]
     fn apply_plugin_update(state: &mut AppState, update_type: PluginUpdateType) {
         // Snapshot requests are issued earlier in the tick. Fence their
         // pre-command data before a player command can be accepted.
-        state.app.plugin_state.update_state.profile_observation_revision = state
+        state
+            .app
+            .plugin_state
+            .update_state
+            .profile_observation_revision = state
             .app
             .plugin_state
             .update_state
@@ -444,20 +459,30 @@ impl PlayerView {
 
         let result = match update_type {
             PluginUpdateType::Action {
-                plugin_index: _,
                 node_id,
                 param_index,
                 key,
                 value,
                 request_id,
+                ..
             } => {
                 #[cfg(not(feature = "dev-api"))]
                 let _ = param_index;
                 let target = if let Some(node_id) = node_id {
-                    state.app.plugin_state.graph.nodes.get(&node_id).and_then(|node| {
-                        state.app.plugin_state.graph.get_engine_index(node_id)
-                            .map(|engine_index| (node.plugin.id, engine_index))
-                    })
+                    state
+                        .app
+                        .plugin_state
+                        .graph
+                        .nodes
+                        .get(&node_id)
+                        .and_then(|node| {
+                            state
+                                .app
+                                .plugin_state
+                                .graph
+                                .get_engine_index(node_id)
+                                .map(|engine_index| (node.plugin.id, engine_index))
+                        })
                 } else {
                     None
                 };
@@ -466,15 +491,23 @@ impl PlayerView {
                     let _ = instance_id;
                     #[cfg(feature = "dev-api")]
                     let result = Self::submit_action_update(
-                        state, instance_id, engine_index, param_index,
-                        key.to_string(), value.to_string(),
+                        state,
+                        instance_id,
+                        engine_index,
+                        param_index,
+                        key.to_string(),
+                        value.to_string(),
                     );
                     #[cfg(not(feature = "dev-api"))]
                     let result = state.player.set_plugin_action(
-                        engine_index, key.to_string(), value.to_string(),
+                        engine_index,
+                        key.to_string(),
+                        value.to_string(),
                     );
                     #[cfg(feature = "dev-api")]
-                    if let Some(receipt) = &mut state.app.plugin_state.update_state.last_parameter_receipt {
+                    if let Some(receipt) =
+                        &mut state.app.plugin_state.update_state.last_parameter_receipt
+                    {
                         receipt.request_id = request_id;
                     }
                     #[cfg(not(feature = "dev-api"))]
@@ -487,10 +520,15 @@ impl PlayerView {
                     ));
                     #[cfg(feature = "dev-api")]
                     Self::record_submission_error(
-                        state, 0, param_index, "Action target absent from engine".to_string(),
+                        state,
+                        0,
+                        param_index,
+                        "Action target absent from engine".to_string(),
                     );
                     #[cfg(feature = "dev-api")]
-                    if let Some(receipt) = &mut state.app.plugin_state.update_state.last_parameter_receipt {
+                    if let Some(receipt) =
+                        &mut state.app.plugin_state.update_state.last_parameter_receipt
+                    {
                         receipt.request_id = request_id;
                         receipt.key = key.to_string();
                         receipt.requested_value = value.to_string();
@@ -717,7 +755,7 @@ impl PlayerView {
                                     .headphone_eq_state
                                     .audition
                                     .as_ref()
-                                    .is_some_and(|audition| audition.is_pending()),
+                                    .is_some_and(sotf_audio_player::controllers::eq_audition::EqAudition::is_pending),
                             });
                     })
                 } else {
@@ -762,7 +800,7 @@ impl PlayerView {
                                     .headphone_eq_state
                                     .audition
                                     .as_ref()
-                                    .is_some_and(|audition| audition.is_pending()),
+                                    .is_some_and(sotf_audio_player::controllers::eq_audition::EqAudition::is_pending),
                             });
                     })
                 }
@@ -794,15 +832,14 @@ impl PlayerView {
                     false,
                 );
             }
-            log::warn!("Failed to apply plugin update: {}", e);
+            log::warn!("Failed to apply plugin update: {e}");
             if let Some(snapshot) = plugin_state_snapshot {
                 state
                     .app
                     .rollback_failed_plugin_update(snapshot, e.to_string());
             } else {
                 state.app.ui_state.toast_message = Some(crate::app::ToastMessage::error(format!(
-                    "Plugin update failed: {}",
-                    e
+                    "Plugin update failed: {e}"
                 )));
             }
             state.app.plugin_state.finish_routing_apply(false);

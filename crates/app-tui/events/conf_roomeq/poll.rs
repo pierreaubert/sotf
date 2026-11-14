@@ -3,6 +3,14 @@ use super::consts::ROOM_OPT_RESULT;
 use crate::app::App;
 use std::sync::{Arc, Mutex};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub fn poll_room_eq_optimization(app: &mut App) -> bool {
     use sotf_audio_player::room_eq_types::{ChannelOptResult, EqFilterConfig, OptimizationStatus};
 
@@ -10,12 +18,10 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
         return false;
     }
 
-    let result_slot = ROOM_OPT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    let progress_slot = ROOM_OPT_PROGRESS
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(ROOM_OPT_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
+    let progress_slot =
+        std::sync::Arc::clone(ROOM_OPT_PROGRESS.get_or_init(|| Arc::new(Mutex::new(None))));
 
     if let Ok(mut guard) = result_slot.lock()
         && let Some((run_revision, result)) = guard.take()
@@ -41,20 +47,18 @@ pub fn poll_room_eq_optimization(app: &mut App) -> bool {
                             })
                             .collect(),
                         broadband_filters: vec![],
-                        preamp_gain_db: r
-                            .channels
-                            .get(name)
-                            .map(|chain| {
-                                chain
-                                    .plugins
-                                    .iter()
-                                    .filter(|p| p.plugin_type.eq_ignore_ascii_case("gain"))
-                                    .filter_map(|p| {
-                                        p.parameters.get("gain_db").and_then(|v| v.as_f64())
-                                    })
-                                    .sum()
-                            })
-                            .unwrap_or(0.0),
+                        preamp_gain_db: r.channels.get(name).map_or(0.0, |chain| {
+                            chain
+                                .plugins
+                                .iter()
+                                .filter(|p| p.plugin_type.eq_ignore_ascii_case("gain"))
+                                .filter_map(|p| {
+                                    p.parameters
+                                        .get("gain_db")
+                                        .and_then(serde_json::Value::as_f64)
+                                })
+                                .sum()
+                        }),
                         crossover_freqs: None,
                         driver_gains: None,
                         original_response: Some(

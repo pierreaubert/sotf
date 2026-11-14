@@ -1,5 +1,9 @@
-/// Per-graph controls in the RoomEQ review report.
+/// Per-graph controls in the `RoomEQ` review report.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct RoomEqReviewGraphSettings {
     pub smoothing_octaves: f64,
     pub smoothing_open: bool,
@@ -9,6 +13,7 @@ pub struct RoomEqReviewGraphSettings {
 }
 
 impl RoomEqReviewGraphSettings {
+    #[must_use]
     pub fn spl_default() -> Self {
         Self {
             smoothing_octaves: 1.0 / 6.0,
@@ -19,6 +24,7 @@ impl RoomEqReviewGraphSettings {
         }
     }
 
+    #[must_use]
     pub fn eq_default() -> Self {
         Self {
             smoothing_octaves: 0.0,

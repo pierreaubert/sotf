@@ -15,6 +15,7 @@ pub enum ThemeType {
 }
 
 impl ThemeType {
+    #[must_use]
     pub fn all() -> &'static [Self] {
         &[
             Self::Dark,
@@ -26,7 +27,11 @@ impl ThemeType {
         ]
     }
 
-    #[allow(clippy::should_implement_trait)]
+    #[allow(
+        clippy::should_implement_trait,
+        reason = "Theme selection retains its existing cyclic navigation API"
+    )]
+    #[must_use]
     pub fn from_str(s: &str) -> Option<Self> {
         match normalize_theme_name(s).as_str() {
             "dark" => Some(ThemeType::Dark),
@@ -39,6 +44,7 @@ impl ThemeType {
         }
     }
 
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             ThemeType::Dark => "Dark",
@@ -97,6 +103,7 @@ pub struct Theme {
 
 impl Theme {
     /// Create a high-contrast dark theme (default)
+    #[must_use]
     pub fn dark() -> Self {
         Self {
             // Backgrounds — true black for maximum contrast
@@ -128,6 +135,7 @@ impl Theme {
     }
 
     /// Create a high-contrast light theme
+    #[must_use]
     pub fn light() -> Self {
         Self {
             // Backgrounds — true white for maximum contrast
@@ -159,114 +167,119 @@ impl Theme {
     }
 
     /// Create a Solarized Dark terminal preset.
+    #[must_use]
     pub fn solarized() -> Self {
         Self {
-            bg_primary: rgb(0x002b36),
-            bg_secondary: rgb(0x073642),
-            bg_selected: rgb(0x586e75),
-            bg_highlight: rgb(0x073642),
+            bg_primary: rgb(0x0000_2b36),
+            bg_secondary: rgb(0x0007_3642),
+            bg_selected: rgb(0x0058_6e75),
+            bg_highlight: rgb(0x0007_3642),
 
-            fg_primary: rgb(0xeee8d5),
-            fg_secondary: rgb(0x93a1a1),
-            fg_selected: rgb(0xfdf6e3),
-            fg_muted: rgb(0x839496),
+            fg_primary: rgb(0x00ee_e8d5),
+            fg_secondary: rgb(0x0093_a1a1),
+            fg_selected: rgb(0x00fd_f6e3),
+            fg_muted: rgb(0x0083_9496),
 
-            accent_primary: rgb(0x268bd2),
-            accent_secondary: rgb(0x2aa198),
-            accent_success: rgb(0x859900),
-            accent_warning: rgb(0xb58900),
-            accent_error: rgb(0xdc322f),
-            accent_info: rgb(0x268bd2),
+            accent_primary: rgb(0x0026_8bd2),
+            accent_secondary: rgb(0x002a_a198),
+            accent_success: rgb(0x0085_9900),
+            accent_warning: rgb(0x00b5_8900),
+            accent_error: rgb(0x00dc_322f),
+            accent_info: rgb(0x0026_8bd2),
 
-            border_color: rgb(0x586e75),
-            title_color: rgb(0xb58900),
-            playing_indicator: rgb(0x859900),
-            current_track: rgb(0x268bd2),
+            border_color: rgb(0x0058_6e75),
+            title_color: rgb(0x00b5_8900),
+            playing_indicator: rgb(0x0085_9900),
+            current_track: rgb(0x0026_8bd2),
         }
     }
 
     /// Create a Dracula terminal preset.
+    #[must_use]
     pub fn dracula() -> Self {
         Self {
-            bg_primary: rgb(0x282a36),
-            bg_secondary: rgb(0x21222c),
-            bg_selected: rgb(0x44475a),
-            bg_highlight: rgb(0x343746),
+            bg_primary: rgb(0x0028_2a36),
+            bg_secondary: rgb(0x0021_222c),
+            bg_selected: rgb(0x0044_475a),
+            bg_highlight: rgb(0x0034_3746),
 
-            fg_primary: rgb(0xf8f8f2),
-            fg_secondary: rgb(0xcfcfd8),
-            fg_selected: rgb(0xf8f8f2),
-            fg_muted: rgb(0x6272a4),
+            fg_primary: rgb(0x00f8_f8f2),
+            fg_secondary: rgb(0x00cf_cfd8),
+            fg_selected: rgb(0x00f8_f8f2),
+            fg_muted: rgb(0x0062_72a4),
 
-            accent_primary: rgb(0xbd93f9),
-            accent_secondary: rgb(0xff79c6),
-            accent_success: rgb(0x50fa7b),
-            accent_warning: rgb(0xf1fa8c),
-            accent_error: rgb(0xff5555),
-            accent_info: rgb(0x8be9fd),
+            accent_primary: rgb(0x00bd_93f9),
+            accent_secondary: rgb(0x00ff_79c6),
+            accent_success: rgb(0x0050_fa7b),
+            accent_warning: rgb(0x00f1_fa8c),
+            accent_error: rgb(0x00ff_5555),
+            accent_info: rgb(0x008b_e9fd),
 
-            border_color: rgb(0x6272a4),
-            title_color: rgb(0xff79c6),
-            playing_indicator: rgb(0x50fa7b),
-            current_track: rgb(0x8be9fd),
+            border_color: rgb(0x0062_72a4),
+            title_color: rgb(0x00ff_79c6),
+            playing_indicator: rgb(0x0050_fa7b),
+            current_track: rgb(0x008b_e9fd),
         }
     }
 
     /// Create a Gruvbox Dark terminal preset.
+    #[must_use]
     pub fn gruvbox() -> Self {
         Self {
-            bg_primary: rgb(0x282828),
-            bg_secondary: rgb(0x3c3836),
-            bg_selected: rgb(0x504945),
-            bg_highlight: rgb(0x3c3836),
+            bg_primary: rgb(0x0028_2828),
+            bg_secondary: rgb(0x003c_3836),
+            bg_selected: rgb(0x0050_4945),
+            bg_highlight: rgb(0x003c_3836),
 
-            fg_primary: rgb(0xebdbb2),
-            fg_secondary: rgb(0xd5c4a1),
-            fg_selected: rgb(0xfbf1c7),
-            fg_muted: rgb(0xa89984),
+            fg_primary: rgb(0x00eb_dbb2),
+            fg_secondary: rgb(0x00d5_c4a1),
+            fg_selected: rgb(0x00fb_f1c7),
+            fg_muted: rgb(0x00a8_9984),
 
-            accent_primary: rgb(0x83a598),
-            accent_secondary: rgb(0xd3869b),
-            accent_success: rgb(0xb8bb26),
-            accent_warning: rgb(0xfabd2f),
-            accent_error: rgb(0xfb4934),
-            accent_info: rgb(0x8ec07c),
+            accent_primary: rgb(0x0083_a598),
+            accent_secondary: rgb(0x00d3_869b),
+            accent_success: rgb(0x00b8_bb26),
+            accent_warning: rgb(0x00fa_bd2f),
+            accent_error: rgb(0x00fb_4934),
+            accent_info: rgb(0x008e_c07c),
 
-            border_color: rgb(0x665c54),
-            title_color: rgb(0xfabd2f),
-            playing_indicator: rgb(0xb8bb26),
-            current_track: rgb(0x83a598),
+            border_color: rgb(0x0066_5c54),
+            title_color: rgb(0x00fa_bd2f),
+            playing_indicator: rgb(0x00b8_bb26),
+            current_track: rgb(0x0083_a598),
         }
     }
 
     /// Create a Tokyo Night terminal preset.
+    #[must_use]
     pub fn tokyo_night() -> Self {
         Self {
-            bg_primary: rgb(0x1a1b26),
-            bg_secondary: rgb(0x24283b),
-            bg_selected: rgb(0x3b4261),
-            bg_highlight: rgb(0x292e42),
+            bg_primary: rgb(0x001a_1b26),
+            bg_secondary: rgb(0x0024_283b),
+            bg_selected: rgb(0x003b_4261),
+            bg_highlight: rgb(0x0029_2e42),
 
-            fg_primary: rgb(0xc0caf5),
-            fg_secondary: rgb(0xa9b1d6),
-            fg_selected: rgb(0xffffff),
-            fg_muted: rgb(0x565f89),
+            fg_primary: rgb(0x00c0_caf5),
+            fg_secondary: rgb(0x00a9_b1d6),
+            fg_selected: rgb(0x00ff_ffff),
+            fg_muted: rgb(0x0056_5f89),
 
-            accent_primary: rgb(0x7aa2f7),
-            accent_secondary: rgb(0xbb9af7),
-            accent_success: rgb(0x9ece6a),
-            accent_warning: rgb(0xe0af68),
-            accent_error: rgb(0xf7768e),
-            accent_info: rgb(0x7dcfff),
+            accent_primary: rgb(0x007a_a2f7),
+            accent_secondary: rgb(0x00bb_9af7),
+            accent_success: rgb(0x009e_ce6a),
+            accent_warning: rgb(0x00e0_af68),
+            accent_error: rgb(0x00f7_768e),
+            accent_info: rgb(0x007d_cfff),
 
-            border_color: rgb(0x414868),
-            title_color: rgb(0xbb9af7),
-            playing_indicator: rgb(0x9ece6a),
-            current_track: rgb(0x7aa2f7),
+            border_color: rgb(0x0041_4868),
+            title_color: rgb(0x00bb_9af7),
+            playing_indicator: rgb(0x009e_ce6a),
+            current_track: rgb(0x007a_a2f7),
         }
     }
 
     /// Create a theme based on type
+    #[must_use]
     pub fn from_type(theme_type: ThemeType) -> Self {
         match theme_type {
             ThemeType::Dark => Self::dark(),

@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::Rgba;
 
 /// Whether the Review step should render the per-filter plot for a
 /// channel result.
@@ -12,6 +12,7 @@ use gpui::*;
 /// Regression guard for Issue 6: a previous version gated on `has_main`
 /// alone, which meant broadband-only optimizations rendered no plot at
 /// all even though filters existed.
+#[must_use]
 pub fn should_render_filter_plot(
     has_response_data: bool,
     has_main: bool,
@@ -20,6 +21,7 @@ pub fn should_render_filter_plot(
     has_response_data && (has_main || has_broadband)
 }
 
+#[must_use]
 pub fn is_room_eq_sub_or_lfe_channel(channel_name: &str) -> bool {
     roomeq_model::home_cinema::role_for_channel(channel_name).is_sub_or_lfe()
 }
@@ -31,6 +33,11 @@ pub(super) fn count_points_in_domain(points: &[(f64, f64)], domain: (f64, f64)) 
         .count()
 }
 
+#[must_use]
+#[expect(
+    clippy::similar_names,
+    reason = "Related UI values retain the domain names used by their paired controls"
+)]
 pub fn calculate_room_eq_log_trend(
     freqs: &[f64],
     values: &[f64],
@@ -91,8 +98,7 @@ pub(super) fn finite_positive_frequency_range(frequencies: &[f64]) -> Option<(f6
 
 pub(super) fn route_display_name(kind: &str) -> &'static str {
     match kind {
-        "main_highpass_to_self" => "main high-pass",
-        "main_highpass" => "main high-pass",
+        "main_highpass_to_self" | "main_highpass" => "main high-pass",
         "redirected_bass_lowpass_to_sub" => "redirected bass",
         "lfe_lowpass_to_sub" => "LFE to sub",
         "full_range" => "full range",
@@ -100,6 +106,10 @@ pub(super) fn route_display_name(kind: &str) -> &'static str {
     }
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn rgba_from_u32(color: u32) -> Rgba {
     let r = ((color >> 16) & 0xff) as f32 / 255.0;
     let g = ((color >> 8) & 0xff) as f32 / 255.0;

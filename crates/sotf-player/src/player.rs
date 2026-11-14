@@ -46,6 +46,7 @@ impl Player {
             .map_err(Into::into)
     }
 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             manager: AudioEngineManager::with_signal_watching(true),
@@ -57,6 +58,10 @@ impl Player {
         }
     }
 
+    /// Load and play.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn load_and_play(
         &mut self,
         path: PathBuf,
@@ -67,6 +72,10 @@ impl Player {
         self.load_and_play_at(path, plugins, output_channels, output_device, None)
     }
 
+    /// Load and play at.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn load_and_play_at(
         &mut self,
         path: PathBuf,
@@ -85,6 +94,9 @@ impl Player {
     }
 
     /// Load and play any audio source (file, URL, or service stream).
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn load_and_play_source(
         &mut self,
         source: AudioSource,
@@ -96,6 +108,9 @@ impl Player {
     }
 
     /// Load and play any audio source at a specific position.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn load_and_play_source_at(
         &mut self,
         source: AudioSource,
@@ -137,6 +152,13 @@ impl Player {
     /// Switch the current engine to another compatible source without tearing
     /// down the output stream. This keeps manual queue jumps from taking the
     /// harsher stop/load/start path used when the engine format must change.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned command inputs in the public playback API "
+    )]
     pub fn switch_to_source_at(
         &mut self,
         source: AudioSource,
@@ -191,11 +213,15 @@ impl Player {
         Ok(())
     }
 
+    /// Update plugins.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn update_plugins(
         &mut self,
         plugins: Vec<PluginConfig>,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        log::info!("[Player] update_plugins: {} plugins", plugins.len(),);
+        log::info!("[Player] update_plugins: {} plugins", plugins.len());
         match self.manager.update_plugin_chain(&plugins) {
             Ok(()) => {
                 // Update saved config so crash recovery uses latest plugins.
@@ -216,6 +242,10 @@ impl Player {
     }
 
     #[cfg(feature = "dev-api")]
+    /// Update plugins strict.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn update_plugins_strict(
         &mut self,
         plugins: Vec<PluginConfig>,
@@ -229,6 +259,9 @@ impl Player {
     }
 
     /// Update the plugin graph (DAG topology for multi-driver crossovers)
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn update_plugin_graph(
         &mut self,
         config: sotf_audio::engine::PluginGraphConfig,
@@ -253,6 +286,10 @@ impl Player {
     }
 
     #[cfg(feature = "dev-api")]
+    /// Update plugin graph strict.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn update_plugin_graph_strict(
         &mut self,
         config: sotf_audio::engine::PluginGraphConfig,
@@ -274,6 +311,9 @@ impl Player {
     ///
     /// This updates a single parameter without rebuilding the plugin chain.
     /// The value should be a string representation (JSON for complex types).
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn set_plugin_parameter(
         &self,
         plugin_index: usize,
@@ -296,6 +336,9 @@ impl Player {
     /// QA path that reports whether the processing thread acknowledged the
     /// parameter update. Unlike the normal edit path, an absent engine is an
     /// error so callers cannot mistake a deferred setting for an applied one.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn set_plugin_parameter_strict(
         &self,
         plugin_index: usize,
@@ -307,16 +350,27 @@ impl Player {
             .map_err(Into::into)
     }
 
+    /// Pause.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn pause(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.pause()?;
         Ok(())
     }
 
+    /// Resume.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn resume(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.resume()?;
         Ok(())
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn stop(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.stop()?;
         self.saved_config = None;
@@ -326,6 +380,10 @@ impl Player {
         Ok(())
     }
 
+    /// Set volume.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn set_volume(&self, volume: f32) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.set_volume(volume)?;
         Ok(())
@@ -335,6 +393,10 @@ impl Player {
         self.manager.get_volume()
     }
 
+    /// Set mute.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn set_mute(&self, muted: bool) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.set_mute(muted)?;
         Ok(())
@@ -356,11 +418,17 @@ impl Player {
     /// Queue the next file for gapless playback.
     /// When the current track finishes, the decoder seamlessly transitions
     /// to the queued file without any gap. Only one file can be queued at a time.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn queue_next(&self, path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
         self.queue_next_source(AudioSource::File(path))
     }
 
     /// Queue any audio source for gapless playback.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn queue_next_source(&self, source: AudioSource) -> Result<(), Box<dyn std::error::Error>> {
         match self.manager.queue_next(source) {
             Ok(()) => Ok(()),
@@ -370,6 +438,9 @@ impl Player {
     }
 
     /// Cancel a previously queued next file for gapless playback.
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn cancel_next(&self) -> Result<(), Box<dyn std::error::Error>> {
         match self.manager.cancel_next() {
             Ok(()) => Ok(()),
@@ -411,6 +482,9 @@ impl Player {
     }
 
     /// Seek to a specific position in seconds
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn seek(&self, position_secs: f64) -> Result<(), Box<dyn std::error::Error>> {
         self.manager.seek(position_secs)?;
         Ok(())
@@ -429,6 +503,13 @@ impl Player {
         self.manager.get_cached_plugin_data(index)
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Preserve owned command inputs in the public playback API "
+    )]
     pub fn set_output_device(
         &mut self,
         device_name: String,
@@ -441,7 +522,7 @@ impl Player {
 
         // Store the device name for next playback
         // Note: The device will be applied when playback starts next time
-        log::info!("Output device set to: {}", device_name);
+        log::info!("Output device set to: {device_name}");
 
         // The actual device switching happens in the AudioEngine when it starts
         // We need to restart playback with the new device setting
@@ -455,10 +536,13 @@ impl Player {
     /// the plugin chain.
     ///
     /// # Arguments
-    /// * `plugins` - Plugin chain to apply (should include hal_input as first plugin)
+    /// * `plugins` - Plugin chain to apply (should include `hal_input` as first plugin)
     /// * `output_channels` - Expected output channel count after all plugins
     /// * `output_device` - Output device name (None for default)
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn start_hal_playback(
         &mut self,
         plugins: Vec<PluginConfig>,
@@ -476,11 +560,14 @@ impl Player {
     /// the plugin chain.
     ///
     /// # Arguments
-    /// * `plugins` - Plugin chain to apply (should include hal_input as first plugin)
+    /// * `plugins` - Plugin chain to apply (should include `hal_input` as first plugin)
     /// * `output_channels` - Expected output channel count after all plugins
     /// * `output_device` - Output device name (None for default)
     /// * `sample_rate` - Sample rate in Hz (e.g., 44100, 48000, 96000)
     #[cfg(all(target_os = "macos", feature = "hal"))]
+    ///
+    /// # Errors
+    /// Returns an error if the audio engine rejects the playback command or cannot configure playback.
     pub fn start_hal_playback_with_config(
         &mut self,
         plugins: Vec<PluginConfig>,
@@ -529,7 +616,7 @@ impl Player {
                 StreamingEvent::StreamMetadataChanged(metadata) => {
                     stream_metadata_event = Some(metadata);
                 }
-                _ => {}
+                StreamingEvent::StateChanged(_) => {}
             }
         }
 
@@ -537,10 +624,7 @@ impl Player {
         if let Some(ref err) = last_error {
             if self.saved_config.is_some() {
                 if self.restart_count == 0 {
-                    log::error!(
-                        "[Player] Engine crashed: {}. Attempting auto-restart...",
-                        err
-                    );
+                    log::error!("[Player] Engine crashed: {err}. Attempting auto-restart...");
                     self.restart_count = 1;
                     match self.attempt_restart() {
                         Ok(()) => {
@@ -550,13 +634,13 @@ impl Player {
                             last_error = None;
                         }
                         Err(e) => {
-                            log::error!("[Player] Restart failed: {}", e);
+                            log::error!("[Player] Restart failed: {e}");
                             self.engine_fatal_flag = true;
-                            last_error = Some(format!("Engine crashed and restart failed: {}", e));
+                            last_error = Some(format!("Engine crashed and restart failed: {e}"));
                         }
                     }
                 } else {
-                    log::error!("[Player] Engine crashed again: {}. Giving up.", err);
+                    log::error!("[Player] Engine crashed again: {err}. Giving up.");
                     self.engine_fatal_flag = true;
                 }
             }
@@ -641,6 +725,14 @@ impl Player {
 impl Default for Player {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl std::fmt::Debug for Player {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Player")
+            .field("engine_fatal_flag", &self.engine_fatal_flag)
+            .finish_non_exhaustive()
     }
 }
 

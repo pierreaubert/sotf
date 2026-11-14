@@ -1,5 +1,15 @@
 // intentional-file: measured chart geometry and cursor positions use pixels.
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_precision_loss,
+        clippy::cast_sign_loss,
+        reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+    )]
     pub(crate) fn render_spectrum_screen(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -41,13 +51,12 @@ impl PlayerView {
         );
         let chart_height = self
             .spectrum_plot_size
-            .map(|(_, height)| height - 32.0 * scale)
-            .unwrap_or(240.0 * scale)
+            .map_or(240.0 * scale, |(_, height)| height - 32.0 * scale)
             .max(1.0);
         let content = if let Some(frame) = info {
             let count = frame.magnitudes.len();
             let bounds = std::rc::Rc::new(std::cell::Cell::new(None::<Bounds<Pixels>>));
-            let measured = bounds.clone();
+            let measured = std::rc::Rc::clone(&bounds);
             let plot = div()
                 .id("spectrum-inspection-plot")
                 .relative()
@@ -57,7 +66,7 @@ impl PlayerView {
                     SpectrumElement::new(
                         magnitudes
                             .clone()
-                            .unwrap_or_else(|| frame.magnitudes.clone()),
+                            .unwrap_or_else(|| std::sync::Arc::clone(&frame.magnitudes)),
                     )
                     .peak_hold(!spectrum.hold)
                     .peak_color(theme.text_primary)
@@ -68,7 +77,7 @@ impl PlayerView {
                     )),
                 )
                 .child(
-                    canvas(move |rect, _, _| measured.set(Some(rect)), |_, _, _, _| {})
+                    canvas(move |rect, _, _| measured.set(Some(rect)), |_, (), _, _| {})
                         .absolute()
                         .size_full(),
                 )
@@ -103,7 +112,7 @@ impl PlayerView {
                         != Some(fraction)
                     {
                         view.state.update(cx, |state, _| {
-                            state.app.ui_state.spectrum_view.cursor_fraction = Some(fraction)
+                            state.app.ui_state.spectrum_view.cursor_fraction = Some(fraction);
                         });
                         cx.notify();
                     }
@@ -176,7 +185,7 @@ impl PlayerView {
                             });
                         });
                     },
-                    |_, _, _, _| {},
+                    |_, (), _, _| {},
                 )
                 .absolute()
                 .size_full(),
@@ -269,7 +278,7 @@ impl PlayerView {
                                             .on_change(move |smoothed, _, cx| {
                                                 smooth_state.update(cx, |state, _| {
                                                     state.app.ui_state.spectrum_view.smoothed =
-                                                        smoothed
+                                                        smoothed;
                                                 });
                                                 let _ = smooth_view.update(cx, |_, cx| cx.notify());
                                             }),
@@ -309,7 +318,7 @@ impl PlayerView {
                     .on_click_event(cx.listener(|view, _, _, cx| {
                         view.state.update(cx, |state, _| {
                             state.app.ui_state.spectrum_view.details_open =
-                                !state.app.ui_state.spectrum_view.details_open
+                                !state.app.ui_state.spectrum_view.details_open;
                         });
                         cx.notify();
                     })),
@@ -335,7 +344,7 @@ impl PlayerView {
                     ))
                     .color(theme.text_muted),
                 );
-                let frame = frame.clone();
+                let frame = std::sync::Arc::clone(frame);
                 let inspect_state = self.state.clone();
                 let inspect_view = cx.entity().downgrade();
                 body = body.child(Text::label(labels.frequency).color(theme.text_primary));
@@ -356,7 +365,7 @@ impl PlayerView {
                                     .app
                                     .ui_state
                                     .spectrum_view
-                                    .inspect_frequency(&frame, value)
+                                    .inspect_frequency(&frame, value);
                             });
                             let _ = inspect_view.update(cx, |_, cx| cx.notify());
                         }),

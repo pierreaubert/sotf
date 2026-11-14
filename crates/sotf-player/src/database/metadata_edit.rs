@@ -5,12 +5,16 @@ use rusqlite::{Result as SqlResult, Transaction, params};
 use std::path::Path;
 
 impl MusicDatabase {
-    pub fn update_track_metadata(&mut self, path: &Path, patch: &MetadataPatch) -> SqlResult<()> {
+    /// Update track metadata.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
+    pub fn update_track_metadata(&mut self, path: &Path, changes: &MetadataPatch) -> SqlResult<()> {
         let tx = self.conn.transaction()?;
         let now = current_timestamp();
         let path_str = path.to_string_lossy().to_string();
 
-        if let Some(album_title) = &patch.album_title {
+        if let Some(album_title) = &changes.album_title {
             tx.execute(
                 "UPDATE albums
                  SET title = ?1, updated_at = ?2
@@ -18,15 +22,15 @@ impl MusicDatabase {
                 params![album_title, now, &path_str],
             )?;
         }
-        if let Some(year) = patch.year {
+        if let Some(year) = changes.year {
             tx.execute(
                 "UPDATE albums
                  SET year = ?1, updated_at = ?2
                  WHERE id = (SELECT album_id FROM tracks WHERE path = ?3)",
-                params![year as i64, now, &path_str],
+                params![i64::from(year), now, &path_str],
             )?;
         }
-        if let Some(edition) = &patch.edition {
+        if let Some(edition) = &changes.edition {
             tx.execute(
                 "UPDATE tracks SET edition = ?1, updated_at = ?2 WHERE path = ?3",
                 params![edition, now, &path_str],
@@ -50,18 +54,18 @@ impl MusicDatabase {
                 updated_at = ?13
              WHERE path = ?14",
             params![
-                patch.title,
-                patch.artist,
-                patch.album_artist,
-                patch.genre,
-                patch.composer,
-                patch.disc_number.map(|n| n as i64),
-                patch.track_number.map(|n| n as i64),
-                patch.conductor,
-                patch.performer,
-                patch.isrc,
-                patch.ensemble,
-                patch.edition,
+                changes.title,
+                changes.artist,
+                changes.album_artist,
+                changes.genre,
+                changes.composer,
+                changes.disc_number.map(i64::from),
+                changes.track_number.map(i64::from),
+                changes.conductor,
+                changes.performer,
+                changes.isrc,
+                changes.ensemble,
+                changes.edition,
                 now,
                 &path_str,
             ],
@@ -76,7 +80,15 @@ impl MusicDatabase {
         tx.commit()
     }
 
-    pub fn update_album_metadata(&mut self, album_id: i64, patch: &MetadataPatch) -> SqlResult<()> {
+    /// Update album metadata.
+    ///
+    /// # Errors
+    /// Returns an error if SQLite cannot execute the operation or convert stored values.
+    pub fn update_album_metadata(
+        &mut self,
+        album_id: i64,
+        changes: &MetadataPatch,
+    ) -> SqlResult<()> {
         let tx = self.conn.transaction()?;
         let now = current_timestamp();
 
@@ -88,9 +100,9 @@ impl MusicDatabase {
                 updated_at = ?4
              WHERE id = ?5",
             params![
-                patch.album_title,
-                patch.year.map(|n| n as i64),
-                patch.edition,
+                changes.album_title,
+                changes.year.map(i64::from),
+                changes.edition,
                 now,
                 album_id,
             ],
@@ -108,13 +120,13 @@ impl MusicDatabase {
                 updated_at = ?8
              WHERE album_id = ?9",
             params![
-                patch.album_artist,
-                patch.genre,
-                patch.composer,
-                patch.conductor,
-                patch.performer,
-                patch.ensemble,
-                patch.edition,
+                changes.album_artist,
+                changes.genre,
+                changes.composer,
+                changes.conductor,
+                changes.performer,
+                changes.ensemble,
+                changes.edition,
                 now,
                 album_id,
             ],
@@ -135,6 +147,10 @@ impl MusicDatabase {
 #[allow(
     clippy::type_complexity,
     reason = "local SQL row tuple: each element is a distinct optional track facet"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Related metadata facets are refreshed together within the caller transaction"
 )]
 fn refresh_track_facets(tx: &Transaction<'_>, track_id: i64) -> SqlResult<()> {
     let (genre, composer, conductor, performer, ensemble): (

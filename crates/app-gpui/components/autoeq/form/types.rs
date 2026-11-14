@@ -1,4 +1,4 @@
-use gpui::*;
+use gpui::{App, Window};
 
 /// Callback type for string parameter changes
 pub(crate) type StringCallback = Box<dyn Fn(&str, &mut Window, &mut App) + 'static>;
@@ -17,7 +17,7 @@ pub(crate) type ToggleCallback = Box<dyn Fn(bool, &mut Window, &mut App) + 'stat
 
 pub(crate) type ActionCallback = Box<dyn Fn(&mut Window, &mut App) + 'static>;
 
-/// Layout mode for the AutoEQ form.
+/// Layout mode for the `AutoEQ` form.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AutoEqLayoutMode {
     /// Original card-based layout (headphone EQ, spinorama EQ)

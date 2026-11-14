@@ -5,7 +5,7 @@ use crate::components::design::Ds;
 use crate::components::icons::{Icon, IconName};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, ObjectFit, div, img, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
 };
@@ -24,6 +24,10 @@ macro_rules! tracked {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_now_playing_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let state = self.state.read(cx);
@@ -61,9 +65,7 @@ impl PlayerView {
         let mut artist = track
             .and_then(|track| track.artist.clone())
             .unwrap_or_default();
-        let mut album = item
-            .map(|item| item.album.title.clone())
-            .unwrap_or_default();
+        let mut album = item.map_or_default(|item| item.album.title.clone());
         let art = (!system_input && stream_seekable.is_none())
             .then(|| item.and_then(|item| item.album.album_art_path.clone()))
             .flatten();
@@ -147,7 +149,7 @@ impl PlayerView {
                     .theme(theme.to_button_theme())
                     .on_click_event(cx.listener(|view, _, window, cx| {
                         view.state.update(cx, |state, _| {
-                            state.app.set_screen(Screen::Streams, "NowPlayingStation")
+                            state.app.set_screen(Screen::Streams, "NowPlayingStation");
                         });
                         view.focus_handle.focus(window, cx);
                         cx.notify();
@@ -292,6 +294,14 @@ impl PlayerView {
 }
 
 impl PlayerView {
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_now_playing_signal_path(&self, cx: &Context<Self>) -> AnyElement {
         let state = self.state.read(cx);
         let d = Ds::from_cx(cx);
@@ -405,8 +415,7 @@ impl PlayerView {
                         processing = processing.child(Text::caption("↓").color(theme.text_muted));
                     }
                     let name = sotf_audio_player::PluginType::from_wire_name(&plugin.plugin_type)
-                        .map(|kind| kind.name())
-                        .unwrap_or(plugin.plugin_type.as_str());
+                        .map_or(plugin.plugin_type.as_str(), |kind| kind.name());
                     processing = processing.child(
                         Text::new(name.to_string())
                             .size(gpui_ui_kit::TextSize::Sm)

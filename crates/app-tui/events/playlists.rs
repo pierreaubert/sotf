@@ -35,7 +35,7 @@ fn handle_list_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
                 let idx = app.playlists.controller.selected_playlist_index;
                 match app.playlists.controller.open_playlist(db, idx) {
                     Ok(()) => app.playlists.mode = PlaylistMode::Tracks,
-                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                 }
             }
             None
@@ -126,7 +126,7 @@ fn handle_tracks_mode(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
             if let Some(db) = app.library.get_database() {
                 let idx = app.playlists.controller.selected_track_index;
                 if let Err(e) = app.playlists.controller.remove_track(db, idx) {
-                    app.ui.status_message = Some(format!("Error: {}", e));
+                    app.ui.status_message = Some(format!("Error: {e}"));
                 }
             }
             None
@@ -173,14 +173,14 @@ fn handle_text_input(app: &mut App, key: KeyEvent, is_create: bool) -> Option<Pl
             {
                 if is_create {
                     match app.playlists.controller.create_playlist(db, &name, None) {
-                        Ok(_) => app.ui.status_message = Some(format!("Created '{}'", name)),
-                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                        Ok(_) => app.ui.status_message = Some(format!("Created '{name}'")),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                     }
                 } else {
                     let idx = app.playlists.controller.selected_playlist_index;
                     match app.playlists.controller.rename_playlist(db, idx, &name) {
-                        Ok(()) => app.ui.status_message = Some(format!("Renamed to '{}'", name)),
-                        Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                        Ok(()) => app.ui.status_message = Some(format!("Renamed to '{name}'")),
+                        Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                     }
                 }
             }
@@ -204,7 +204,7 @@ fn handle_confirm_delete(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> 
                 let idx = app.playlists.controller.selected_playlist_index;
                 match app.playlists.controller.delete_playlist(db, idx) {
                     Ok(()) => app.ui.status_message = Some("Playlist deleted".to_string()),
-                    Err(e) => app.ui.status_message = Some(format!("Error: {}", e)),
+                    Err(e) => app.ui.status_message = Some(format!("Error: {e}")),
                 }
             }
             app.playlists.mode = PlaylistMode::List;

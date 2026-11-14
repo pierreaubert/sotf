@@ -1,6 +1,6 @@
 /// Room EQ workflow step
 ///
-/// Flow: LoadData → Delay → Process → Configure → Optimize → Review → Export
+/// Flow: `LoadData` → Delay → Process → Configure → Optimize → Review → Export
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RoomEqStep {
     /// Step 1: Load/import measurement data
@@ -27,6 +27,7 @@ pub enum RoomEqStep {
 
 impl RoomEqStep {
     /// Get all steps in order
+    #[must_use]
     pub fn all() -> &'static [RoomEqStep] {
         &[
             RoomEqStep::LoadData,
@@ -40,6 +41,7 @@ impl RoomEqStep {
     }
 
     /// Get step index (0-based)
+    #[must_use]
     pub fn index(&self) -> usize {
         match self {
             RoomEqStep::LoadData => 0,
@@ -53,6 +55,7 @@ impl RoomEqStep {
     }
 
     /// Get step label
+    #[must_use]
     pub fn label(&self) -> &'static str {
         match self {
             RoomEqStep::LoadData => "Load Data",
@@ -66,6 +69,7 @@ impl RoomEqStep {
     }
 
     /// Get next step
+    #[must_use]
     pub fn next(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => Some(RoomEqStep::Delay),
@@ -79,6 +83,7 @@ impl RoomEqStep {
     }
 
     /// Get previous step
+    #[must_use]
     pub fn previous(&self) -> Option<RoomEqStep> {
         match self {
             RoomEqStep::LoadData => None,

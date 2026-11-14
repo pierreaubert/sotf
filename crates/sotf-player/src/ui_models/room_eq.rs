@@ -36,13 +36,13 @@ pub struct RoomEqScreenModel {
     /// Parsed CTC configuration forwarded to the optimizer.
     pub ctc_config: Option<roomeq_model::CtcConfig>,
 
-    /// Original `system` block imported from a RoomConfig file.
+    /// Original `system` block imported from a `RoomConfig` file.
     ///
     /// This carries home-cinema role mapping and bass-management policy.
     /// Rebuilding it from UI-only state can change the optimizer result.
     pub imported_system: Option<roomeq_model::SystemConfig>,
 
-    /// Original crossover map imported from a RoomConfig file.
+    /// Original crossover map imported from a `RoomConfig` file.
     pub imported_crossovers: Option<HashMap<String, roomeq_model::CrossoverConfig>>,
 
     /// Shared delay-detection state (probe form, results, overrides).
@@ -75,7 +75,7 @@ pub struct RoomEqScreenModel {
     /// Overall optimization progress (0.0 - 1.0).
     pub overall_progress: f32,
 
-    /// Progress history: (iteration, loss, channel_name, optional_extra).
+    /// Progress history: (iteration, loss, `channel_name`, `optional_extra`).
     pub progress_history: Vec<(usize, f64, String, Option<f64>)>,
 
     /// Current iteration number reported by the optimizer.
@@ -108,7 +108,7 @@ pub struct RoomEqScreenModel {
     /// Whether loaded data has multi-position measurements.
     pub has_multi_position_data: bool,
 
-    /// Per-speaker measurement counts: (channel_name, count).
+    /// Per-speaker measurement counts: (`channel_name`, count).
     pub multi_position_counts: Vec<(String, usize)>,
 
     /// Monotonic revision of the semantic optimization inputs
@@ -251,6 +251,10 @@ pub enum RoomEqEffect {
 
 impl RoomEqScreenModel {
     /// Apply a user-intent event to the model, returning side-effects for the UI shell.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Workflow events and configuration conversion preserve the complete measurement state transition"
+    )]
     pub fn apply(&mut self, event: RoomEqViewEvent) -> Vec<RoomEqEffect> {
         let mut effects = Vec::new();
 
@@ -320,9 +324,9 @@ impl RoomEqScreenModel {
                     self.begin_run();
                     self.optimization_status = OptimizationStatus::Running;
                     self.cancel_requested = Arc::new(AtomicBool::new(false));
-                    effects.push(RoomEqEffect::StartOptimization(
-                        self.cancel_requested.clone(),
-                    ));
+                    effects.push(RoomEqEffect::StartOptimization(std::sync::Arc::clone(
+                        &self.cancel_requested,
+                    )));
                 }
             }
             RoomEqViewEvent::CancelOptimization => {
@@ -339,7 +343,7 @@ impl RoomEqScreenModel {
                 self.overall_progress = progress.clamp(0.0, 1.0);
                 self.current_iteration = iteration;
                 self.current_loss = loss;
-                self.current_channel = current_channel.clone();
+                self.current_channel.clone_from(&current_channel);
                 if let Some(step) = current_step {
                     self.current_pipeline_step = Some(step);
                 }
@@ -405,16 +409,19 @@ impl RoomEqScreenModel {
     }
 
     /// Return true if measurement data is loaded.
+    #[must_use]
     pub fn has_measurements(&self) -> bool {
         !self.channel_measurements.is_empty()
     }
 
     /// Number of loaded channels.
+    #[must_use]
     pub fn channel_count(&self) -> usize {
         self.channel_measurements.len()
     }
 
     /// Names of configured channels.
+    #[must_use]
     pub fn channel_names(&self) -> Vec<String> {
         self.speaker_configs
             .iter()
@@ -423,11 +430,13 @@ impl RoomEqScreenModel {
     }
 
     /// True when an optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.optimization_status == OptimizationStatus::Running
     }
 
     /// True when the last optimization completed successfully.
+    #[must_use]
     pub fn is_optimization_complete(&self) -> bool {
         self.optimization_status == OptimizationStatus::Completed
     }
@@ -555,6 +564,7 @@ impl RoomEqScreenModel {
     ///
     /// A multi-driver channel with `D` drivers needs `D - 1` crossovers.
     /// Single-driver channels and unknown indices expect zero.
+    #[must_use]
     pub fn expected_crossover_count(&self, channel_idx: usize) -> usize {
         let Some(config) = self.speaker_configs.get(channel_idx) else {
             return 0;
@@ -608,6 +618,7 @@ impl RoomEqScreenModel {
     }
 
     /// Check if any channel is a subwoofer (LFE, Sub, SW).
+    #[must_use]
     pub fn has_subwoofer(&self) -> bool {
         self.channel_names().iter().any(|name| {
             let upper = name.to_uppercase();
@@ -616,6 +627,7 @@ impl RoomEqScreenModel {
     }
 
     /// Check if the setup is surround (3+ channels, excluding subs).
+    #[must_use]
     pub fn is_surround(&self) -> bool {
         let non_sub_count = self
             .channel_names()
@@ -629,6 +641,7 @@ impl RoomEqScreenModel {
     }
 
     /// Check if any channel has phase data.
+    #[must_use]
     pub fn has_phase_data(&self) -> bool {
         self.channel_measurements
             .iter()
@@ -636,11 +649,13 @@ impl RoomEqScreenModel {
     }
 
     /// Check if any channel is a multi-driver group.
+    #[must_use]
     pub fn has_multi_driver(&self) -> bool {
         self.channel_measurements.iter().any(|m| m.is_group)
     }
 
     /// Check if multi-position measurement data is available.
+    #[must_use]
     pub fn has_multiple_measurements(&self) -> bool {
         self.has_multi_position_data
     }
@@ -669,7 +684,8 @@ impl RoomEqScreenModel {
         "TFL", "TFR", "TSL", "TSR", "TBL", "TBR", "VOG", "TFC", "TBC", "TSC",
     ];
 
-    /// Check if measurement has height channels (for VoG).
+    /// Check if measurement has height channels (for `VoG`).
+    #[must_use]
     pub fn has_height_channels(&self) -> bool {
         self.channel_names().iter().any(|name| {
             let upper = name.to_uppercase();
@@ -678,6 +694,7 @@ impl RoomEqScreenModel {
     }
 
     /// Check if the setup is home cinema (5+ non-sub channels).
+    #[must_use]
     pub fn is_home_cinema(&self) -> bool {
         let non_sub_count = self
             .channel_names()
@@ -691,6 +708,11 @@ impl RoomEqScreenModel {
     }
 
     /// Get average pre-score.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Measurement and optimizer summaries average floating-point values"
+    )]
     pub fn average_pre_score(&self) -> f64 {
         if self.channel_results.is_empty() {
             0.0
@@ -704,6 +726,11 @@ impl RoomEqScreenModel {
     }
 
     /// Get average post-score.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Measurement and optimizer summaries average floating-point values"
+    )]
     pub fn average_post_score(&self) -> f64 {
         if self.channel_results.is_empty() {
             0.0
@@ -725,6 +752,9 @@ impl RoomEqScreenModel {
         self.load_recording_with_channels(recording_state, None, None);
     }
 
+    ///
+    /// # Errors
+    /// Returns an error if the imported recording data or speaker topology is invalid.
     pub fn load_from_imported_recording(
         &mut self,
         recording_state: &RecordingState,
@@ -735,6 +765,10 @@ impl RoomEqScreenModel {
         Ok(())
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Workflow events and configuration conversion preserve the complete measurement state transition"
+    )]
     fn load_recording_with_channels(
         &mut self,
         recording_state: &RecordingState,
@@ -810,7 +844,7 @@ impl RoomEqScreenModel {
         if let Some(imported) = imported {
             // Imported CTC references already have source-relative paths resolved.
             // Loading a session must not regenerate files from current devices.
-            self.ctc_config = imported.configuration.ctc.clone();
+            self.ctc_config.clone_from(&imported.configuration.ctc);
             self.ctc_measurements = self
                 .ctc_config
                 .as_ref()
@@ -843,22 +877,19 @@ impl RoomEqScreenModel {
                         recording_state.recording_config.ctc_loopback_input_channel,
                         &recording_state.transfer_matrix_loopbacks,
                     ) {
-                        Ok(Some(measurements)) => match crate::room_eq_types::ctc_uniform_sweep_range_for_measurements(
+                        Ok(Some(measurements)) => if let Some(range) = crate::room_eq_types::ctc_uniform_sweep_range_for_measurements(
                             &recording_state.channel_recordings,
                             &speaker_names,
                             &measurements,
                         ) {
-                            Some(range) => {
-                                ctc_exported_raw = true;
-                                ctc_raw_sweep_range = Some(range);
-                                Some(measurements)
-                            }
-                            None => {
-                                log::warn!(
-                                    "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
-                                );
-                                None
-                            }
+                            ctc_exported_raw = true;
+                            ctc_raw_sweep_range = Some(range);
+                            Some(measurements)
+                        } else {
+                            log::warn!(
+                                "Raw-sweep CTC matrix mixes sweep ranges or references missing recordings; falling back to measured impulse-response export"
+                            );
+                            None
                         },
                         Ok(None) => {
                             log::warn!(
@@ -867,7 +898,7 @@ impl RoomEqScreenModel {
                             None
                         }
                         Err(e) => {
-                            log::warn!("Could not export raw-sweep CTC transfer matrix: {}", e);
+                            log::warn!("Could not export raw-sweep CTC transfer matrix: {e}");
                             None
                         }
                     }
@@ -884,7 +915,7 @@ impl RoomEqScreenModel {
                     ) {
                         Ok(measurements) => measurements,
                         Err(e) => {
-                            log::warn!("Could not export CTC transfer matrix: {}", e);
+                            log::warn!("Could not export CTC transfer matrix: {e}");
                             None
                         }
                     }
@@ -916,12 +947,12 @@ impl RoomEqScreenModel {
                         None
                     },
                     sweep_start_hz: if raw {
-                        ctc_raw_sweep_range.map(|(start, _)| start as f64)
+                        ctc_raw_sweep_range.map(|(start, _)| f64::from(start))
                     } else {
                         None
                     },
                     sweep_end_hz: if raw {
-                        ctc_raw_sweep_range.map(|(_, end)| end as f64)
+                        ctc_raw_sweep_range.map(|(_, end)| f64::from(end))
                     } else {
                         None
                     },
@@ -949,7 +980,11 @@ impl RoomEqScreenModel {
         self.data_source = RoomEqDataSource::FromRecording;
     }
 
-    /// Convert UI state to backend RoomConfig.
+    /// Convert UI state to backend `RoomConfig`.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Workflow events and configuration conversion preserve the complete measurement state transition"
+    )]
     pub fn to_room_config(&self) -> roomeq_model::RoomConfig {
         use ndarray::Array1;
 
@@ -962,27 +997,25 @@ impl RoomEqScreenModel {
                 .measurement
                 .frequencies
                 .iter()
-                .map(|&f| f as f64)
+                .map(|&f| f64::from(f))
                 .collect();
             let magnitude_db: Vec<f64> = meas
                 .measurement
                 .magnitude_db
                 .iter()
-                .map(|&db| db as f64)
+                .map(|&db| f64::from(db))
                 .collect();
-            let phase = if !meas.measurement.phase_deg.is_empty()
-                && meas.measurement.phase_deg.len() == frequencies.len()
-            {
-                Some(Array1::from_vec(
+            let phase = (!meas.measurement.phase_deg.is_empty()
+                && meas.measurement.phase_deg.len() == frequencies.len())
+            .then(|| {
+                Array1::from_vec(
                     meas.measurement
                         .phase_deg
                         .iter()
-                        .map(|&p| p as f64)
+                        .map(|&p| f64::from(p))
                         .collect(),
-                ))
-            } else {
-                None
-            };
+                )
+            });
 
             autoeq_core::Curve {
                 freq: Array1::from_vec(frequencies),
@@ -994,16 +1027,13 @@ impl RoomEqScreenModel {
 
         let result_to_curve =
             |res: &crate::recording_types::RecordingResult| -> autoeq_core::Curve {
-                let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f as f64).collect();
-                let magnitude_db: Vec<f64> = res.magnitude_db.iter().map(|&db| db as f64).collect();
-                let phase = if !res.phase_deg.is_empty() && res.phase_deg.len() == frequencies.len()
-                {
-                    Some(Array1::from_vec(
-                        res.phase_deg.iter().map(|&p| p as f64).collect(),
-                    ))
-                } else {
-                    None
-                };
+                let frequencies: Vec<f64> = res.frequencies.iter().map(|&f| f64::from(f)).collect();
+                let magnitude_db: Vec<f64> =
+                    res.magnitude_db.iter().map(|&db| f64::from(db)).collect();
+                let phase = (!res.phase_deg.is_empty() && res.phase_deg.len() == frequencies.len())
+                    .then(|| {
+                        Array1::from_vec(res.phase_deg.iter().map(|&p| f64::from(p)).collect())
+                    });
 
                 autoeq_core::Curve {
                     freq: Array1::from_vec(frequencies),
@@ -1154,7 +1184,7 @@ impl RoomEqScreenModel {
                                 .push(autoeq_core::MeasurementSource::InMemory(to_curve(meas)));
                         }
 
-                        let xover_id = format!("xover_{}", channel_name);
+                        let xover_id = format!("xover_{channel_name}");
                         let xover_type = match speaker_config.crossover_type {
                             CrossoverType::LR12 => "LR12",
                             CrossoverType::LR24 => "LR24",
@@ -1264,9 +1294,9 @@ impl RoomEqScreenModel {
             crossovers: Some(crossovers),
             target_curve: None,
             optimizer,
-            provenance: Default::default(),
+            provenance: roomeq_model::ProvenanceConfig::default(),
             recording_config: None,
-            measured_impulse_responses: Default::default(),
+            measured_impulse_responses: std::collections::BTreeMap::default(),
             ctc,
             reporting: None,
             cea2034_cache: None,
@@ -1274,6 +1304,7 @@ impl RoomEqScreenModel {
     }
 
     /// Validate the current configuration.
+    #[must_use]
     pub fn validate(&self) -> roomeq_model::validation_rules::ValidationResult {
         let config = self.to_room_config();
         roomeq_model::validation_rules::validate_room_config(&config)
@@ -1281,6 +1312,11 @@ impl RoomEqScreenModel {
 
     /// Calculate the level offset needed to normalize a curve to 0 dB.
     /// Uses mean SPL in the 1 kHz to 2 kHz range by default.
+    #[must_use]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Measurement and optimizer summaries average floating-point values"
+    )]
     pub fn calculate_normalization_offset(frequencies: &[f64], spl: &[f64]) -> f64 {
         let min_freq = 1000.0;
         let max_freq = 2000.0;
@@ -1299,7 +1335,7 @@ impl RoomEqScreenModel {
         }
 
         if count > 0 {
-            sum / count as f64
+            sum / f64::from(count)
         } else if spl.is_empty() {
             0.0
         } else {
@@ -1308,11 +1344,13 @@ impl RoomEqScreenModel {
     }
 
     /// Normalize a set of points by subtracting an offset.
+    #[must_use]
     pub fn normalize_points(points: &[(f64, f64)], offset: f64) -> Vec<(f64, f64)> {
         points.iter().map(|&(f, db)| (f, db - offset)).collect()
     }
 
     /// Compute the average slope for L and R channels in dB/octave.
+    #[must_use]
     pub fn compute_lr_slope(&self) -> Option<(f64, f64, f64)> {
         crate::room_eq_types::compute_lr_slope(&self.channel_measurements)
     }
@@ -1371,7 +1409,7 @@ fn normalize_channel_measurement_grids(measurements: &mut [ChannelMeasurement]) 
             interpolate_log_grid(frequencies, &channel.measurement.magnitude_db, &grid);
         channel.measurement.phase_deg =
             interpolate_log_grid(frequencies, &channel.measurement.phase_deg, &grid);
-        channel.measurement.frequencies = grid.clone();
+        channel.measurement.frequencies.clone_from(&grid);
     }
 }
 

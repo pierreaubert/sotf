@@ -23,7 +23,7 @@ const MAX_IPC_LINE_BYTES: usize = 256 * 1024;
 const MAX_IPC_RESPONSE_BYTES: u64 = 4 * 1024 * 1024;
 const IPC_TIMEOUT: Duration = Duration::from_secs(2);
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(5);
-/// Conservative AF_UNIX `sun_path` capacity (macOS allows 104 bytes including
+/// Conservative `AF_UNIX` `sun_path` capacity (macOS allows 104 bytes including
 /// the terminator); deeper paths must fall back to a short runtime dir.
 const MAX_SOCKET_PATH_BYTES: usize = 100;
 
@@ -37,6 +37,7 @@ pub struct SystemwideTargetConfig {
 }
 
 impl SystemwideTargetConfig {
+    #[must_use]
     pub fn new(executable: PathBuf) -> Self {
         Self { executable }
     }
@@ -56,6 +57,7 @@ pub struct SystemwideTarget {
 }
 
 impl SystemwideTarget {
+    #[must_use]
     pub fn new(config: SystemwideTargetConfig) -> Self {
         Self {
             config,
@@ -118,7 +120,7 @@ impl SystemwideTarget {
         self.send_bytes(&serde_json::to_vec(command)?)
     }
 
-    fn daemon_reply(response: Value) -> DevReply {
+    fn daemon_reply(response: &Value) -> DevReply {
         if response
             .get("success")
             .and_then(Value::as_bool)
@@ -152,7 +154,7 @@ impl SystemwideTarget {
                 exit_code: None,
                 signal_or_exception: None,
             },
-            Ok(Some(status)) => process_from_status(child.id(), &status),
+            Ok(Some(status)) => process_from_status(child.id(), status),
             Err(error) => ProcessObservation {
                 pid: Some(child.id()),
                 alive: false,
@@ -351,7 +353,7 @@ impl FuzzTarget for SystemwideTarget {
     fn execute(&mut self, action: &Action) -> Result<Observation, TargetError> {
         let response = match &action.payload {
             ActionPayload::Ipc { command } => self.send_json(command)?,
-            ActionPayload::Stdin { bytes, eof: _ } => self.send_bytes(bytes)?,
+            ActionPayload::Stdin { bytes, .. } => self.send_bytes(bytes)?,
             ActionPayload::Wait { duration_ms } => {
                 thread::sleep(Duration::from_millis((*duration_ms).min(action.timeout_ms)));
                 json!({"success": true, "data": null})
@@ -362,7 +364,7 @@ impl FuzzTarget for SystemwideTarget {
                 )));
             }
         };
-        let reply = Self::daemon_reply(response);
+        let reply = Self::daemon_reply(&response);
         let snapshot = self.snapshot().ok();
         let process = self.process_observation();
         let new_logs = self.collect_logs();
@@ -476,7 +478,7 @@ fn read_new_lines(path: &Path, offset: &mut u64) -> Vec<String> {
 fn executable_build_id(path: &Path) -> Result<String, TargetError> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
-    let mut buffer = [0_u8; 64 * 1024];
+    let mut buffer = vec![0_u8; 64 * 1024];
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
@@ -487,7 +489,7 @@ fn executable_build_id(path: &Path) -> Result<String, TargetError> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
+fn process_from_status(pid: u32, status: ExitStatus) -> ProcessObservation {
     ProcessObservation {
         pid: Some(pid),
         alive: false,
@@ -497,13 +499,13 @@ fn process_from_status(pid: u32, status: &ExitStatus) -> ProcessObservation {
 }
 
 #[cfg(unix)]
-fn status_signal(status: &ExitStatus) -> Option<String> {
+fn status_signal(status: ExitStatus) -> Option<String> {
     use std::os::unix::process::ExitStatusExt;
     status.signal().map(|signal| format!("signal {signal}"))
 }
 
 #[cfg(not(unix))]
-fn status_signal(_status: &ExitStatus) -> Option<String> {
+fn status_signal(_status: ExitStatus) -> Option<String> {
     None
 }
 
@@ -559,5 +561,13 @@ mod tests {
                 "opt-in {name} must be rejected: {error}"
             );
         }
+    }
+}
+
+impl std::fmt::Debug for SystemwideTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SystemwideTarget")
+            .field("semantic_revision", &self.semantic_revision)
+            .finish_non_exhaustive()
     }
 }

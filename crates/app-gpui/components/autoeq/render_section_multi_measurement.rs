@@ -24,7 +24,7 @@
         .theme(toggle_theme.clone());
 
     if let Some(ref h) = on_use_multi_measurement_change_rc {
-        let h = h.clone();
+        let h = std::rc::Rc::clone(h);
         mm_toggle = mm_toggle.on_change(move |v, w, cx| h(v, w, cx));
     }
 
@@ -56,11 +56,11 @@
             .theme(theme.select_theme.clone());
 
         if let Some(ref h) = on_multi_measurement_strategy_toggle_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             strategy_select = strategy_select.on_toggle(move |open, w, cx| h(open, w, cx));
         }
         if let Some(ref h) = on_multi_measurement_strategy_change_rc {
-            let h = h.clone();
+            let h = std::rc::Rc::clone(h);
             strategy_select = strategy_select.on_change(move |val, w, cx| h(val.as_ref(), w, cx));
         }
 
@@ -81,7 +81,7 @@
                 .theme(theme.number_input_theme.clone());
 
             if let Some(ref h) = on_multi_measurement_variance_lambda_change_rc {
-                let h = h.clone();
+                let h = std::rc::Rc::clone(h);
                 lambda_input = lambda_input.on_change(move |v, w, cx| h(v, w, cx));
             }
 
@@ -116,7 +116,7 @@
                     .theme(theme.number_input_theme.clone());
 
                 if let Some(ref h) = on_multi_measurement_weight_change_rc {
-                    let h = h.clone();
+                    let h = std::rc::Rc::clone(h);
                     let idx = i;
                     weight_input = weight_input.on_change(move |v, w, cx| h(idx, v, w, cx));
                 }

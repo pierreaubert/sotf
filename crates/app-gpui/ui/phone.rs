@@ -248,6 +248,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_tab_bar_collapsible(
         &self,
         current_screen: Screen,
@@ -278,7 +282,7 @@ impl PlayerView {
                 cx.notify();
             });
         });
-        let mouse_toggle = toggle.clone();
+        let mouse_toggle = std::rc::Rc::clone(&toggle);
         let key_toggle = toggle;
 
         let current_tab_icon = [
@@ -295,7 +299,7 @@ impl PlayerView {
                 || (screen == Screen::StudioHub && current_screen.is_studio_tool())
                 || (screen == Screen::Settings && current_screen == Screen::SettingsDetail)
                 || (screen == Screen::NowPlaying && current_screen == Screen::Queue);
-            if selected { Some(icon) } else { None }
+            selected.then_some(icon)
         })
         .unwrap_or(IconName::Home);
 
@@ -407,7 +411,7 @@ impl PlayerView {
                 cx.notify();
             });
         });
-        let mouse_activate = activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&activate);
         let key_activate = activate;
         let mouse_focus = focus_handle.clone();
         let fg = if selected {
@@ -551,6 +555,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_phone_screen_header(
         &self,
         title: &'static str,
@@ -732,6 +740,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_home_shelf(
         &self,
         shelf: crate::app::PhoneHomeShelf,
@@ -838,6 +854,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::similar_names,
+        reason = "Related UI values retain the domain names used by their paired controls"
+    )]
     fn render_home_shelf_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let (theme, shelf, columns, albums, album_count) = {
@@ -896,7 +916,7 @@ impl PlayerView {
                     .py(d.grid)
                     .text_size(d.text_sm)
                     .text_color(theme.text_muted)
-                    .child(format!("{} albums", album_count)),
+                    .child(format!("{album_count} albums")),
             )
             .child(
                 div()
@@ -1151,7 +1171,7 @@ impl PlayerView {
                 }
             });
         });
-        let mouse_activate = activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&activate);
         let key_activate = activate;
 
         let element = div()
@@ -1198,6 +1218,10 @@ impl PlayerView {
         phone_dev_track!(element, selector)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_queue_screen_phone(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -1253,7 +1277,7 @@ impl PlayerView {
             });
             view_for_edit.update(cx, |_view, cx| cx.notify());
         });
-        let edit_mouse = edit_activate.clone();
+        let edit_mouse = std::rc::Rc::clone(&edit_activate);
         let edit_key = edit_activate;
         let edit_element = div()
             .id(edit_id)
@@ -1370,7 +1394,22 @@ impl PlayerView {
             .into_any_element()
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPUI rendering and callback interfaces accept the complete UI context"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render_phone_queue_track_row(
         &self,
         album_idx: usize,
@@ -1398,10 +1437,10 @@ impl PlayerView {
             .artist
             .clone()
             .unwrap_or_else(|| unknown_artist_label.to_string());
-        let duration = track
-            .duration_secs
-            .map(|seconds| Self::format_phone_time(seconds as f64))
-            .unwrap_or_else(|| "--:--".to_string());
+        let duration = track.duration_secs.map_or_else(
+            || "--:--".to_string(),
+            |seconds| Self::format_phone_time(seconds as f64),
+        );
         let source = track.audio_source();
 
         let play_label = format!("{title}, {artist}, {album_title}, {duration}");
@@ -1430,7 +1469,7 @@ impl PlayerView {
             });
             view_for_play.update(cx, |_view, cx| cx.notify());
         });
-        let play_mouse = play_activate.clone();
+        let play_mouse = std::rc::Rc::clone(&play_activate);
         let play_key = play_activate;
 
         let play_element = div()
@@ -1570,7 +1609,7 @@ impl PlayerView {
                 });
                 view_for_remove.update(cx, |_view, cx| cx.notify());
             });
-            let remove_mouse = remove_activate.clone();
+            let remove_mouse = std::rc::Rc::clone(&remove_activate);
             let remove_key = remove_activate;
             let element = div()
                 .id(remove_id)
@@ -1699,7 +1738,7 @@ impl PlayerView {
             });
             detail_focus.focus(window, cx);
         });
-        let mouse_activate = activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&activate);
         let key_activate = activate;
 
         let element = div()
@@ -1707,7 +1746,7 @@ impl PlayerView {
             .track_focus(&focus_handle)
             .track_focus_element(&focus_handle)
             .when_some(width_rems, |el, width| el.w(rems(width)))
-            .when(width_rems.is_none(), |el| el.w_full())
+            .when(width_rems.is_none(), gpui::Styled::w_full)
             .flex_none()
             .flex()
             .flex_col()
@@ -1755,6 +1794,10 @@ impl PlayerView {
         phone_dev_track!(element, selector)
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_phone_album_art(
         &self,
         art_path: Option<std::path::PathBuf>,
@@ -1786,6 +1829,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_mini_player(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let unknown_artist = self.phone_translations(cx).unknown_artist();
@@ -1829,7 +1876,7 @@ impl PlayerView {
             });
             view_for_expand.update(cx, |_view, cx| cx.notify());
         });
-        let open_mouse = open_activate.clone();
+        let open_mouse = std::rc::Rc::clone(&open_activate);
         let open_key = open_activate;
         let open_mouse_focus = open_focus.clone();
 
@@ -1914,6 +1961,14 @@ impl PlayerView {
             .child(self.render_phone_play_button("phone-mini-play", is_playing, &theme, cx))
             .into_any_element()
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render_phone_now_playing(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -1945,8 +2000,7 @@ impl PlayerView {
                 track
                     .and_then(|track| track.artist.clone())
                     .unwrap_or_else(|| text.choose_music.to_string()),
-                item.map(|item| item.album.title.clone())
-                    .unwrap_or_else(|| "SOTF".to_string()),
+                item.map_or_else(|| "SOTF".to_string(), |item| item.album.title.clone()),
                 item.and_then(|item| item.album.album_art_path.clone()),
                 state.app.playback.is_playing,
                 state.app.playback.position_secs,
@@ -2072,13 +2126,10 @@ impl PlayerView {
                                         } else {
                                             0.0
                                         };
-                                        let new_position = duration * ratio as f64;
+                                        let new_position = duration * f64::from(ratio);
                                         state.app.playback.position_secs = new_position;
                                         if let Err(e) = state.player.seek(new_position) {
-                                            log::error!(
-                                                "Failed to seek from phone scrubber: {}",
-                                                e
-                                            );
+                                            log::error!("Failed to seek from phone scrubber: {e}");
                                         }
                                     });
                                 }
@@ -2267,6 +2318,10 @@ impl PlayerView {
         phone_dev_track!(button, format!("phone.icon.{id}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_now_playing_drawer(
         &self,
         theme: &crate::theme::Theme,
@@ -2281,8 +2336,7 @@ impl PlayerView {
                 .app
                 .queue_state
                 .current_index()
-                .map(|idx| idx + 1)
-                .unwrap_or(0);
+                .map_or(0, |idx| idx + 1);
             (
                 state
                     .app
@@ -2441,22 +2495,24 @@ impl PlayerView {
             ),
         ];
 
-        let element =
-            div()
-                .id("phone-studio-hub")
-                .size_full()
-                .overflow_y_scroll()
-                .bg(theme.background)
-                .p(d.card)
-                .child(div().flex().flex_wrap().gap(d.gap_md).children(
-                    tools.into_iter().filter_map(|(screen, label, icon)| {
-                        if release_channel.allows(screen.maturity()) {
-                            Some(self.render_studio_hub_card(screen, label, icon, &theme, &d, cx))
-                        } else {
-                            None
-                        }
-                    }),
-                ));
+        let element = div()
+            .id("phone-studio-hub")
+            .size_full()
+            .overflow_y_scroll()
+            .bg(theme.background)
+            .p(d.card)
+            .child(
+                div().flex().flex_wrap().gap(d.gap_md).children(
+                    tools
+                        .into_iter()
+                        .filter(|&(screen, _label, _icon)| {
+                            release_channel.allows(screen.maturity())
+                        })
+                        .map(|(screen, label, icon)| {
+                            self.render_studio_hub_card(screen, label, icon, &theme, &d, cx)
+                        }),
+                ),
+            );
 
         phone_dev_track!(element, "phone.studio.screen")
     }
@@ -2539,6 +2595,10 @@ impl PlayerView {
         phone_dev_track!(element, format!("phone.studio.{screen:?}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_plugin_rack(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -2582,7 +2642,7 @@ impl PlayerView {
                 state.app.set_screen(Screen::StudioHub, "PhoneRackBack");
             });
         });
-        let back_mouse = back_activate.clone();
+        let back_mouse = std::rc::Rc::clone(&back_activate);
         let back_key = back_activate;
         let back_element = div()
             .id(back_id)
@@ -2642,7 +2702,7 @@ impl PlayerView {
             });
             view_for_edit.update(cx, |_view, cx| cx.notify());
         });
-        let edit_mouse = edit_activate.clone();
+        let edit_mouse = std::rc::Rc::clone(&edit_activate);
         let edit_key = edit_activate;
         let edit_element = div()
             .id(edit_id)
@@ -2692,7 +2752,7 @@ impl PlayerView {
                 state.app.ui_state.active_menu = crate::app::ActiveMenu::AddPlugin;
             });
         });
-        let add_mouse = add_activate.clone();
+        let add_mouse = std::rc::Rc::clone(&add_activate);
         let add_key = add_activate;
         let add_element = div()
             .id(add_id)
@@ -2844,7 +2904,7 @@ impl PlayerView {
                                 state.app.ui_state.active_menu = crate::app::ActiveMenu::None;
                             });
                         });
-                        let mouse_activate = activate.clone();
+                        let mouse_activate = std::rc::Rc::clone(&activate);
                         let key_activate = activate;
                         let element = div()
                             .id(element_id)
@@ -2889,6 +2949,18 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_plugin_card(
         &self,
         idx: usize,
@@ -2925,7 +2997,7 @@ impl PlayerView {
             });
             view_for_open.update(cx, |_view, cx| cx.notify());
         });
-        let open_mouse = open_activate.clone();
+        let open_mouse = std::rc::Rc::clone(&open_activate);
         let open_key = open_activate;
         let plugin_enabled = plugin.enabled;
         let bypass_label = format!(
@@ -2950,7 +3022,7 @@ impl PlayerView {
                 state.app.toggle_plugin(idx);
             });
         });
-        let bypass_mouse = bypass_activate.clone();
+        let bypass_mouse = std::rc::Rc::clone(&bypass_activate);
         let bypass_key = bypass_activate;
         let bypass_element = div()
             .id(bypass_id)
@@ -3162,6 +3234,10 @@ impl PlayerView {
         phone_dev_track!(button, format!("phone.plugin.{idx}.{suffix}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_plugin_parameter_sheet(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -3171,10 +3247,10 @@ impl PlayerView {
             let plugin = state.app.plugin_state.get_editing_plugin().cloned();
             (
                 state.app.ui_state.theme.clone(),
-                plugin
-                    .as_ref()
-                    .map(|plugin| plugin.display_name())
-                    .unwrap_or_else(|| "Plugin".to_string()),
+                plugin.as_ref().map_or_else(
+                    || "Plugin".to_string(),
+                    sotf_audio_player::Plugin::display_name,
+                ),
                 plugin.as_ref().is_none_or(|plugin| plugin.enabled),
                 state.app.plugin_state.selected_plugin_index,
                 plugin.map(|plugin| plugin.settings),
@@ -3196,7 +3272,7 @@ impl PlayerView {
             });
             view_for_close.update(cx, |_view, cx| cx.notify());
         });
-        let close_mouse = close_activate.clone();
+        let close_mouse = std::rc::Rc::clone(&close_activate);
         let close_key = close_activate;
         let back_element = div()
             .id(back_id)
@@ -3222,7 +3298,7 @@ impl PlayerView {
                     .color(theme.text_primary),
             )
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                close_mouse(cx)
+                close_mouse(cx);
             })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
@@ -3263,7 +3339,7 @@ impl PlayerView {
             });
             view_for_bypass.update(cx, |_view, cx| cx.notify());
         });
-        let bypass_mouse = bypass_activate.clone();
+        let bypass_mouse = std::rc::Rc::clone(&bypass_activate);
         let bypass_key = bypass_activate;
         let bypass_element = div()
             .id(bypass_id)
@@ -3298,7 +3374,7 @@ impl PlayerView {
                 tool_text.bypass
             })
             .on_mouse_up(MouseButton::Left, move |_event, _window, cx| {
-                bypass_mouse(cx)
+                bypass_mouse(cx);
             })
             .on_key_down(move |event: &KeyDownEvent, _window, cx| {
                 let key = event.keystroke.key.as_str();
@@ -3390,18 +3466,20 @@ impl PlayerView {
 
         match &plugin.settings {
             sotf_audio_player::PluginSettings::EQ { filters, .. }
-            | sotf_audio_player::PluginSettings::LinearPhaseEq { filters, .. } => filters
-                .first()
-                .map(|filter| {
-                    format!(
-                        "{}  {:.0} Hz  {:+.1} dB  Q {:.2}",
-                        Self::phone_filter_type_label(filter.filter_type),
-                        filter.frequency,
-                        filter.gain_db,
-                        filter.q
-                    )
-                })
-                .unwrap_or_else(|| "No filters".to_string()),
+            | sotf_audio_player::PluginSettings::LinearPhaseEq { filters, .. } => {
+                filters.first().map_or_else(
+                    || "No filters".to_string(),
+                    |filter| {
+                        format!(
+                            "{}  {:.0} Hz  {:+.1} dB  Q {:.2}",
+                            Self::phone_filter_type_label(filter.filter_type),
+                            filter.frequency,
+                            filter.gain_db,
+                            filter.q
+                        )
+                    },
+                )
+            }
             sotf_audio_player::PluginSettings::Gain {
                 gain_db,
                 smoothing_ms,
@@ -3413,17 +3491,17 @@ impl PlayerView {
                 threshold_db,
                 ratio,
                 ..
+            }
+            | sotf_audio_player::PluginSettings::Gate {
+                threshold_db,
+                ratio,
+                ..
             } => format!("Thresh {threshold_db:+.1} dB  Ratio {ratio:.1}:1"),
             sotf_audio_player::PluginSettings::Limiter {
                 threshold_db,
                 release_ms,
                 ..
             } => format!("Ceiling {threshold_db:+.1} dB  Rel {release_ms:.0} ms"),
-            sotf_audio_player::PluginSettings::Gate {
-                threshold_db,
-                ratio,
-                ..
-            } => format!("Thresh {threshold_db:+.1} dB  Ratio {ratio:.1}:1"),
             sotf_audio_player::PluginSettings::Upmixer { speaker_config, .. }
             | sotf_audio_player::PluginSettings::AAE { speaker_config, .. } => {
                 format!("{speaker_config} output")
@@ -3452,6 +3530,10 @@ impl PlayerView {
         }
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_phone_sheet_action_button(
         &self,
         label: String,
@@ -3476,6 +3558,14 @@ impl PlayerView {
         phone_dev_track!(div().flex_1().child(button), selector)
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_eq_parameter_sheet(
         &self,
         plugin_idx: usize,
@@ -3530,6 +3620,18 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_eq_band(
         &self,
         plugin_idx: usize,
@@ -3701,6 +3803,14 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_generic_parameter_sheet(
         &self,
         plugin_idx: usize,
@@ -3796,7 +3906,18 @@ impl PlayerView {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "GPUI rendering and callback interfaces accept the complete UI context"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render_phone_param_slider(
         &self,
         label: &'static str,
@@ -3853,7 +3974,7 @@ impl PlayerView {
             });
             view_for_minus.update(cx, |_view, cx| cx.notify());
         });
-        let decrease_mouse = decrease_activate.clone();
+        let decrease_mouse = std::rc::Rc::clone(&decrease_activate);
         let decrease_key = decrease_activate;
         let decrease_element = div()
             .id(decrease_id)
@@ -3915,7 +4036,7 @@ impl PlayerView {
             });
             view_for_plus.update(cx, |_view, cx| cx.notify());
         });
-        let increase_mouse = increase_activate.clone();
+        let increase_mouse = std::rc::Rc::clone(&increase_activate);
         let increase_key = increase_activate;
         let increase_element = div()
             .id(increase_id)
@@ -4023,6 +4144,14 @@ impl PlayerView {
             )
             .into_any_element()
     }
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render_phone_eq_curve(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -4077,7 +4206,7 @@ impl PlayerView {
                     .items_end()
                     .gap(d.half_grid)
                     .children((0..48).map(|i| {
-                        let norm = i as f64 / 47.0;
+                        let norm = f64::from(i) / 47.0;
                         let freq = 20.0_f64 * (1000.0_f64).powf(norm);
                         let gain = crate::components::plugins::ui_eq::calculate_response_at_freq(
                             &filters, freq,
@@ -4215,6 +4344,10 @@ impl PlayerView {
         )
     }
 
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_phone_plugin_graph_remove_button(
         &self,
         idx: usize,
@@ -4242,6 +4375,14 @@ impl PlayerView {
         phone_dev_track!(button, format!("phone.plugin-graph.remove.{idx}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
     fn render_phone_plugin_graph_node(
         &self,
         idx: usize,
@@ -4274,7 +4415,7 @@ impl PlayerView {
                 state.app.set_screen(Screen::Studio, "PhoneGraphNode");
             });
         });
-        let mouse_activate = activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&activate);
         let key_activate = activate;
 
         let element = div()
@@ -4357,6 +4498,10 @@ impl PlayerView {
         phone_dev_track!(element, format!("phone.plugin-graph.node.{idx}"))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_plugin_graph_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let d = Ds::from_cx(cx);
         let text = self.phone_translations(cx);
@@ -4393,7 +4538,7 @@ impl PlayerView {
                 state.app.set_screen(Screen::Studio, "PhoneGraphRack");
             });
         });
-        let open_rack_mouse = open_rack_activate.clone();
+        let open_rack_mouse = std::rc::Rc::clone(&open_rack_activate);
         let open_rack_key = open_rack_activate;
         let open_rack = div()
             .id(open_rack_id)
@@ -4590,6 +4735,18 @@ impl PlayerView {
         )
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+    )]
+    #[expect(
+        clippy::large_types_passed_by_value,
+        reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+    )]
     fn render_phone_stream_row(
         &self,
         idx: usize,
@@ -4621,7 +4778,7 @@ impl PlayerView {
                 state.app.ui_state.phone_stream_sources_open = true;
             });
         });
-        let detail_mouse_activate = detail_activate.clone();
+        let detail_mouse_activate = std::rc::Rc::clone(&detail_activate);
         let detail_key_activate = detail_activate;
 
         let play_element_id: ElementId = format!("phone-stream-play-{idx}").into();
@@ -4640,7 +4797,7 @@ impl PlayerView {
                 Err(err) => state.app.record_stream_error(err),
             });
         });
-        let play_mouse_activate = play_activate.clone();
+        let play_mouse_activate = std::rc::Rc::clone(&play_activate);
         let play_key_activate = play_activate;
         let play_element = div()
             .id(play_element_id)
@@ -4746,6 +4903,10 @@ impl PlayerView {
         phone_dev_track!(row, format!("phone.stream.{idx}"))
     }
 
+    #[expect(
+        clippy::unused_self,
+        reason = "The method keeps the GPUI view receiver used by context listeners and sibling actions"
+    )]
     fn render_phone_wizard_button(
         &self,
         label: String,
@@ -4774,6 +4935,14 @@ impl PlayerView {
         phone_dev_track!(button, selector)
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
     fn render_phone_tool_wrapper(
         &self,
         tool: PhoneTool,
@@ -4855,8 +5024,7 @@ impl PlayerView {
                 state.app.ui_state.theme.clone(),
                 wizard_status
                     .as_ref()
-                    .map(|(label, _progress)| label.clone())
-                    .unwrap_or_else(|| subtitle.to_string()),
+                    .map_or_else(|| subtitle.to_string(), |(label, _progress)| label.clone()),
                 wizard_status.map(|(_label, progress)| progress),
                 match tool {
                     PhoneTool::Recording => Some("recording"),
@@ -5082,6 +5250,10 @@ impl PlayerView {
             .into_any_element()
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     fn render_phone_tool_toggle(
         &self,
         label: &'static str,
@@ -5135,7 +5307,7 @@ impl PlayerView {
             });
             view_for_toggle.update(cx, |_view, cx| cx.notify());
         });
-        let mouse_activate = activate.clone();
+        let mouse_activate = std::rc::Rc::clone(&activate);
         let key_activate = activate;
 
         let element = div()
@@ -5517,7 +5689,7 @@ impl PlayerView {
                     let new_position = (state.app.playback.position_secs - 30.0).max(0.0);
                     state.app.playback.position_secs = new_position;
                     if let Err(e) = state.player.seek(new_position) {
-                        log::error!("Failed to seek backward: {}", e);
+                        log::error!("Failed to seek backward: {e}");
                     }
                 }
                 "PhoneNowForward" => {
@@ -5525,7 +5697,7 @@ impl PlayerView {
                     let new_position = (state.app.playback.position_secs + 30.0).min(max);
                     state.app.playback.position_secs = new_position;
                     if let Err(e) = state.player.seek(new_position) {
-                        log::error!("Failed to seek forward: {}", e);
+                        log::error!("Failed to seek forward: {e}");
                     }
                 }
                 _ => {}
@@ -5571,12 +5743,12 @@ impl PlayerView {
                     }
                 } else if state.app.playback.is_playing {
                     if let Err(e) = state.player.pause() {
-                        log::error!("Failed to pause: {}", e);
+                        log::error!("Failed to pause: {e}");
                     }
                     state.app.playback.is_playing = false;
                 } else {
                     if let Err(e) = state.player.resume() {
-                        log::error!("Failed to play: {}", e);
+                        log::error!("Failed to play: {e}");
                     }
                     state.app.playback.is_playing = true;
                 }
@@ -5602,6 +5774,11 @@ impl PlayerView {
         phone_dev_track!(button, format!("phone.transport.{id}"))
     }
 
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+    )]
     fn format_phone_time(seconds: f64) -> String {
         let total = seconds.max(0.0) as u64;
         let minutes = total / 60;

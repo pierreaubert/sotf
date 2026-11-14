@@ -13,6 +13,7 @@ use std::error::Error;
 ///
 /// This is a regression test for a bug where letters bound to keybindings
 /// (j, k, h, l, n, b, s, c, etc.) could not be typed in the search box.
+#[derive(Debug)]
 pub struct SpinoramaSearchScenario;
 
 impl TestScenario for SpinoramaSearchScenario {
@@ -131,6 +132,7 @@ async fn spinorama_speaker_search(cx: &mut TestAppContext) {
 ///
 /// The "TextInput" key context prevents keybindings from matching, ensuring
 /// single-letter keys don't fire actions while the search box is active.
+#[derive(Debug)]
 pub struct SpinoramaSearchKeystrokeScenario;
 
 impl TestScenario for SpinoramaSearchKeystrokeScenario {
@@ -213,6 +215,7 @@ async fn spinorama_search_keystroke_passthrough(cx: &mut TestAppContext) {
 /// The parent on_key_down handler must NOT call stop_propagation() for
 /// SpinoramaSpeakerSearch mode, because that prevents the Input widget from
 /// receiving the key event when it has focus.
+#[derive(Debug)]
 pub struct SpinoramaSearchInputReceivesKeysScenario;
 
 impl TestScenario for SpinoramaSearchInputReceivesKeysScenario {

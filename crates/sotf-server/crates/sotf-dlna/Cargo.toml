@@ -18,3 +18,4 @@ env_logger = { workspace = true }
 proptest = { workspace = true }
 
 [lints]
+workspace = true

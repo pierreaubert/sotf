@@ -66,6 +66,15 @@ impl PlayerView {
         view.runtime_active || view.completed_trials > 0
     }
 
+    #[expect(
+        clippy::cast_precision_loss,
+        reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+    )]
+    #[expect(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+    )]
     pub(super) fn render_comparison_plan(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let labels = state.app.ui_state.translations.listening_test.workspace();
@@ -127,6 +136,10 @@ impl PlayerView {
             .child(Text::caption(source))
     }
 
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(super) fn render_comparison_workspace(
         &self,
         phase: ListeningWorkspacePhase,
@@ -138,7 +151,7 @@ impl PlayerView {
         let labels = text.workspace();
         let listening = &state.app.plugin_state.listening_test_state;
         let session = listening.ab_test.session();
-        let pending = session.and_then(|session| session.pending_mode());
+        let pending = session.and_then(sotf_audio_player::AbTestSession::pending_mode);
         let completed = session.map_or(0, |session| session.trials.len());
         let mode = session
             .and_then(|session| session.trials.last())
@@ -152,9 +165,8 @@ impl PlayerView {
         let source = session
             .and_then(|session| session.setup.media.media_path.as_deref())
             .and_then(|path| std::path::Path::new(path).file_name())
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let score = session.map(|session| session.abx_score());
+            .map_or_default(|name| name.to_string_lossy().into_owned());
+        let score = session.map(sotf_audio_player::AbTestSession::abx_score);
         let status = listening.status.clone();
         let paused = state
             .app
@@ -474,11 +486,14 @@ impl PlayerView {
                                                     .plugin_state
                                                     .plugin_ui_state
                                                     .listening_workspace
-                                                    .results_open = true
+                                                    .results_open = true;
                                             }
                                             Err(error) => {
-                                                state.app.plugin_state.listening_test_state.status =
-                                                    error.to_string()
+                                                state
+                                                    .app
+                                                    .plugin_state
+                                                    .listening_test_state
+                                                    .status = error.to_string();
                                             }
                                         }
                                         cx.notify();
@@ -547,7 +562,7 @@ impl PlayerView {
                     }
                 }
                 Err(error) => {
-                    state.app.plugin_state.listening_test_state.status = error.to_string()
+                    state.app.plugin_state.listening_test_state.status = error.to_string();
                 }
             }
             cx.notify();

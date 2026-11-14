@@ -13,7 +13,10 @@ use crate::app::{AppState, DocumentedKeybinding};
 use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{
+    App, ClickEvent, ElementId, Entity, FocusHandle, FontWeight, KeyDownEvent, MouseButton,
+    SharedString, Window, div, rems,
+};
 use gpui_ui_kit::accessibility::{
     AccessibilityExt, AccessibilityNode, AriaProps, AriaRole, AriaState,
 };
@@ -66,11 +69,15 @@ fn keybinding_selector_id(action_name: &str) -> String {
         .next()
         .unwrap_or(action_name)
         .chars()
-        .filter(|character| character.is_ascii_alphanumeric())
+        .filter(char::is_ascii_alphanumeric)
         .flat_map(char::to_lowercase)
         .collect()
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn friendly_action_name(
     preset: KeymapPreset,
     action_name: &str,
@@ -79,14 +86,16 @@ fn friendly_action_name(
     get_documented_keybindings(preset)
         .into_iter()
         .find(|binding| binding.action_name == Some(action_name))
-        .map(|binding| text.action_description(binding.description).to_string())
-        .unwrap_or_else(|| {
-            action_name
-                .rsplit("::")
-                .next()
-                .unwrap_or(action_name)
-                .to_string()
-        })
+        .map_or_else(
+            || {
+                action_name
+                    .rsplit("::")
+                    .next()
+                    .unwrap_or(action_name)
+                    .to_string()
+            },
+            |binding| text.action_description(binding.description).to_string(),
+        )
 }
 
 fn apply_keymap_and_persist(state: &mut AppState, cx: &mut App) {
@@ -102,7 +111,14 @@ fn apply_keymap_and_persist(state: &mut AppState, cx: &mut App) {
 }
 
 impl PlayerView {
-    #[allow(clippy::type_complexity)]
+    #[allow(
+        clippy::type_complexity,
+        reason = "Widget callbacks retain their typed GPUI handler signatures"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_keybindings_settings_content(
         &self,
         cx: &mut Context<Self>,
@@ -245,7 +261,10 @@ impl PlayerView {
             .gap(d.section_lg)
             .size_full()
             .min_h_0()
-            .when(compact_editor, |element| element.overflow_y_scroll())
+            .when(
+                compact_editor,
+                gpui::StatefulInteractiveElement::overflow_y_scroll,
+            )
             // Preset selection
             .child(
                 div()
@@ -352,7 +371,22 @@ impl PlayerView {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    reason = "GPUI rendering and callback interfaces accept the complete UI context"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_custom_keybinding_editor(
     view: &PlayerView,
     d: &Ds,
@@ -548,7 +582,7 @@ fn render_custom_keybinding_editor(
                     .child(
                         div()
                             .w(rems(8.0))
-                            .when(compact, |element| element.w_full())
+                            .when(compact, gpui::Styled::w_full)
                             .text_size(d.text_xs)
                             .text_color(if is_custom {
                                 theme.accent
@@ -940,6 +974,10 @@ fn render_custom_keybinding_editor(
         })
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_table_header(
     d: &Ds,
     text: KeybindingTranslations,
@@ -999,6 +1037,10 @@ fn render_table_header(
         )
 }
 
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn render_category_section(
     d: &Ds,
     category: KeybindingCategory,
@@ -1055,6 +1097,10 @@ fn render_category_section(
         .children(row_elements)
 }
 
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
 fn render_comparison_row(
     d: &Ds,
     action: String,
@@ -1076,7 +1122,7 @@ fn render_comparison_row(
     let key_cells: Vec<_> = presets
         .iter()
         .map(|preset| {
-            let key = keys.get(preset).map(|s| s.as_str()).unwrap_or("-");
+            let key = keys.get(preset).map_or("-", std::string::String::as_str);
             let is_current = *preset == current_preset;
             div()
                 .w(rems(6.25))
@@ -1111,7 +1157,11 @@ fn render_comparison_row(
 }
 
 /// Build a comparison of keybindings across all presets
-/// Returns: Vec<(action_description, category, HashMap<preset, key>)>
+/// Returns: Vec<(`action_description`, category, `HashMap`<preset, key>)>
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
 fn build_keybinding_comparison(
     text: KeybindingTranslations,
 ) -> Vec<(String, KeybindingCategory, HashMap<KeymapPreset, String>)> {
@@ -1125,7 +1175,7 @@ fn build_keybinding_comparison(
             let entry = action_map
                 .entry(text.action_description(binding.description).to_string())
                 .or_insert_with(|| (binding.category, HashMap::new()));
-            entry.1.insert(*preset, binding.key.to_string());
+            entry.1.insert(*preset, binding.key.clone());
         }
     }
 

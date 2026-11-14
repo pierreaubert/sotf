@@ -1,5 +1,16 @@
-use super::*;
+use super::{
+    App, Frame, Line, Modifier, Paragraph, Rect, Screen, Span, Style, clean_track_name,
+    truncate_with_ellipsis,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
     let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     let mut status_spans = vec![Span::raw(" ")];
@@ -28,7 +39,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
             let truncated_msg = truncate_with_ellipsis(&localized, max_msg_len);
 
             status_spans.push(Span::styled(
-                format!("{} | ", truncated_msg),
+                format!("{truncated_msg} | "),
                 Style::default()
                     .fg(app.theme.title_color)
                     .add_modifier(Modifier::BOLD),
@@ -48,7 +59,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         // Truncate to max 50 chars for status bar to leave room for other info
         let track_name = truncate_with_ellipsis(&cleaned_track_name, 50);
         status_spans.push(Span::styled(
-            i18n.dynamic(format!("Now: {}", track_name)),
+            i18n.dynamic(format!("Now: {track_name}")),
             Style::default().fg(app.theme.playing_indicator),
         ));
         status_spans.push(Span::raw(" | "));
@@ -82,7 +93,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
         let source_rate_k = path
             .source
             .as_ref()
-            .map(|s| s.sample_rate_hz as f64 / 1000.0);
+            .map(|s| f64::from(s.sample_rate_hz) / 1000.0);
         let output_rate_k = path.output.sample_rate_hz as f64 / 1000.0;
         let signal_text = if path.is_resampled() {
             format!(
@@ -91,7 +102,7 @@ pub(crate) fn draw_status_bar(f: &mut Frame, area: Rect, app: &App) {
                 output_rate_k
             )
         } else {
-            format!("{:.0}k ", output_rate_k)
+            format!("{output_rate_k:.0}k ")
         };
         status_spans.push(Span::styled(
             signal_text,

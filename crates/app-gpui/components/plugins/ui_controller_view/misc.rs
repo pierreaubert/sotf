@@ -82,6 +82,10 @@ fn desktop_mapping(
     mapping
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn continuous_range(spec: &ParamSpec) -> Option<(f64, f64)> {
     match spec.param_type {
         ParamType::Float { min, max, .. } => Some((min, max)),

@@ -18,6 +18,10 @@ pub use sotf_audio_player::ui_models::spinorama_eq::{DirectivityCurve, Spinorama
 
 /// UI state for Spinorama EQ dropdowns
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct SpinoramaEqDropdowns {
     pub version_open: bool,
     pub measurement_open: bool,
@@ -27,25 +31,25 @@ pub struct SpinoramaEqDropdowns {
     pub export_format_open: bool,
     /// Target curve dropdown (ON, LW, PIR, ER)
     pub target_curve_open: bool,
-    /// AutoEQ form: EQ mode dropdown (IIR/FIR)
+    /// `AutoEQ` form: EQ mode dropdown (IIR/FIR)
     pub opt_mode_open: bool,
     /// Selected EQ mode ("iir", "fir", "mixed")
     pub opt_mode: String,
-    /// AutoEQ form: FIR phase dropdown
+    /// `AutoEQ` form: FIR phase dropdown
     pub fir_phase_open: bool,
-    /// AutoEQ form: PEQ model dropdown
+    /// `AutoEQ` form: PEQ model dropdown
     pub peq_model_open: bool,
-    /// AutoEQ form: DE strategy dropdown
+    /// `AutoEQ` form: DE strategy dropdown
     pub strategy_open: bool,
-    /// AutoEQ form: local algorithm dropdown
+    /// `AutoEQ` form: local algorithm dropdown
     pub local_algo_open: bool,
-    /// AutoEQ form: BO acquisition dropdown
+    /// `AutoEQ` form: BO acquisition dropdown
     pub bo_acquisition_open: bool,
-    /// AutoEQ form: loss type dropdown
+    /// `AutoEQ` form: loss type dropdown
     pub loss_type_open: bool,
-    /// AutoEQ form editing state
+    /// `AutoEQ` form editing state
     pub autoeq_editing_field: Option<AutoEqField>,
-    /// AutoEQ form edit text
+    /// `AutoEQ` form edit text
     pub autoeq_edit_text: String,
 }
 
@@ -137,9 +141,10 @@ impl Default for SpinoramaEqState {
         Self {
             model: SpinoramaEqScreenModel::default(),
             result_inputs: None,
-            delivery: Default::default(),
+            delivery:
+                sotf_audio_player::ui_models::correction_delivery::CorrectionDelivery::default(),
             dropdowns: SpinoramaEqDropdowns::default(),
-            autoeq_stage: Default::default(),
+            autoeq_stage: crate::components::autoeq::AutoEqStage::default(),
             detail_level: sotf_audio_player::autoeq::DetailLevel::Simple,
             selected_preset: "balanced".to_string(),
             expanded_sections: vec!["speaker".into(), "options".into()],
@@ -166,6 +171,7 @@ impl DerefMut for SpinoramaEqState {
 }
 
 impl SpinoramaEqState {
+    #[must_use]
     pub fn result_is_current(&self) -> bool {
         self.model.result.is_some()
             && self.result_inputs.as_ref() == Some(&self.model.optimization_input_snapshot())
@@ -183,11 +189,13 @@ impl SpinoramaEqState {
     }
 
     /// Check if we can proceed from the current step.
+    #[must_use]
     pub fn can_advance(&self) -> bool {
         self.model.can_advance()
     }
 
     /// Check if optimization is running.
+    #[must_use]
     pub fn is_optimizing(&self) -> bool {
         self.model.is_optimizing()
     }
@@ -198,14 +206,17 @@ impl SpinoramaEqState {
     }
 
     /// Check if speakers cache needs to be refreshed (older than 1 hour or not loaded).
+    #[must_use]
     pub fn needs_speaker_refresh(&self) -> bool {
         self.model.needs_speaker_refresh()
     }
 
+    #[must_use]
     pub fn supported_eq_modes(&self) -> &'static [&'static str] {
         self.model.supported_eq_modes()
     }
 
+    #[must_use]
     pub fn selected_eq_mode(&self) -> &'static str {
         self.model.selected_eq_mode()
     }

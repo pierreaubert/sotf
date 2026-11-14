@@ -18,6 +18,10 @@ use sotf_audio_player::ReleaseChannel;
 use std::collections::BTreeSet;
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct LayoutState {
     pub queue_panel_ratio: f32,
     pub queue_list_ratio: f32,
@@ -62,6 +66,7 @@ impl EventEmitter<()> for LayoutState {}
 pub const LUFS_PANEL_MIN_RATIO: f32 = 0.15;
 pub const LUFS_PANEL_MAX_RATIO: f32 = 0.75;
 
+#[must_use]
 pub fn lufs_panel_ratio_from_drag(
     anchor_ratio: f32,
     drag_delta_px: f32,
@@ -175,12 +180,17 @@ impl NavigationHistory {
         self.studio_categories[category] = screen;
     }
 
+    #[must_use]
     pub fn studio_target(&self, category: usize) -> Option<Screen> {
         self.studio_categories.get(category).copied()
     }
 }
 
 #[derive(Debug, Clone)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct UIState {
     pub current_screen: Screen,
     pub navigation: NavigationHistory,
@@ -233,7 +243,7 @@ pub struct UIState {
     pub release_channel: ReleaseChannel,
     /// Number of scanner threads (None = auto-detect, capped at 4)
     pub scanner_threads: Option<u8>,
-    /// Maximum number of CPU cores SotF is allowed to use (None = all available)
+    /// Maximum number of CPU cores `SotF` is allowed to use (None = all available)
     pub max_cpu_cores: Option<u8>,
     /// Minimum font size in pixels (None = default 12px)
     pub min_font_size_px: Option<f32>,
@@ -309,6 +319,7 @@ impl Default for UIState {
 }
 
 impl UIState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }

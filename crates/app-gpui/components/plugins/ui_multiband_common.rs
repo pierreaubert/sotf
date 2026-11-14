@@ -10,10 +10,26 @@ use crate::components::plugins::ui_layout_renderer::render_compact_choice_param;
 use crate::multiband_presets::{matching_crossover_preset, preset_frequencies};
 use crate::theme::Theme;
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{AnyElement, App, Entity, div, rems};
 use gpui_ui_kit::{NumberInput, NumberInputSize, Select, SelectOption, SelectSize, Text};
 use sotf_audio_player::PluginSettings;
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "Element builders accept owned snapshots and clone handles into deferred callbacks"
+)]
+#[expect(
+    clippy::large_types_passed_by_value,
+    reason = "Copy translation snapshots remain owned by returned elements and deferred callbacks"
+)]
+#[expect(
+    clippy::cast_sign_loss,
+    reason = "Bounded UI controls deliberately round parameter values and navigation indices"
+)]
 pub(crate) fn render_dense_multiband_header(
     d: &Ds,
     entity: Entity<AppState>,

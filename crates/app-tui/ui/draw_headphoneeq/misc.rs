@@ -1,10 +1,26 @@
-use super::super::*;
+use super::super::{
+    Alignment, App, Block, BorderType, Borders, Cell, Clear, Constraint, Direction, Frame, Layout,
+    Line, Modifier, Paragraph, Rect, Row, Span, Style, Table, Wrap, autocomplete_dropdown_height,
+    draw_freq_response_chart, draw_loss_chart, render_autocomplete_dropdown,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
-    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
     use crate::app::HeadphoneEqStep;
+
     use ratatui::widgets::{Gauge, Tabs};
+
     use sotf_audio_player::room_eq_types::OptimizationStatus;
+
+    let i18n = crate::i18n::TuiTranslations::for_language(app.ui.language);
 
     let s = &app.headphone_eq;
 
@@ -145,7 +161,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 );
                 let search_text = if s.model.headphone_search.is_empty() && !s.editing_search {
                     if let Some(ref name) = s.model.selected_headphone {
-                        i18n.dynamic(format!("Selected: {}", name))
+                        i18n.dynamic(format!("Selected: {name}"))
                     } else {
                         i18n.dynamic("<type to search>".to_string())
                     }
@@ -303,17 +319,19 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 DetailLevel::Simple => vec![
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
-                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| i18n.dynamic(p.name.to_string()))
-                            .unwrap_or_else(|| s.selected_preset.clone())
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset).map_or_else(
+                            || s.selected_preset.clone(),
+                            |p| i18n.dynamic(p.name.to_string()),
+                        )
                     }),
                 ],
                 DetailLevel::Intermediate => vec![
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
-                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| i18n.dynamic(p.name.to_string()))
-                            .unwrap_or_else(|| s.selected_preset.clone())
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset).map_or_else(
+                            || s.selected_preset.clone(),
+                            |p| i18n.dynamic(p.name.to_string()),
+                        )
                     }),
                     (None, "── Filter Design ──", String::new()),
                     (Some(0), "Filters (n)", format!("{}", c.num_filters)),
@@ -334,9 +352,10 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                 DetailLevel::Expert => vec![
                     (None, "── Preset ──", String::new()),
                     (Some(100), "Preset", {
-                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset)
-                            .map(|p| i18n.dynamic(p.name.to_string()))
-                            .unwrap_or_else(|| s.selected_preset.clone())
+                        autoeq::find_preset(EqWorkflow::Headphone, &s.selected_preset).map_or_else(
+                            || s.selected_preset.clone(),
+                            |p| i18n.dynamic(p.name.to_string()),
+                        )
                     }),
                     (None, "── Filters ──", String::new()),
                     (Some(0), "Filters (n)", format!("{}", c.num_filters)),
@@ -393,7 +412,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                         Style::default().fg(app.theme.accent_primary),
                     ),
                     Span::styled(
-                        i18n.dynamic(format!("  [{}]  Tab=cycle mode", mode_label)),
+                        i18n.dynamic(format!("  [{mode_label}]  Tab=cycle mode")),
                         Style::default().fg(app.theme.fg_secondary),
                     ),
                 ]),
@@ -760,8 +779,7 @@ pub(crate) fn draw_headphone_eq_screen(f: &mut Frame, area: Rect, app: &App) {
                     if let Some((slot, count)) = s.update_existing_eq_info {
                         lines.push(Line::from(vec![Span::styled(
                             i18n.dynamic(format!(
-                                "  Existing EQ in slot {} has {} filter(s).",
-                                slot, count
+                                "  Existing EQ in slot {slot} has {count} filter(s)."
                             )),
                             Style::default().fg(app.theme.accent_warning),
                         )]));

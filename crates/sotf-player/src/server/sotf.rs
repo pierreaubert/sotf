@@ -29,6 +29,10 @@ pub fn sotf_api_server_url_for_bind_with_tls(
     format!("{scheme}://{host}:{port}/api/v1")
 }
 
+/// Sotf api connection qr payload.
+///
+/// # Errors
+/// Returns an error if connection settings are invalid or the QR payload cannot be serialized.
 pub fn sotf_api_connection_qr_payload(settings: &SotfApiSettings) -> Result<String, String> {
     let token = settings
         .auth_token

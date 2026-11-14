@@ -40,5 +40,5 @@ pub(super) fn current_minutes_after_midnight() -> u16 {
     use chrono::Timelike;
 
     let now = chrono::Local::now();
-    (now.hour() * 60 + now.minute()) as u16
+    u16::try_from(now.hour() * 60 + now.minute()).unwrap_or(0)
 }

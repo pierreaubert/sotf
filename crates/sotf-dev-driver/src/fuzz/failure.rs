@@ -21,6 +21,7 @@ pub struct HangEvidence {
     pub process_progressed: bool,
 }
 
+#[must_use]
 pub fn classify_hang(evidence: HangEvidence) -> Option<FailureClass> {
     if !evidence.action_timed_out || evidence.consecutive_misses < 3 {
         return None;
@@ -39,6 +40,7 @@ pub fn classify_hang(evidence: HangEvidence) -> Option<FailureClass> {
 /// Shared panic/error log gate used by capture and replay. Matches Rust panic
 /// text and uppercase `ERROR` level tokens; lowercase "error" inside prose
 /// (for example `errors=0`) does not trip the gate.
+#[must_use]
 pub fn is_panic_or_error_log(line: &str) -> bool {
     line.contains("panicked at") || line.contains("panic!") || line.contains("ERROR")
 }
@@ -57,6 +59,7 @@ pub struct ObservedFailure {
 /// valid-action rejection, then panic/error log. The observation's
 /// `failure_candidate` is intentionally excluded here; both call sites append
 /// it last so the first candidate is comparable across capture and replay.
+#[must_use]
 pub fn observation_failures(action: &Action, observation: &Observation) -> Vec<ObservedFailure> {
     let mut found = Vec::new();
     if !observation.process.alive {
@@ -126,6 +129,13 @@ pub struct RetainedCountGrowth {
 /// resource and memory sampling").
 pub const MEMORY_WARMUP_SAMPLES: usize = 5;
 
+#[must_use]
+#[expect(
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Memory trend estimation uses approximate nonnegative samples and saturating byte quantization"
+)]
 pub fn classify_memory_growth(
     samples: &[ResourceSample],
     warmup_samples: usize,
@@ -174,6 +184,7 @@ pub fn classify_memory_growth(
 /// (raw samples are preserved in metrics.ndjson by the supervisor).
 pub const THEIL_SEN_MAX_POINTS: usize = 2_048;
 
+#[must_use]
 pub fn theil_sen_slope(points: &[(f64, f64)]) -> Option<f64> {
     let points = downsample_points(points, THEIL_SEN_MAX_POINTS);
     let mut slopes = Vec::new();
@@ -201,6 +212,7 @@ fn downsample_points(points: &[(f64, f64)], max_points: usize) -> Vec<(f64, f64)
         .collect()
 }
 
+#[must_use]
 pub fn classify_retained_count_growth(
     values: &[u64],
     absolute_budget: u64,
@@ -224,6 +236,7 @@ pub fn classify_retained_count_growth(
     })
 }
 
+#[must_use]
 pub fn sustained_retained_growth(values: &[u64], absolute_budget: u64) -> bool {
     classify_retained_count_growth(values, absolute_budget).is_some_and(|growth| growth.suspected)
 }
@@ -242,6 +255,7 @@ fn median_f64(values: &mut [f64]) -> Option<f64> {
     Some(values[values.len() / 2])
 }
 
+#[must_use]
 pub fn normalize_signature(text: &str, run_dir: Option<&str>) -> String {
     let mut normalized = text.to_owned();
     if let Some(run_dir) = run_dir {

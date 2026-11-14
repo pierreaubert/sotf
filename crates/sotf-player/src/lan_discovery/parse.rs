@@ -8,6 +8,10 @@ use super::types::DiscoveryInstance;
 use std::collections::{BTreeMap, HashMap};
 use std::net::{Ipv4Addr, SocketAddr};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "DNS record parsing keeps packet cursor bounds and record dispatch in one state machine"
+)]
 pub(super) fn parse_sotf_mdns_response(
     packet: &[u8],
     from: SocketAddr,
@@ -21,9 +25,9 @@ pub(super) fn parse_sotf_mdns_response(
     }
 
     let qdcount = u16::from_be_bytes([packet[4], packet[5]]);
-    let ancount = u16::from_be_bytes([packet[6], packet[7]]);
-    let nscount = u16::from_be_bytes([packet[8], packet[9]]);
-    let arcount = u16::from_be_bytes([packet[10], packet[11]]);
+    let answer_count = u16::from_be_bytes([packet[6], packet[7]]);
+    let authority_count = u16::from_be_bytes([packet[8], packet[9]]);
+    let additional_count = u16::from_be_bytes([packet[10], packet[11]]);
 
     let mut pos = 12;
     for _ in 0..qdcount {
@@ -40,7 +44,10 @@ pub(super) fn parse_sotf_mdns_response(
     let mut instances: HashMap<String, DiscoveryInstance> = HashMap::new();
     let mut addresses: HashMap<String, Ipv4Addr> = HashMap::new();
 
-    for _ in 0..ancount.saturating_add(nscount).saturating_add(arcount) {
+    for _ in 0..answer_count
+        .saturating_add(authority_count)
+        .saturating_add(additional_count)
+    {
         let Some((name, next_pos)) = decode_dns_name(packet, pos) else {
             break;
         };

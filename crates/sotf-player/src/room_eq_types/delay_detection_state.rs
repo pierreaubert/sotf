@@ -36,7 +36,7 @@ pub struct DelayDetectionState {
     /// Background-measurement status.
     pub status: DelayDetectionStatus,
     /// Raw detection results (populated on success). Cleared on Reset / new
-    /// run. Contains per-channel arrival_ms, gain_db, snr_db, and the
+    /// run. Contains per-channel `arrival_ms`, `gain_db`, `snr_db`, and the
     /// auto-computed `alignment_delays_ms` vector. This is the authority
     /// on channel identity — `edited_arrival_ms[i]` corresponds to
     /// `results.channels[i]`.
@@ -45,7 +45,7 @@ pub struct DelayDetectionState {
     /// from `results.channels[i].arrival_ms` after a successful
     /// measurement). Indices mirror `results.channels` exactly. The
     /// optimizer consumes these values (not `alignment_delays_ms`) so the
-    /// downstream speaker_eq path can compute consistent alignment.
+    /// downstream `speaker_eq` path can compute consistent alignment.
     pub edited_arrival_ms: Vec<f64>,
 }
 
@@ -86,6 +86,7 @@ impl DelayDetectionState {
     /// WAV-onset detection for them. Channel identity comes from
     /// `results.channels[i].channel_name` — this is the authoritative
     /// source — and `edited_arrival_ms[i]` is read by position.
+    #[must_use]
     pub fn probe_arrival_map(&self) -> Option<std::collections::HashMap<String, f64>> {
         if !matches!(self.status, DelayDetectionStatus::Complete) {
             return None;

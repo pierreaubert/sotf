@@ -47,7 +47,7 @@ pub fn resolve(path: &str, window: AnyWindowHandle, cx: &mut App) -> Result<Valu
             }
             let entity = any_view
                 .downcast::<PlayerView>()
-                .map_err(|_| anyhow!("root view is not PlayerView"))?;
+                .map_err(|_error| anyhow!("root view is not PlayerView"))?;
             let view = entity.read(cx);
             if path == "settings.interface_model_open" {
                 return Ok(json!(view.interface_model_menu().0));
@@ -79,6 +79,18 @@ fn maximum_shortterm_lufs_query(loudness: Option<&sotf_audio_player::LoudnessDat
     }))
 }
 
+#[expect(
+    clippy::similar_names,
+    reason = "Related UI values retain the domain names used by their paired controls"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the supported API routes and their response mappings together"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 fn read_path(path: &str, state: &AppState) -> Result<Value> {
     if let Some(field) = path.strip_prefix("playback.engine_diagnostics.") {
         const FIELDS: &[&str] = &[
@@ -103,7 +115,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             .ok_or_else(|| anyhow!("recording take query requires an index and field"))?;
         let index = index
             .parse::<usize>()
-            .map_err(|_| anyhow!("invalid recording take index {index:?}"))?;
+            .map_err(|_error| anyhow!("invalid recording take index {index:?}"))?;
         let recording = state
             .app
             .measurement_state
@@ -187,7 +199,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                     .and_then(|path| std::fs::metadata(path).ok())
                     .and_then(|metadata| metadata.modified().ok())
                     .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|duration| duration.as_millis() as u64)
+                    .map(|duration| u64::try_from(duration.as_millis()).unwrap_or(u64::MAX))
             )),
             field if field.starts_with("mtime_after.") => {
                 let Some(suffix) = field.strip_prefix("mtime_after.") else {
@@ -195,7 +207,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 };
                 let other_index = suffix
                     .parse::<usize>()
-                    .map_err(|_| anyhow!("invalid comparison take index in {field:?}"))?;
+                    .map_err(|_error| anyhow!("invalid comparison take index in {field:?}"))?;
                 let other = state
                     .app
                     .measurement_state
@@ -237,16 +249,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 })))
             }
             "source_identity" => {
-                let identity = recording
-                    .imported_source
-                    .as_ref()
-                    .map(|source| {
-                        format!(
-                            "{}|driver={:?}|measurement={}",
-                            source.speaker, source.driver_index, source.measurement_index
-                        )
-                    })
-                    .unwrap_or_else(|| {
+                let identity = recording.imported_source.as_ref().map_or_else(
+                    || {
                         let speaker = recording
                             .channel_name
                             .find(" (")
@@ -259,7 +263,14 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                             recording.mic_index,
                             recording.mic_position_index
                         )
-                    });
+                    },
+                    |source| {
+                        format!(
+                            "{}|driver={:?}|measurement={}",
+                            source.speaker, source.driver_index, source.measurement_index
+                        )
+                    },
+                );
                 Ok(json!(identity))
             }
             _ => Err(anyhow!("unknown recording take field {field:?}")),
@@ -366,15 +377,15 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
     Ok(match path {
         "plugins.binaural" => app.playback.rack_plugin_data.as_ref()
             .and_then(|data| data.downcast_ref::<sotf_plugins::BinauralDecoderData>())
-            .map(|data| json!({
+            .map_or(Value::Null, |data| json!({
                 "initialized": data.initialized,
                 "loaded": data.loaded_sofa_path.is_some(),
                 "ir_length": data.ir_length,
                 "sample_rate": data.sample_rate,
-            })).unwrap_or(Value::Null),
+            })),
         "plugins.loudness" => app.playback.rack_plugin_data.as_ref()
             .and_then(|data| data.downcast_ref::<sotf_plugins::LoudnessData>())
-            .map(|data| json!({
+            .map_or(Value::Null, |data| json!({
                 "instance_id": data.integrated_control_instance_id,
                 "request_id": data.integrated_control_request_id,
                 "running": data.integrated_measurement_running,
@@ -385,15 +396,15 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 "shortterm_lufs": data.shortterm_lufs,
                 "integrated_lufs": data.integrated_lufs,
                 "maximum_true_peak_dbtp": data.maximum_true_peak_dbtp,
-            })).unwrap_or(Value::Null),
+            })),
         "plugins.spectrum" => app.playback.rack_plugin_data.as_ref()
             .and_then(|data| data.downcast_ref::<sotf_plugins::SpectrumData>())
-            .map(|data| json!({
+            .map_or(Value::Null, |data| json!({
                 "bins": data.magnitudes.len(),
                 "minimum_frequency": data.frequencies.first(),
                 "maximum_frequency": data.frequencies.last(),
                 "peak_db": data.peak_magnitude,
-            })).unwrap_or(Value::Null),
+            })),
         "plugins.gain_reduction" => app.playback.rack_plugin_data.as_ref().and_then(|data| {
             let (kind, values) = if let Some(data) = data.downcast_ref::<sotf_plugins::DeEsserData>() {
                 ("DeEsser", data.gain_reduction_db.as_slice())
@@ -450,7 +461,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             .rack_plugin_data
             .as_ref()
             .and_then(|data| data.downcast_ref::<sotf_plugins::ExternalPluginEditorData>())
-            .map(|data| {
+            .map_or(Value::Null, |data| {
                 json!({
                     "instance_id": data.plugin_instance_id,
                     "plugin_id": data.descriptor.id,
@@ -461,8 +472,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                         "value": data.parameter_values.get(&parameter.id),
                     })).collect::<Vec<_>>(),
                 })
-            })
-            .unwrap_or(Value::Null),
+            }),
         "navigation.compact_open" => json!(app.ui_state.show_studio_menu),
         "navigation.compact_highlight" => json!(app.ui_state.navigation.compact_highlight),
         "navigation.studio_picker_open" => json!(app.ui_state.navigation.studio_picker_open),
@@ -555,8 +565,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             app.playback
                 .loudness_info
                 .as_ref()
-                .map(|data| data.channel_peaks.len())
-                .unwrap_or(0)
+                .map_or(0, |data| data.channel_peaks.len())
         ),
         "meters.group_count" => json!(app.level_meters.groups.len()),
         "meters.selected_group" => json!(app.level_meters.selected_group),
@@ -824,7 +833,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .listening_test_state
                 .ab_test
                 .session()
-                .and_then(|session| session.pending_mode())
+                .and_then(sotf_audio_player::AbTestSession::pending_mode)
                 .map(|mode| format!("{mode:?}"))
         ),
         "listening.completed_trials" => json!(
@@ -867,8 +876,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "listening.session_file_exists" => json!(
             std::env::var_os("SOTF_QA_DIR")
                 .map(std::path::PathBuf::from)
-                .map(|path| path.join("listening-session.json").is_file())
-                .unwrap_or(false)
+                .is_some_and(|path| path.join("listening-session.json").is_file())
         ),
         "screen.focused" => json!(format!("{:?}", app.ui_state.current_screen)),
         "navigation.collapsed" => json!(app.ui_state.primary_nav_collapsed),
@@ -975,8 +983,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             app.playlist
                 .controller
                 .active_playlist()
-                .map(|playlist| playlist.entries.len())
-                .unwrap_or(0)
+                .map_or(0, |playlist| playlist.entries.len())
         ),
         "playlists.active_first_track" => json!(
             app.playlist
@@ -1264,7 +1271,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .headphone_eq_state
                 .audition
                 .as_ref()
-                .is_some_and(|audition| audition.is_pending())
+                .is_some_and(sotf_audio_player::controllers::eq_audition::EqAudition::is_pending)
         ),
         "headphone.audition_preamp_db" => json!(
             app.measurement_state
@@ -1299,7 +1306,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                 .last_export()
                 .and_then(|export| std::fs::read_to_string(&export.path).ok())
                 .and_then(|content| serde_json::from_str::<Vec<serde_json::Value>>(&content).ok())
-                .map(|filters| {
+                .map_or(serde_json::Value::Null, |filters| {
                     json!(
                         filters
                             .iter()
@@ -1312,7 +1319,6 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                             .join(",")
                     )
                 })
-                .unwrap_or(serde_json::Value::Null)
         }
         "spinorama.application_status" => {
             let correction = &app.measurement_state.spinorama_eq_state;
@@ -2076,8 +2082,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                         (DevParameterOutcome::Structural(_), Some(Ok(()))) => {
                             ("structural_ack", None)
                         }
-                        (DevParameterOutcome::Parameter(_), Some(Ok(()))) => ("applied", None),
-                        (DevParameterOutcome::Action(_), Some(Ok(()))) => ("applied", None),
+                        (DevParameterOutcome::Parameter(_) | DevParameterOutcome::Action(_),
+Some(Ok(()))) => ("applied", None),
                         (_, Some(Err(failure))) => ("error", Some(failure.error)),
                     }
                 };
@@ -2203,7 +2209,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             let channel = other
                 .trim_start_matches("meters.peak.")
                 .parse::<usize>()
-                .map_err(|_| anyhow!("invalid meter peak query path: `{other}`"))?;
+                .map_err(|_error| anyhow!("invalid meter peak query path: `{other}`"))?;
             json!(
                 app.playback
                     .loudness_info
@@ -2218,7 +2224,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
             }
             let group_idx = parts[2]
                 .parse::<usize>()
-                .map_err(|_| anyhow!("invalid meter group query path: `{other}`"))?;
+                .map_err(|_error| anyhow!("invalid meter group query path: `{other}`"))?;
             let group = app
                 .level_meters
                 .groups
@@ -2242,6 +2248,10 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
     })
 }
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Display ratios, coordinates, and durations use approximate floating-point values"
+)]
 fn average_room_eq_score(
     results: &[crate::app::types::ChannelOptResult],
     score: impl Fn(&crate::app::types::ChannelOptResult) -> f64,
@@ -2275,30 +2285,28 @@ fn room_eq_export_summary() -> Option<RoomEqExportSummary> {
     let channel_count = json
         .get("channels")
         .and_then(|v| v.as_object())
-        .map(|channels| channels.len());
+        .map(serde_json::Map::len);
     let global_plugin_count = json
         .get("global_plugins")
         .and_then(|v| v.as_array())
-        .map(|plugins| plugins.len())
-        .unwrap_or(0);
+        .map_or(0, std::vec::Vec::len);
     let channel_plugins: Vec<&serde_json::Value> = json
         .get("channels")
         .and_then(|v| v.as_object())
-        .map(|channels| {
+        .map_or_default(|channels| {
             channels
                 .values()
                 .filter_map(|channel| channel.get("plugins").and_then(|v| v.as_array()))
                 .flat_map(|plugins| plugins.iter())
                 .collect()
-        })
-        .unwrap_or_default();
+        });
     let channel_plugin_count = channel_plugins.len();
     let filter_count = channel_plugins
         .iter()
         .filter_map(|plugin| plugin.get("parameters"))
         .filter_map(|params| params.get("filters"))
         .filter_map(|filters| filters.as_array())
-        .map(|filters| filters.len())
+        .map(std::vec::Vec::len)
         .sum::<usize>();
 
     Some(RoomEqExportSummary {

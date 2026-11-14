@@ -16,6 +16,10 @@ pub(super) fn sse_event_name(event: &SotfServerEvent) -> &'static str {
     }
 }
 
+/// Normalize certificate fingerprint.
+///
+/// # Errors
+/// Returns an error if the certificate fingerprint is not a valid SHA-256 hexadecimal value.
 pub fn normalize_certificate_fingerprint(fingerprint: &str) -> Result<String, String> {
     let compact: String = fingerprint
         .trim()
@@ -156,7 +160,7 @@ pub(super) fn media_track_id(
     }
 
     let mut hasher = Sha256::new();
-    hasher.update(album.id.map(|id| id.to_le_bytes()).unwrap_or_default());
+    hasher.update(album.id.map_or_default(i64::to_le_bytes));
     hasher.update(album.title.as_bytes());
     hasher.update([0]);
     hasher.update(index.to_le_bytes());

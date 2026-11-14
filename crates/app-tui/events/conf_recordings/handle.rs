@@ -31,11 +31,16 @@ use super::spawn::spawn_spl_calibration_capture;
 use crate::app::{App, FilePickerMode, FilePickerOrigin, InputMode};
 use crossterm::event::{KeyCode, KeyEvent};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerCommand> {
+    use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingStep};
+
     if super::capture::handle_capture_keys(app, key) {
         return None;
     }
-    use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingStep};
 
     // Esc: exit editing if active, then two-level focus (content → step tab → configure tab)
     if key.code == KeyCode::Esc {
@@ -113,6 +118,8 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 
     match app.recording.model.step {
         RecordingStep::Config => {
+            use crate::app::{RecordingField, recording_field_at, recording_field_count};
+
             if app.recording.editing_output_dir {
                 match key.code {
                     KeyCode::Enter => {
@@ -252,7 +259,6 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 return None;
             }
 
-            use crate::app::{RecordingField, recording_field_at, recording_field_count};
             let total_fields = recording_field_count(&app.recording);
             match key.code {
                 KeyCode::Up => {
@@ -295,7 +301,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 KeyCode::Right | KeyCode::Char('+') => {
                     adjust_recording_field(app, 1);
                 }
-                KeyCode::Char('a') | KeyCode::Char('A')
+                KeyCode::Char('a' | 'A')
                     if matches!(
                         recording_field_at(&app.recording, app.recording.selected_field),
                         Some(RecordingField::SpeakerConfig)
@@ -304,7 +310,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                 {
                     add_custom_speaker(app);
                 }
-                KeyCode::Char('x') | KeyCode::Char('X')
+                KeyCode::Char('x' | 'X')
                     if matches!(
                         recording_field_at(&app.recording, app.recording.selected_field),
                         Some(RecordingField::SpeakerConfig)
@@ -362,12 +368,11 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                         .model
                         .channel_recordings
                         .get(ch_idx)
-                        .map(|ch| {
+                        .is_some_and(|ch| {
                             ch.state == ChannelRecordingState::Empty
                                 || ch.state == ChannelRecordingState::Error
                                 || ch.state == ChannelRecordingState::ReviewNeeded
-                        })
-                        .unwrap_or(false);
+                        });
                     if can_record {
                         start_recording_channel(app, ch_idx);
                     }
@@ -380,7 +385,7 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
                     let accepted = app.recording.model.accept_all_review_needed();
                     if accepted > 0 {
                         app.recording.model.status_message =
-                            format!("Accepted {} take(s) despite quality warnings", accepted);
+                            format!("Accepted {accepted} take(s) despite quality warnings");
                     }
                 }
                 None
@@ -457,6 +462,15 @@ pub fn handle_recording_keys(app: &mut App, key: KeyEvent) -> Option<PlayerComma
 /// or `←` / `→` nudge numeric values. `r` starts (or cancels) the capture
 /// from any focused field. `Ctrl+S` never applies here — saving lives on the
 /// Save step.
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
     use sotf_audio_player::recording_types::ProbeCaptureStatus;
 
@@ -583,6 +597,15 @@ fn handle_probe_step_keys(app: &mut App, key: KeyEvent) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 fn handle_spl_calibration_step_keys(app: &mut App, key: KeyEvent) {
     use sotf_audio_player::recording_types::SplCalibrationCaptureStatus;
 
@@ -743,8 +766,7 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
     ensure_spinorama_speakers_loading(app);
 
     // Ctrl+S saves regardless of mode.
-    if key.modifiers.contains(KeyModifiers::CONTROL)
-        && matches!(key.code, KeyCode::Char('s') | KeyCode::Char('S'))
+    if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('s' | 'S'))
     {
         app.recording.editing_save_value = false;
         app.recording.edit_buffer.clear();
@@ -802,7 +824,7 @@ fn handle_saving_step_keys(app: &mut App, key: KeyEvent) {
                 app.recording.edit_buffer = current_save_field_value(app);
             }
         }
-        KeyCode::Char('u') | KeyCode::Char('U') => {
+        KeyCode::Char('u' | 'U') => {
             // Quick keyboard shortcut for the unit toggle from any
             // field — saves the user tabbing to field 4.
             app.recording.model.room_dimension_unit =

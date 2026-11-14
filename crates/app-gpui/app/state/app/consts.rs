@@ -4,6 +4,7 @@ pub const RACK_STRIP_MIN_HEIGHT: f32 = 128.0;
 
 pub const RACK_STRIP_MAX_HEIGHT: f32 = 360.0;
 
+#[must_use]
 pub fn rack_strip_height_from_drag(start_height: f32, drag_delta_y: f32) -> f32 {
     (start_height + drag_delta_y).clamp(RACK_STRIP_MIN_HEIGHT, RACK_STRIP_MAX_HEIGHT)
 }

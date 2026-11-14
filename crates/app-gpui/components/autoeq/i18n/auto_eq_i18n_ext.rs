@@ -1,7 +1,7 @@
 use super::types::DocKey;
 use gpui_ui_kit::i18n::Language;
 
-/// Extension trait for easy AutoEQ i18n access
+/// Extension trait for easy `AutoEQ` i18n access
 pub trait AutoEqI18nExt {
     fn autoeq_t(&self, key: DocKey) -> &'static str;
     fn autoeq_language(&self) -> Language;

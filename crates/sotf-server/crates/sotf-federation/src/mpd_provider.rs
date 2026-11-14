@@ -24,6 +24,7 @@ pub struct MpdProvider {
 }
 
 impl MpdProvider {
+    #[must_use]
     pub fn new(source_id: SourceId, config: MpdProviderConfig) -> Self {
         Self { source_id, config }
     }
@@ -34,13 +35,12 @@ impl MpdProvider {
         // cannot hang this future indefinitely.
         let stream = timeout(MPD_CONNECT_TIMEOUT, TcpStream::connect(&addr))
             .await
-            .map_err(|_| {
+            .map_err(|_error| {
                 ProviderError::Network(format!(
-                    "timed out connecting to {} after {:?}",
-                    addr, MPD_CONNECT_TIMEOUT
+                    "timed out connecting to {addr} after {MPD_CONNECT_TIMEOUT:?}"
                 ))
             })?
-            .map_err(|e| ProviderError::Network(format!("failed to connect to {}: {}", addr, e)))?;
+            .map_err(|e| ProviderError::Network(format!("failed to connect to {addr}: {e}")))?;
 
         let mut reader = BufStream::new(stream);
 
@@ -49,8 +49,8 @@ impl MpdProvider {
         let mut greeting = String::new();
         timeout(MPD_READ_TIMEOUT, reader.read_line(&mut greeting))
             .await
-            .map_err(|_| ProviderError::Network("timed out reading greeting".to_string()))?
-            .map_err(|e| ProviderError::Network(format!("failed to read greeting: {}", e)))?;
+            .map_err(|_error| ProviderError::Network("timed out reading greeting".to_string()))?
+            .map_err(|e| ProviderError::Network(format!("failed to read greeting: {e}")))?;
 
         if !greeting.starts_with("OK MPD") {
             return Err(ProviderError::Network(format!(
@@ -64,7 +64,7 @@ impl MpdProvider {
         // after the closing quote of our argument.
         if let Some(ref password) = self.config.password {
             validate_mpd_token(password)
-                .map_err(|e| ProviderError::Auth(format!("invalid password: {}", e)))?;
+                .map_err(|e| ProviderError::Auth(format!("invalid password: {e}")))?;
             self.send_command(
                 &mut reader,
                 &format!("password \"{}\"", escape_mpd_string(password)),
@@ -88,12 +88,12 @@ impl MpdProvider {
         full_cmd.push('\n');
         timeout(MPD_READ_TIMEOUT, reader.write_all(full_cmd.as_bytes()))
             .await
-            .map_err(|_| ProviderError::Network("timed out sending command".to_string()))?
-            .map_err(|e| ProviderError::Network(format!("failed to send command: {}", e)))?;
+            .map_err(|_error| ProviderError::Network("timed out sending command".to_string()))?
+            .map_err(|e| ProviderError::Network(format!("failed to send command: {e}")))?;
         timeout(MPD_READ_TIMEOUT, reader.flush())
             .await
-            .map_err(|_| ProviderError::Network("timed out flushing command".to_string()))?
-            .map_err(|e| ProviderError::Network(format!("failed to flush: {}", e)))?;
+            .map_err(|_error| ProviderError::Network("timed out flushing command".to_string()))?
+            .map_err(|e| ProviderError::Network(format!("failed to flush: {e}")))?;
         Ok(())
     }
 
@@ -106,8 +106,8 @@ impl MpdProvider {
             let mut line = String::new();
             let n = timeout(MPD_READ_TIMEOUT, reader.read_line(&mut line))
                 .await
-                .map_err(|_| ProviderError::Network("timed out reading response".to_string()))?
-                .map_err(|e| ProviderError::Network(format!("failed to read response: {}", e)))?;
+                .map_err(|_error| ProviderError::Network("timed out reading response".to_string()))?
+                .map_err(|e| ProviderError::Network(format!("failed to read response: {e}")))?;
             if n == 0 {
                 return Err(ProviderError::Network(
                     "connection closed unexpectedly".to_string(),
@@ -131,7 +131,7 @@ impl MpdProvider {
         let response = self.read_response(&mut reader).await?;
 
         // Parse album list - returns Vec of (album_name, artist) tuples
-        let album_entries = self.parse_album_list_with_artist(&response);
+        let album_entries = Self::parse_album_list_with_artist(&response);
 
         let mut provider_albums = Vec::new();
 
@@ -167,7 +167,7 @@ impl MpdProvider {
                     .and_then(|y| y.parse::<u32>().ok())
             });
 
-            let external_id = format!("{}:{}", artist, album_name);
+            let external_id = format!("{artist}:{album_name}");
 
             provider_albums.push(ProviderAlbum {
                 external_id,
@@ -182,7 +182,7 @@ impl MpdProvider {
         Ok(provider_albums)
     }
 
-    fn parse_album_list_with_artist(&self, response: &str) -> Vec<(String, String)> {
+    fn parse_album_list_with_artist(response: &str) -> Vec<(String, String)> {
         let mut albums: Vec<(String, String)> = Vec::new();
         let mut current_artist = String::new();
 
@@ -384,5 +384,13 @@ impl LibraryProvider for MpdProvider {
                 Ok(Ok(_))
             )
         })
+    }
+}
+
+impl std::fmt::Debug for MpdProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MpdProvider")
+            .field("source_id", &self.source_id)
+            .finish_non_exhaustive()
     }
 }

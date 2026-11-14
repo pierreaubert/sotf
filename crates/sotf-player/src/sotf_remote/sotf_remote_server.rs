@@ -23,6 +23,10 @@ pub struct SotfRemoteServer {
 }
 
 impl SotfRemoteServer {
+    /// From discovered.
+    ///
+    /// # Errors
+    /// Returns an error if the server address, authentication, certificate settings, or HTTP client configuration is invalid.
     pub fn from_discovered(server: &DiscoveredSotfApiServer) -> SotfApiResult<Self> {
         let api_base_url = normalized_api_base_url(&server.api_base_url)?;
         Ok(Self {
@@ -39,6 +43,10 @@ impl SotfRemoteServer {
         })
     }
 
+    /// Manual.
+    ///
+    /// # Errors
+    /// Returns an error if the server address, authentication, certificate settings, or HTTP client configuration is invalid.
     pub fn manual(
         friendly_name: impl Into<String>,
         base_url: impl Into<String>,
@@ -73,6 +81,10 @@ impl SotfRemoteServer {
         })
     }
 
+    /// Connect.
+    ///
+    /// # Errors
+    /// Returns an error if the server address, authentication, certificate settings, or HTTP client configuration is invalid.
     pub fn connect(&self, token: &SotfRemoteAuthToken) -> SotfApiResult<SotfRemoteConnection> {
         let client = SotfApiClient::new(&self.api_base_url, token.as_str())?;
         Ok(SotfRemoteConnection {

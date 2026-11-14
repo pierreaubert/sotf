@@ -13,6 +13,7 @@ pub enum RoomEqCrossoverType {
 }
 
 impl RoomEqCrossoverType {
+    #[must_use]
     pub fn all() -> &'static [RoomEqCrossoverType] {
         &[
             RoomEqCrossoverType::LR12,
@@ -24,6 +25,7 @@ impl RoomEqCrossoverType {
         ]
     }
 
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             RoomEqCrossoverType::LR12 => "Linkwitz-Riley 12dB",

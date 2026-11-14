@@ -19,7 +19,7 @@ pub(super) struct Args {
     #[arg(long)]
     pub(super) server: bool,
 
-    /// Override the initial window size as WIDTHxHEIGHT (e.g. 1440x900).
+    /// Override the initial window size as `WIDTHxHEIGHT` (e.g. 1440x900).
     /// Takes precedence over the size stored in the preferences file.
     #[arg(long, value_name = "WIDTHxHEIGHT", value_parser = parse_size)]
     pub(super) size: Option<(f32, f32)>,

@@ -40,6 +40,14 @@ pub(super) static BASS_ANCHOR_CAPTURE_RESULT: std::sync::OnceLock<BassAnchorCapt
 pub(super) static RECORDING_RESULT: std::sync::OnceLock<RecordingResultSlot> =
     std::sync::OnceLock::new();
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     use sotf_audio_player::recording_helpers::{
         capture_signal_params, measurement_amplitude, resolve_mic_calibration,
@@ -53,6 +61,41 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let selected = match app.recording.model.channel_recordings.get(channel_idx) {
         Some(ch) => ch.clone(),
         None => return,
+    };
+    let channels = (|| {
+        let output = app
+            .recording
+            .model
+            .playback_config
+            .channel_mappings
+            .iter()
+            .map(|mapping| u16::try_from(mapping.interface_channel()))
+            .collect::<Result<Vec<_>, _>>()?;
+        let input = app
+            .recording
+            .model
+            .recording_config
+            .channel_mappings
+            .iter()
+            .copied()
+            .map(u16::try_from)
+            .collect::<Result<Vec<_>, _>>()?;
+        let loopback = app
+            .recording
+            .model
+            .recording_config
+            .ctc_loopback_input_channel
+            .map(u16::try_from)
+            .transpose()?;
+        Ok::<_, std::num::TryFromIntError>((output, input, loopback))
+    })();
+    let Ok((mapped_output_channels, mapped_input_channels, loopback_input)) = channels else {
+        if let Some(channel) = app.recording.model.channel_recordings.get_mut(channel_idx) {
+            channel.state = ChannelRecordingState::Error;
+        }
+        app.recording.model.status_message =
+            "Channel exceeds the capture channel range".to_string();
+        return;
     };
     let ctc_strategy = app.recording.model.recording_config.ctc_matrix_strategy;
     let capture_indices = if ctc_strategy == CtcMatrixExportStrategy::RawSweep {
@@ -102,27 +145,11 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let output_device = app.recording.model.playback_config.device_name.clone();
     let input_device = app.recording.model.recording_config.device_name.clone();
 
-    let output_channel = app
-        .recording
-        .model
-        .playback_config
-        .channel_mappings
+    let output_channel = mapped_output_channels
         .get(speaker_index)
-        .map(|m| m.interface_channel())
-        .unwrap_or(0) as u16;
-    let input_channel = app
-        .recording
-        .model
-        .recording_config
-        .channel_mappings
-        .get(mic_index)
         .copied()
-        .unwrap_or(0) as u16;
-    let loopback_input = app
-        .recording
-        .model
-        .recording_config
-        .ctc_loopback_input_channel;
+        .unwrap_or(0);
+    let input_channel = mapped_input_channels.get(mic_index).copied().unwrap_or(0);
     let position_idx = selected.mic_position_index;
 
     // Per-mic calibration lives in the model-level `mic_calibration_paths`,
@@ -141,7 +168,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let output_directory = app.recording.output_directory.clone();
 
     // Convert dB level to linear amplitude (clamped to ≤ 0 dBFS, R3).
-    let amplitude = measurement_amplitude(level_db as f64);
+    let amplitude = measurement_amplitude(f64::from(level_db));
 
     // Generate signal parameters. The sweep path routes through the shared
     // helper (B1): with `bass_octave_duration_s` set, the stimulus becomes
@@ -172,7 +199,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     ch.state = ChannelRecordingState::Error;
                 }
             }
-            app.recording.model.status_message = format!("Error generating signal: {}", e);
+            app.recording.model.status_message = format!("Error generating signal: {e}");
             return;
         }
     };
@@ -202,7 +229,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
                 ch.state = ChannelRecordingState::Error;
             }
-            app.recording.model.status_message = format!("Error writing temp WAV: {}", e);
+            app.recording.model.status_message = format!("Error writing temp WAV: {e}");
             return;
         }
     };
@@ -210,10 +237,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     // Create output paths
     let safe_channel_name = sanitize_recording_name(&channel_name);
     let recording_dir = std::path::PathBuf::from(&output_directory);
-    let recorded_wav_path = recording_dir.join(format!("{}.wav", safe_channel_name));
-    let csv_path = recording_dir.join(format!("{}.csv", safe_channel_name));
-    let loopback_wav_path = recording_dir.join(format!("{}_loopback.wav", safe_channel_name));
-    let loopback_csv_path = recording_dir.join(format!("{}_loopback.csv", safe_channel_name));
+    let recorded_wav_path = recording_dir.join(format!("{safe_channel_name}.wav"));
+    let csv_path = recording_dir.join(format!("{safe_channel_name}.csv"));
+    let loopback_wav_path = recording_dir.join(format!("{safe_channel_name}_loopback.wav"));
+    let loopback_csv_path = recording_dir.join(format!("{safe_channel_name}_loopback.csv"));
 
     let capture_entries: Vec<(
         usize,
@@ -227,14 +254,10 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             .filter_map(|idx| {
                 let rec = app.recording.model.channel_recordings.get(*idx)?;
                 let safe_name = sanitize_recording_name(&rec.channel_name);
-                let input_ch = app
-                    .recording
-                    .model
-                    .recording_config
-                    .channel_mappings
+                let input_ch = mapped_input_channels
                     .get(rec.mic_index)
                     .copied()
-                    .unwrap_or(0) as u16;
+                    .unwrap_or(0);
                 let calibration = resolve_mic_calibration(
                     &app.recording.model.mic_calibration_paths,
                     rec.mic_index,
@@ -242,8 +265,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 );
                 Some((
                     *idx,
-                    recording_dir.join(format!("{}.wav", safe_name)),
-                    recording_dir.join(format!("{}.csv", safe_name)),
+                    recording_dir.join(format!("{safe_name}.wav")),
+                    recording_dir.join(format!("{safe_name}.csv")),
                     input_ch,
                     calibration,
                 ))
@@ -278,7 +301,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         if let Some(ch) = app.recording.model.channel_recordings.get_mut(channel_idx) {
             ch.state = ChannelRecordingState::Error;
         }
-        app.recording.model.status_message = format!("Cannot create directory: {}", e);
+        app.recording.model.status_message = format!("Cannot create directory: {e}");
         return;
     }
 
@@ -291,7 +314,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             1,
         ) {
             app.recording.model.status_message =
-                format!("Could not write CTC reference sweep: {}", e);
+                format!("Could not write CTC reference sweep: {e}");
         } else {
             // Task 10: the octave-scaled sweep is self-timed, so persist the
             // *actual* stimulus duration alongside the reference path —
@@ -303,9 +326,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
         }
     }
 
-    let result_slot = RECORDING_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(RECORDING_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
 
     // F1: bump the capture generation so any OLD capture thread that
     // completes after this spawn (e.g. inside the ~50 ms cancel-poll
@@ -329,7 +351,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     // then hand a clone to the capture thread (mirrors
     // `spawn_probe_capture`).
     app.recording.model.reset_sweep_cancel();
-    let cancel_flag = app.recording.model.sweep_cancel_requested.clone();
+    let cancel_flag = std::sync::Arc::clone(&app.recording.model.sweep_cancel_requested);
 
     std::thread::spawn(move || {
         use sotf_audio_player::EnginePlayback;
@@ -343,11 +365,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             record_and_analyze_with_multi_recorder, record_and_analyze_with_recorder,
         };
 
-        let sweep_range = if signal_type == SignalType::Sweep {
-            Some((sweep_start_freq, sweep_end_freq))
-        } else {
-            None
-        };
+        let sweep_range =
+            (signal_type == SignalType::Sweep).then_some((sweep_start_freq, sweep_end_freq));
 
         let out_dev = if output_device.is_empty() {
             None
@@ -382,7 +401,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             if let Some(loopback_input) = loopback_input {
                 wav_paths.push(loopback_wav_path.clone());
                 csv_paths.push(loopback_csv_path);
-                input_channels.push(loopback_input as u16);
+                input_channels.push(loopback_input);
                 calibrations.push(None);
             }
             #[cfg(feature = "dev-api")]
@@ -405,7 +424,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     &calibrations,
                     sweep_range,
                     num_sweeps,
-                    Some(cancel_flag.clone()),
+                    Some(std::sync::Arc::clone(&cancel_flag)),
                 )
             } else {
                 record_and_analyze_with_multi(
@@ -422,7 +441,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                     &calibrations,
                     sweep_range,
                     num_sweeps,
-                    Some(cancel_flag.clone()),
+                    Some(std::sync::Arc::clone(&cancel_flag)),
                 )
             };
             #[cfg(not(feature = "dev-api"))]
@@ -549,22 +568,18 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                         ))
                     })
                     .collect();
-                let loopback = if ctc_strategy == CtcMatrixExportStrategy::RawSweep
-                    && loopback_input.is_some()
-                {
-                    Some(
-                        sotf_audio_player::recording_types::TransferMatrixLoopbackRecording {
-                            speaker_index,
-                            mic_position_index: position_idx,
-                            wav_path: loopback_wav_path.to_string_lossy().to_string(),
-                        },
-                    )
-                } else {
-                    None
-                };
+                let loopback = (ctc_strategy == CtcMatrixExportStrategy::RawSweep
+                    && loopback_input.is_some())
+                .then(
+                    || sotf_audio_player::recording_types::TransferMatrixLoopbackRecording {
+                        speaker_index,
+                        mic_position_index: position_idx,
+                        wav_path: loopback_wav_path.to_string_lossy().to_string(),
+                    },
+                );
                 (rec_results, loopback)
             })
-            .map_err(|e| e.to_string());
+            .map_err(|e| e.clone());
 
         if let Ok(mut guard) = result_slot.lock() {
             *guard = Some((capture_generation, mapped));

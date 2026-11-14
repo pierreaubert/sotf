@@ -28,14 +28,17 @@ impl ChannelMetadata {
             .count()
     }
 
+    #[must_use]
     pub fn has_subwoofer(&self) -> bool {
         self.channel_names.iter().any(|n| Self::is_sub_name(n))
     }
 
+    #[must_use]
     pub fn is_surround(&self) -> bool {
         self.non_sub_count() >= 3
     }
 
+    #[must_use]
     pub fn has_height_channels(&self) -> bool {
         self.channel_names.iter().any(|name| {
             let upper = name.to_uppercase();
@@ -43,6 +46,7 @@ impl ChannelMetadata {
         })
     }
 
+    #[must_use]
     pub fn is_home_cinema(&self) -> bool {
         self.non_sub_count() >= 5
     }

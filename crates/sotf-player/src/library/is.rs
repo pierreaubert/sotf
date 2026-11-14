@@ -1,6 +1,7 @@
 use super::consts::SUPPORTED_AUDIO_EXTENSIONS;
 use std::path::Path;
 
+#[must_use]
 pub fn is_supported_audio_extension(ext: &str) -> bool {
     SUPPORTED_AUDIO_EXTENSIONS
         .iter()

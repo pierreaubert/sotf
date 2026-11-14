@@ -1,4 +1,4 @@
-//! OS media controls integration (MPRIS on Linux, MediaPlayer on macOS/Windows).
+//! OS media controls integration (MPRIS on Linux, `MediaPlayer` on macOS/Windows).
 //!
 //! Provides play/pause/next/previous from the desktop environment's media controls.
 
@@ -15,6 +15,10 @@ pub struct GpuiMediaControls {
 }
 
 impl GpuiMediaControls {
+    /// Creates platform media controls.
+    ///
+    /// # Errors
+    /// Returns an error if platform media controls cannot be created or attached.
     pub fn new() -> anyhow::Result<Self> {
         // sotf_media_controls returns Err(Unsupported) on Windows / iOS / tvOS
         // instead of panicking, so a simple `?` is enough.
@@ -36,6 +40,7 @@ impl GpuiMediaControls {
     }
 
     /// Poll for a single pending media control event (non-blocking).
+    #[must_use]
     pub fn poll_event(&self) -> Option<MediaControlEvent> {
         self.rx.try_recv().ok()
     }
@@ -57,14 +62,14 @@ impl GpuiMediaControls {
             cover_url,
         };
         if let Err(e) = self.controls.set_metadata(metadata) {
-            log::warn!("Failed to set media metadata: {}", e);
+            log::warn!("Failed to set media metadata: {e}");
         }
     }
 
     /// Update playback state in the OS media controls.
     pub fn set_playback(&mut self, playback: MediaPlayback) {
         if let Err(e) = self.controls.set_playback(playback) {
-            log::warn!("Failed to set media playback state: {}", e);
+            log::warn!("Failed to set media playback state: {e}");
         }
     }
 }
@@ -139,4 +144,10 @@ fn get_hwnd() -> Option<WindowHandle<'static>> {
 #[cfg(not(target_os = "windows"))]
 fn get_hwnd() -> Option<WindowHandle<'static>> {
     None
+}
+
+impl std::fmt::Debug for GpuiMediaControls {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GpuiMediaControls").finish_non_exhaustive()
+    }
 }

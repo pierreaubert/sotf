@@ -1,5 +1,24 @@
-use super::*;
+use super::{
+    App, Block, Constraint, DUAL_VIEW_HEIGHT_THRESHOLD, Direction, Frame, InputMode, Layout,
+    Screen, Style, draw_ab_testing_screen, draw_channel_conflict_modal, draw_configure_modal,
+    draw_configure_screen, draw_devices_screen, draw_ear_training_screen, draw_error_modal,
+    draw_file_explorer_modal, draw_help_modal, draw_level_meter_box, draw_library_screen,
+    draw_load_apo_file_dialog, draw_load_plugins_dialog, draw_load_sofa_file_dialog,
+    draw_loading_screen, draw_loudness_and_volume_column, draw_maintenance_progress_dialog,
+    draw_metadata_editor_modal, draw_meters_column, draw_playlists_screen,
+    draw_plugin_editor_modal, draw_plugins_screen, draw_queue_screen,
+    draw_replay_gain_progress_dialog, draw_save_plugins_dialog, draw_scan_progress_dialog,
+    draw_status_bar, draw_title, draw_tools_screen,
+};
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the declarative layout and its interaction handlers together"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    reason = "Terminal and pixel geometry deliberately quantizes display coordinates and percentages"
+)]
 pub fn draw(f: &mut Frame, app: &mut App) {
     // Paint the entire frame with theme colors so all widgets inherit them
     let bg_block = Block::default().style(
@@ -41,7 +60,9 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     // Calculate exact width needed for meters:
     // 2 (borders) + 1 (padding) + groups + 1 (padding)
     let mut meters_width = 2 + 1; // borders + left padding
-    if !app.level_meters.groups.is_empty() {
+    if app.level_meters.groups.is_empty() {
+        meters_width += 1; // right padding even if no groups
+    } else {
         for group in &app.level_meters.groups {
             let num_channels_in_group = group.channels.len();
             // For stereo (2 channels), use 3 chars per meter + 2 chars spacing = 8 total
@@ -53,8 +74,6 @@ pub fn draw(f: &mut Frame, app: &mut App) {
             };
             meters_width += group_width + 1; // group width + spacing
         }
-    } else {
-        meters_width += 1; // right padding even if no groups
     }
 
     // Use fixed width for the meters column to avoid extra space.

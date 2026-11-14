@@ -36,9 +36,8 @@ pub(super) fn parse_loss_function(loss_function: &str) -> Option<autoeq_optim::L
 }
 
 pub(super) fn spawn_spinorama_speaker_load() {
-    let result_slot = SPEAKERS_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(SPEAKERS_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
 
     // Clear any stale result from a previous load
     if let Ok(mut g) = result_slot.lock() {
@@ -46,7 +45,7 @@ pub(super) fn spawn_spinorama_speaker_load() {
     }
 
     // Spawn background thread
-    let slot = result_slot.clone();
+    let slot = std::sync::Arc::clone(&result_slot);
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt
@@ -58,17 +57,24 @@ pub(super) fn spawn_spinorama_speaker_load() {
     });
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn spawn_spinorama_optimization(app: &mut App) {
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
     // Start new optimization
-    let speaker = match &app.spinorama_eq.model.selected_speaker {
-        Some(s) => s.clone(),
-        None => {
-            app.spinorama_eq.model.optimization_status = OptimizationStatus::Failed;
-            app.spinorama_eq.model.error_message = Some("No speaker selected".to_string());
-            return;
-        }
+    let speaker = if let Some(s) = &app.spinorama_eq.model.selected_speaker {
+        s.clone()
+    } else {
+        app.spinorama_eq.model.optimization_status = OptimizationStatus::Failed;
+        app.spinorama_eq.model.error_message = Some("No speaker selected".to_string());
+        return;
     };
 
     // Validate the loss-function form value before spawning: an unknown
@@ -122,12 +128,9 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
     let atolerance = c.atolerance;
     let sample_rate = c.sample_rate;
 
-    let result_slot2 = OPT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    let progress_slot2 = OPT_PROGRESS
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot2 = std::sync::Arc::clone(OPT_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
+    let progress_slot2 =
+        std::sync::Arc::clone(OPT_PROGRESS.get_or_init(|| Arc::new(Mutex::new(None))));
 
     // Clear any stale result from a previous run
     if let Ok(mut g) = result_slot2.lock() {
@@ -152,7 +155,7 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
         args.min_q = min_q;
         args.max_q = max_q;
         args.maxeval = max_iter;
-        args.sample_rate = sample_rate as f64;
+        args.sample_rate = f64::from(sample_rate);
         args.population = population;
         args.strategy = strategy;
         args.adaptive_weight_f = de_f;
@@ -169,7 +172,6 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
         args.algo = algorithm.to_autoeq_string().to_string();
         // Map PEQ model string to enum
         args.peq_model = match peq_model_str.as_str() {
-            "pk" => autoeq_core::PeqModel::Pk,
             "hp-pk" => autoeq_core::PeqModel::HpPk,
             "hp-pk-lp" => autoeq_core::PeqModel::HpPkLp,
             "ls-pk" => autoeq_core::PeqModel::LsPk,
@@ -180,14 +182,13 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
         // rejected at the form layer above; this arm is defense-in-depth so
         // the worker reports `Err` through the result slot instead of
         // panicking (a thread panic would wedge the UI in `Running`).
-        args.loss = match parse_loss_function(&loss_function) {
-            Some(loss) => loss,
-            None => {
-                if let Ok(mut guard) = result_slot2.lock() {
-                    *guard = Some(Err(format!("Unknown loss function: {loss_function}")));
-                }
-                return;
+        args.loss = if let Some(loss) = parse_loss_function(&loss_function) {
+            loss
+        } else {
+            if let Ok(mut guard) = result_slot2.lock() {
+                *guard = Some(Err(format!("Unknown loss function: {loss_function}")));
             }
+            return;
         };
         // Psychoacoustic smoothing not directly on Args — handled via smooth settings
         let _ = psychoacoustic; // TODO: map when autoeq supports it directly
@@ -208,7 +209,7 @@ pub(super) fn spawn_spinorama_optimization(app: &mut App) {
             ..Default::default()
         };
 
-        let progress_slot3 = progress_slot2.clone();
+        let progress_slot3 = std::sync::Arc::clone(&progress_slot2);
         let callback: sotf_audio_player::autoeq::SpeakerOptimizationCallback = Box::new(move |p| {
             let pct = if p.max_iterations > 0 {
                 p.iteration as f32 / p.max_iterations as f32

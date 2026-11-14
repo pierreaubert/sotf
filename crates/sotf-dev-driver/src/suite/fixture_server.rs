@@ -52,7 +52,8 @@ pub(super) fn start_fixture_server(
     verbose: bool,
 ) -> Result<FixtureServer> {
     let fixture_qa_dir = scenario_dir.join("fixture-server-qa");
-    fs::create_dir_all(&fixture_qa_dir).with_context(|| format!("creating {fixture_qa_dir:?}"))?;
+    fs::create_dir_all(&fixture_qa_dir)
+        .with_context(|| format!("creating {}", fixture_qa_dir.display()))?;
 
     if config.seed_demo_audio {
         let fixture_library = scenario_dir.join("fixture-library");
@@ -219,7 +220,7 @@ fn preseed_fixture_library(
             &client,
             &base_url,
             "/qa/seed",
-            json!({ "library_dirs": [fixture_library] }),
+            &json!({ "library_dirs": [fixture_library] }),
         )
         .context("seeding fixture library")?;
         let deadline = Instant::now() + Duration::from_secs(60);
@@ -230,7 +231,7 @@ fn preseed_fixture_library(
             let count = client
                 .get(format!("{base_url}/query?path=library.album_count"))
                 .send()
-                .and_then(|resp| resp.json::<Value>())
+                .and_then(reqwest::blocking::Response::json::<Value>)
                 .ok()
                 .and_then(|json| json.get("value").and_then(Value::as_u64))
                 .unwrap_or(0);
@@ -244,7 +245,7 @@ fn preseed_fixture_library(
         }
     })();
 
-    let _ = post_json(&client, &base_url, "/quit", json!({}));
+    let _ = post_json(&client, &base_url, "/quit", &json!({}));
     wait_or_kill(&mut child, Duration::from_secs(5))?;
     result
 }

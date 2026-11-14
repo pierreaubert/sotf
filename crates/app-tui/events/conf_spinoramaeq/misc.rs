@@ -45,7 +45,7 @@ pub(super) fn set_spinorama_field_from_string(app: &mut App) {
         }
         10 => {
             if let Ok(v) = buf.parse::<usize>() {
-                c.max_iter = v.clamp(1000, 100000);
+                c.max_iter = v.clamp(1000, 100_000);
             }
         }
         11 => {
@@ -92,6 +92,12 @@ pub(super) fn set_spinorama_field_from_string(app: &mut App) {
     }
 }
 
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
     let c = &mut app.spinorama_eq.model.optimizer_config;
     match app.spinorama_eq.selected_field {
@@ -108,12 +114,12 @@ pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
             let n = c.num_filters as i32 + delta;
             c.num_filters = n.clamp(1, 30) as usize;
         }
-        2 => c.min_freq = (c.min_freq + delta as f64 * 10.0).clamp(20.0, 500.0),
-        3 => c.max_freq = (c.max_freq + delta as f64 * 500.0).clamp(1000.0, 20000.0),
-        4 => c.min_db = (c.min_db + delta as f64).clamp(-24.0, 0.0),
-        5 => c.max_db = (c.max_db + delta as f64).clamp(0.0, 12.0),
-        6 => c.min_q = (c.min_q + delta as f64 * 0.1).clamp(0.1, 2.0),
-        7 => c.max_q = (c.max_q + delta as f64 * 0.5).clamp(1.0, 20.0),
+        2 => c.min_freq = (c.min_freq + f64::from(delta) * 10.0).clamp(20.0, 500.0),
+        3 => c.max_freq = (c.max_freq + f64::from(delta) * 500.0).clamp(1000.0, 20000.0),
+        4 => c.min_db = (c.min_db + f64::from(delta)).clamp(-24.0, 0.0),
+        5 => c.max_db = (c.max_db + f64::from(delta)).clamp(0.0, 12.0),
+        6 => c.min_q = (c.min_q + f64::from(delta) * 0.1).clamp(0.1, 2.0),
+        7 => c.max_q = (c.max_q + f64::from(delta) * 0.5).clamp(1.0, 20.0),
         8 => {
             c.peq_model = super::super::cycle_string(
                 &c.peq_model,
@@ -135,7 +141,7 @@ pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
         }
         10 => {
             let n = c.max_iter as i32 + delta * 1000;
-            c.max_iter = n.clamp(1000, 100000) as usize;
+            c.max_iter = n.clamp(1000, 100_000) as usize;
         }
         11 => {
             let n = c.population as i32 + delta * 10;
@@ -148,8 +154,8 @@ pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
                 delta,
             );
         }
-        13 => c.de_f = (c.de_f + delta as f64 * 0.1).clamp(0.1, 2.0),
-        14 => c.de_cr = (c.de_cr + delta as f64 * 0.1).clamp(0.1, 1.0),
+        13 => c.de_f = (c.de_f + f64::from(delta) * 0.1).clamp(0.1, 2.0),
+        14 => c.de_cr = (c.de_cr + f64::from(delta) * 0.1).clamp(0.1, 1.0),
         // ── Refinement ──
         15 => c.refine = !c.refine,
         16 => {
@@ -163,8 +169,8 @@ pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
         }
         19 => c.psychoacoustic = !c.psychoacoustic,
         // ── Constraints ──
-        20 => c.spacing_weight = (c.spacing_weight + delta as f64 * 10.0).clamp(0.0, 1000.0),
-        21 => c.min_spacing_oct = (c.min_spacing_oct + delta as f64 * 0.01).clamp(0.01, 1.0),
+        20 => c.spacing_weight = (c.spacing_weight + f64::from(delta) * 10.0).clamp(0.0, 1000.0),
+        21 => c.min_spacing_oct = (c.min_spacing_oct + f64::from(delta) * 0.01).clamp(0.01, 1.0),
         // ── Convergence ──
         22 => {
             c.tolerance = if delta > 0 {
@@ -182,12 +188,8 @@ pub(super) fn adjust_spinorama_field(app: &mut App, delta: i32) {
         }
         24 => {
             c.sample_rate = match (c.sample_rate, delta > 0) {
-                (44100, true) => 48000,
-                (48000, true) => 96000,
-                (96000, true) => 44100,
-                (96000, false) => 48000,
-                (48000, false) => 44100,
-                (44100, false) => 96000,
+                (48000, true) | (44100, false) => 96000,
+                (96000, true) | (48000, false) => 44100,
                 _ => 48000,
             };
         }

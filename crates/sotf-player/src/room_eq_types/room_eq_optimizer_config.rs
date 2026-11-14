@@ -38,6 +38,10 @@ use serde::{Deserialize, Serialize};
 
 /// Optimizer configuration for Room EQ
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent persisted options and status flags retain their existing schema "
+)]
 pub struct RoomEqOptimizerConfig {
     #[serde(default)]
     pub mode: RoomEqOptimizationMode,
@@ -197,14 +201,18 @@ impl Default for RoomEqOptimizerConfig {
 impl RoomEqOptimizerConfig {
     /// Import optimizer parameters and feature toggles from a backend `OptimizerConfig`.
     ///
-    /// This is used when loading a RoomConfig JSON file so that the UI
+    /// This is used when loading a `RoomConfig` JSON file so that the UI
     /// uses the same optimizer settings as the roomeq CLI.
     /// Sets `imported_from_file = true` so that `apply_smart_defaults()` will
     /// not override the imported feature toggle state.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Backend configuration conversion maps the complete persisted optimizer schema"
+    )]
     pub fn import_from_backend(&mut self, backend: &roomeq_model::OptimizerConfig) {
         // Core optimizer parameters
-        self.algorithm = backend.algorithm.clone();
-        self.strategy = backend.strategy.clone();
+        self.algorithm.clone_from(&backend.algorithm);
+        self.strategy.clone_from(&backend.strategy);
         self.num_filters = backend.num_filters;
         self.min_q = backend.min_q;
         self.max_q = backend.max_q;
@@ -214,8 +222,8 @@ impl RoomEqOptimizerConfig {
         self.max_freq = backend.max_freq;
         self.max_iter = backend.max_iter;
         self.population = backend.population;
-        self.peq_model = backend.peq_model.clone();
-        self.loss_type = backend.loss_type.clone();
+        self.peq_model.clone_from(&backend.peq_model);
+        self.loss_type.clone_from(&backend.loss_type);
         self.bo_initial_samples = backend.bo_initial_samples.unwrap_or(0);
         self.bo_batch_size = backend.bo_batch_size.unwrap_or(0);
         self.bo_posterior_std_threshold = backend.bo_posterior_std_threshold.unwrap_or(0.0);
@@ -229,13 +237,13 @@ impl RoomEqOptimizerConfig {
         self.tolerance = backend.tolerance;
         self.atolerance = backend.atolerance;
         self.refine = backend.refine;
-        self.local_algo = backend.local_algo.clone();
+        self.local_algo.clone_from(&backend.local_algo);
         self.seed = backend.seed;
 
         // FIR configuration
         if let Some(ref fir) = backend.fir {
             self.fir.taps = fir.taps;
-            self.fir.phase = fir.phase.clone();
+            self.fir.phase.clone_from(&fir.phase);
             self.fir.correct_excess_phase = fir.correct_excess_phase;
             self.fir.phase_smoothing = fir.phase_smoothing;
             self.fir.pre_ringing = fir.pre_ringing.as_ref().map(|pr| PreRingingConfig {
@@ -278,7 +286,7 @@ impl RoomEqOptimizerConfig {
             };
             self.target_response.slope_db_per_octave = tr.slope_db_per_octave;
             self.target_response.reference_freq = tr.reference_freq;
-            self.target_response.curve_path = tr.curve_path.clone();
+            self.target_response.curve_path.clone_from(&tr.curve_path);
             self.target_response.bass_shelf_db = tr.preference.bass_shelf_db;
             self.target_response.bass_shelf_freq = tr.preference.bass_shelf_freq;
             self.target_response.treble_shelf_db = tr.preference.treble_shelf_db;
@@ -322,7 +330,9 @@ impl RoomEqOptimizerConfig {
             .as_ref()
             .is_some_and(|config| config.enabled);
         if let Some(ref config) = backend.inter_channel_timbre_matching {
-            self.vog.reference_channel = config.reference_channel.clone();
+            self.vog
+                .reference_channel
+                .clone_from(&config.reference_channel);
         }
 
         self.phase_alignment.enabled = backend.phase_alignment.as_ref().is_some_and(|p| p.enabled);
@@ -402,6 +412,11 @@ impl RoomEqOptimizerConfig {
     ///
     /// This is the single canonical conversion used by both GPUI and TUI
     /// when building a `RoomConfig` for the optimizer.
+    #[must_use]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Backend configuration conversion maps the complete persisted optimizer schema"
+    )]
     pub fn to_optimizer_config(&self) -> roomeq_model::OptimizerConfig {
         use roomeq_model::ChannelMatchingConfig as BackendChannelMatchingConfig;
         use roomeq_model::DecomposedCorrectionSerdeConfig;
@@ -451,40 +466,32 @@ impl RoomEqOptimizerConfig {
             ..Default::default()
         });
 
-        let mixed_phase = if self.mode == RoomEqOptimizationMode::MixedPhase {
-            Some(BackendMixedPhaseConfig {
+        let mixed_phase =
+            (self.mode == RoomEqOptimizationMode::MixedPhase).then(|| BackendMixedPhaseConfig {
                 max_fir_length_ms: self.mixed_phase.max_fir_length_ms,
                 pre_ringing_threshold_db: self.mixed_phase.pre_ringing_threshold_db,
                 min_spatial_depth: self.mixed_phase.min_spatial_depth,
                 phase_smoothing_octaves: self.mixed_phase.phase_smoothing_octaves,
-                assessment: Default::default(),
+                assessment: roomeq_model::PhaseAssessmentConfig::default(),
                 max_correction_latency_ms: None,
-            })
-        } else {
-            None
-        };
+            });
 
-        let mixed_config = if self.mode == RoomEqOptimizationMode::Mixed {
-            Some(MixedModeConfig {
-                crossover_freq: self.mixed_config.crossover_freq,
-                crossover_type: self.mixed_config.crossover_type.clone(),
-                fir_band: self.mixed_config.fir_band.clone(),
-            })
-        } else {
-            None
-        };
+        let mixed_config = (self.mode == RoomEqOptimizationMode::Mixed).then(|| MixedModeConfig {
+            crossover_freq: self.mixed_config.crossover_freq,
+            crossover_type: self.mixed_config.crossover_type.clone(),
+            fir_band: self.mixed_config.fir_band.clone(),
+        });
 
-        let target_response = if self.target_response.enabled {
+        let target_response = self.target_response.enabled.then(|| {
             let tr = &self.target_response;
             let shape = match tr.shape.as_str() {
                 "flat" => TargetShape::Flat,
                 "harman" => TargetShape::Harman,
-                "custom" => TargetShape::Custom,
                 "file" => TargetShape::File,
                 "from_measurement" => TargetShape::FromMeasurement,
                 _ => TargetShape::Custom,
             };
-            Some(BackendTargetResponseConfig {
+            BackendTargetResponseConfig {
                 shape,
                 slope_db_per_octave: tr.slope_db_per_octave,
                 reference_freq: tr.reference_freq,
@@ -497,18 +504,16 @@ impl RoomEqOptimizerConfig {
                 },
                 broadband_precorrection: tr.broadband_precorrection,
                 role_targets: None,
-            })
-        } else {
-            None
-        };
+            }
+        });
 
-        let excursion_protection = if self.excursion_protection.enabled {
+        let excursion_protection = self.excursion_protection.enabled.then(|| {
             let filter_type = if self.excursion_protection.filter_type == "bw" {
                 HighpassType::Butterworth
             } else {
                 HighpassType::LinkwitzRiley
             };
-            Some(BackendExcursionProtectionConfig {
+            BackendExcursionProtectionConfig {
                 enabled: true,
                 auto_detect_f3: self.excursion_protection.auto_detect_f3,
                 manual_f3_hz: Some(self.excursion_protection.manual_f3_hz),
@@ -517,13 +522,13 @@ impl RoomEqOptimizerConfig {
                 filter_order: self.excursion_protection.filter_order,
                 filter_type,
                 margin_octaves: self.excursion_protection.margin_octaves,
-            })
-        } else {
-            None
-        };
+            }
+        });
 
-        let schroeder_split = if self.schroeder_split.enabled {
-            Some(BackendSchroederSplitConfig {
+        let schroeder_split = self
+            .schroeder_split
+            .enabled
+            .then_some(BackendSchroederSplitConfig {
                 enabled: true,
                 schroeder_freq: self.schroeder_split.schroeder_freq,
                 room_dimensions: None,
@@ -537,22 +542,18 @@ impl RoomEqOptimizerConfig {
                     max_q: self.schroeder_split.high_freq_max_q,
                     shelving_only: self.schroeder_split.high_freq_shelving_only,
                 },
-            })
-        } else {
-            None
-        };
+            });
 
-        let phase_alignment = if self.phase_alignment.enabled {
-            Some(BackendPhaseAlignmentConfig {
+        let phase_alignment = self
+            .phase_alignment
+            .enabled
+            .then_some(BackendPhaseAlignmentConfig {
                 enabled: true,
                 min_freq: self.phase_alignment.min_freq,
                 max_freq: self.phase_alignment.max_freq,
                 optimize_polarity: self.phase_alignment.optimize_polarity,
                 max_delay_ms: self.phase_alignment.max_delay_ms,
-            })
-        } else {
-            None
-        };
+            });
 
         let has_all_channel_multiseat_policy = !self.multi_seat.all_channel_enabled
             || self.multi_seat.all_channel_strategy != default_all_channel_multiseat_strategy()
@@ -560,7 +561,7 @@ impl RoomEqOptimizerConfig {
             || (self.multi_seat.primary_seat_weight - default_primary_seat_weight()).abs() > 1e-9
             || self.multi_seat.primary_seat != 0
             || (self.multi_seat.max_deviation_db - 6.0).abs() > 1e-9;
-        let multi_seat = if self.multi_seat.enabled || has_all_channel_multiseat_policy {
+        let multi_seat = (self.multi_seat.enabled || has_all_channel_multiseat_policy).then(|| {
             let strategy = match self.multi_seat.strategy.as_str() {
                 "primary" => MultiSeatStrategy::PrimaryWithConstraints,
                 "average" => MultiSeatStrategy::Average,
@@ -568,7 +569,7 @@ impl RoomEqOptimizerConfig {
                 "continuous_area" => MultiSeatStrategy::ContinuousArea,
                 _ => MultiSeatStrategy::MinimizeVariance,
             };
-            Some(BackendMultiSeatConfig {
+            BackendMultiSeatConfig {
                 enabled: self.multi_seat.enabled,
                 strategy,
                 primary_seat: self.multi_seat.primary_seat,
@@ -599,22 +600,17 @@ impl RoomEqOptimizerConfig {
                     .map(continuous_area_to_backend),
                 seat_identity: None,
                 search: None,
-            })
-        } else {
-            None
-        };
+            }
+        });
 
-        let inter_channel_timbre_matching = if self.vog.enabled {
-            Some(InterChannelTimbreMatchingConfig {
+        let inter_channel_timbre_matching =
+            self.vog.enabled.then(|| InterChannelTimbreMatchingConfig {
                 enabled: true,
                 reference_channel: self.vog.reference_channel.clone(),
                 ..Default::default()
-            })
-        } else {
-            None
-        };
+            });
 
-        let multi_measurement = if self.multi_measurement.enabled {
+        let multi_measurement = self.multi_measurement.enabled.then(|| {
             let strategy_key =
                 canonical_multi_measurement_strategy(&self.multi_measurement.strategy)
                     .unwrap_or_else(|| {
@@ -625,7 +621,6 @@ impl RoomEqOptimizerConfig {
                         "average"
                     });
             let strategy = match strategy_key {
-                "average" => MultiMeasurementStrategy::Average,
                 "weighted_sum" => MultiMeasurementStrategy::WeightedSum,
                 "minimax" => MultiMeasurementStrategy::Minimax,
                 "variance_penalized" => MultiMeasurementStrategy::VariancePenalized,
@@ -638,7 +633,7 @@ impl RoomEqOptimizerConfig {
             } else {
                 Some(self.multi_measurement.weights.clone())
             };
-            Some(MultiMeasurementConfig {
+            MultiMeasurementConfig {
                 strategy,
                 weights,
                 variance_lambda: self.multi_measurement.variance_lambda,
@@ -649,32 +644,25 @@ impl RoomEqOptimizerConfig {
                     .as_ref()
                     .map(bootstrap_uncertainty_to_backend),
                 rir_prototype: None,
-            })
-        } else {
-            None
-        };
+            }
+        });
 
-        let sub_config = if self.sub_config.enabled {
-            Some(SubOptimizerConfig {
-                num_filters: self.sub_config.num_filters,
-                max_db: self.sub_config.max_db,
-                min_db: self.sub_config.min_db,
-                min_q: self.sub_config.min_q,
-                max_q: self.sub_config.max_q,
-            })
-        } else {
-            None
-        };
+        let sub_config = self.sub_config.enabled.then_some(SubOptimizerConfig {
+            num_filters: self.sub_config.num_filters,
+            max_db: self.sub_config.max_db,
+            min_db: self.sub_config.min_db,
+            min_q: self.sub_config.min_q,
+            max_q: self.sub_config.max_q,
+        });
 
-        let channel_matching = if self.channel_matching.enabled {
-            Some(BackendChannelMatchingConfig {
-                enabled: true,
-                threshold_db: self.channel_matching.threshold_db,
-                max_filters: self.channel_matching.max_filters,
-            })
-        } else {
-            None
-        };
+        let channel_matching =
+            self.channel_matching
+                .enabled
+                .then_some(BackendChannelMatchingConfig {
+                    enabled: true,
+                    threshold_db: self.channel_matching.threshold_db,
+                    max_filters: self.channel_matching.max_filters,
+                });
         let is_bo_algorithm = self.algorithm.eq_ignore_ascii_case("autoeq:bo")
             || self.algorithm.eq_ignore_ascii_case("bo");
 
@@ -728,14 +716,12 @@ impl RoomEqOptimizerConfig {
             // tweaked the temporal-masking knobs. Otherwise the backend's
             // `EpaConfig::default()` (which also includes
             // `flatness_band_weights`, etc.) is the right baseline.
-            epa_config: if self.epa_temporal_masking.differs_from_default() {
-                Some(roomeq_model::EpaConfig {
+            epa_config: self.epa_temporal_masking.differs_from_default().then(|| {
+                roomeq_model::EpaConfig {
                     temporal_masking: self.epa_temporal_masking.to_backend(),
                     ..roomeq_model::EpaConfig::default()
-                })
-            } else {
-                None
-            },
+                }
+            }),
             ..BackendOptimizerConfig::default()
         }
     }

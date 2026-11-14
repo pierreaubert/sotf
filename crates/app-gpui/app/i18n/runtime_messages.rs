@@ -7,11 +7,13 @@ pub struct RuntimeMessageTranslations {
 }
 
 impl RuntimeMessageTranslations {
+    #[must_use]
     pub fn for_language(language: Language) -> Self {
         Self { language }
     }
 
-    pub fn translate<'a>(self, message: &'a str) -> Cow<'a, str> {
+    #[must_use]
+    pub fn translate(self, message: &str) -> Cow<'_, str> {
         if self.language == Language::Pseudo {
             return Cow::Owned(pseudo_expand(message));
         }
@@ -37,10 +39,12 @@ impl RuntimeMessageTranslations {
         Cow::Borrowed(message)
     }
 
+    #[must_use]
     pub fn is_catalogued(source_template: &str) -> bool {
+        let source_segments = template_segments(source_template);
         RUNTIME_MESSAGE_PATTERNS
             .iter()
-            .any(|pattern| pattern.source == source_template)
+            .any(|pattern| template_segments(pattern.source) == source_segments)
     }
 }
 
@@ -269,6 +273,18 @@ const RUNTIME_MESSAGE_PATTERNS: &[RuntimeMessagePattern] = &[
         "Dossier ajouté. Appuyez sur « s » pour l’analyser.",
         "Ordner hinzugefügt. Drücken Sie „s“ zum Scannen.",
         "Carpeta añadida. Pulse «s» para analizar."
+    ),
+    message!(
+        "Directory added. Use Scan to update the library.",
+        "Dossier ajouté. Utilisez Analyser pour mettre à jour la bibliothèque.",
+        "Ordner hinzugefügt. Aktualisieren Sie die Bibliothek mit Scannen.",
+        "Carpeta añadida. Use Analizar para actualizar la biblioteca."
+    ),
+    message!(
+        "Channel exceeds the capture channel range",
+        "Le canal dépasse la plage des canaux de capture",
+        "Der Kanal liegt außerhalb des Aufnahmekanalbereichs",
+        "El canal supera el rango de canales de grabación"
     ),
     message!(
         "Directory already exists.",

@@ -21,6 +21,7 @@ pub fn allowed_plugin_types() -> impl Iterator<Item = (&'static str, &'static st
 /// Parse a path config JSON string into a flat list of plugins.
 /// Returns empty vec for `None`, single-element vec for `Plugin`, full vec for `Rack`.
 /// Graph configs are not editable as a rack and return empty vec.
+#[must_use]
 pub fn parse_path_config(json: &str) -> Vec<PluginInRack> {
     let config: PathConfig = match serde_json::from_str(json) {
         Ok(c) => c,
@@ -47,7 +48,8 @@ pub fn parse_path_config(json: &str) -> Vec<PluginInRack> {
     }
 }
 
-/// Encode a list of plugins back into a PathConfig JSON string.
+/// Encode a list of plugins back into a `PathConfig` JSON string.
+#[must_use]
 pub fn encode_path_config(plugins: &[PluginInRack]) -> String {
     let config = match plugins.len() {
         0 => PathConfig::None,
@@ -64,6 +66,9 @@ pub fn encode_path_config(plugins: &[PluginInRack]) -> String {
 /// Routed or nonlinear plugin topology is represented as a graph with one edge
 /// per channel connection. Input and output special nodes are implicit in the
 /// A/B host and therefore must use complete identity boundary wiring.
+///
+/// # Errors
+/// Returns an error if graph routing cannot be represented as an A/B path or serialization fails.
 pub fn path_config_from_plugin_graph(
     graph: &PluginGraph,
     sample_rate: f64,
@@ -147,6 +152,9 @@ pub fn path_config_from_plugin_graph(
 }
 
 /// Serialize [`path_config_from_plugin_graph`] for plugin parameters or saved sessions.
+///
+/// # Errors
+/// Returns an error if graph routing cannot be represented as an A/B path or serialization fails.
 pub fn encode_plugin_graph_path_config(
     graph: &PluginGraph,
     sample_rate: f64,
@@ -160,6 +168,7 @@ pub fn encode_plugin_graph_path_config(
 ///
 /// Routed linear graphs (crossed, sparse, or offset channels) deliberately
 /// remain graphs even though their node topology has no branch.
+#[must_use]
 pub fn simplify_linear_path_config(config: PathConfig) -> PathConfig {
     let PathConfig::Graph { nodes, edges } = &config else {
         return config;

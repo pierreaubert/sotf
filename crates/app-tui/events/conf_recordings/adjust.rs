@@ -47,14 +47,33 @@ pub(super) fn adjust_spl_field(app: &mut App, step: f32) {
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
+#[expect(
+    clippy::cast_possible_truncation,
+    clippy::cast_possible_wrap,
+    clippy::cast_sign_loss,
+    reason = "UI editing deliberately quantizes bounded numeric controls and timing values"
+)]
 pub(super) fn adjust_recording_field(app: &mut App, delta: i32) {
+    use RecordingField::{
+        ChannelInput, CtcLoopbackInput, CtcStrategy, Duration, Level, MicCal, NumPositions,
+        NumRecordingChannels, NumSweeps, OutputDir, PlaybackDevice, RecordingDevice, SignalType,
+        SpeakerConfig, SweepEnd, SweepStart,
+    };
+
     use crate::app::recording_field_at;
     use sotf_audio_player::recording_types::{RecordingSignalType, SpeakerConfiguration};
 
     let Some(field) = recording_field_at(&app.recording, app.recording.selected_field) else {
         return;
     };
-    use RecordingField::*;
     match field {
         PlaybackDevice => {
             // B1: Cycle playback device and populate config

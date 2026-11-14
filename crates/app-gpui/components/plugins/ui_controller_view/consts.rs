@@ -1,5 +1,5 @@
 use gpui::prelude::*;
-use gpui::*;
+use gpui::{div, px};
 
 // Leave room for a value with units and both 16-pixel step buttons.
 pub(super) const CELL_W: f32 = 144.0;

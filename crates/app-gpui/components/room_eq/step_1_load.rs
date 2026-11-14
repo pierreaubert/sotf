@@ -1,7 +1,7 @@
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
+use gpui::div;
 use gpui::prelude::*;
-use gpui::*;
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, Card, HStack, StackAlign, StackSpacing, Text, TextSize,
     TextWeight, VStack,
@@ -24,6 +24,10 @@ macro_rules! dev_track {
 // === Step Content Renderers ===
 
 impl PlayerView {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep the declarative layout and its interaction handlers together"
+    )]
     pub(crate) fn render_room_eq_load_data(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let state = self.state.read(cx);
         let translations = state.app.ui_state.translations.clone();

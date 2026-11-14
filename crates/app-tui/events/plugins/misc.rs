@@ -1,7 +1,7 @@
 use crate::app::{App, FilePickerMode, FilePickerOrigin};
 use sotf_audio_player::PluginSettings;
 
-/// Open the file explorer for a FilePath parameter identified by its engine key.
+/// Open the file explorer for a `FilePath` parameter identified by its engine key.
 pub(super) fn open_file_path_param(app: &mut App, engine_key: &str) {
     match engine_key {
         "path_a_config" => {

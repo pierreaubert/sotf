@@ -5,6 +5,10 @@ use super::consts::HEADPHONE_OPT_RESULT;
 use crate::app::App;
 use std::sync::{Arc, Mutex};
 
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "UI controls and graph coordinates use approximate floating-point parameter values"
+)]
 pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
     use sotf_audio_player::room_eq_types::OptimizationStatus;
 
@@ -40,20 +44,18 @@ pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
     args.peq_model = sotf_audio_player::autoeq::parse_peq_model(&c.peq_model);
     args.population = c.population;
     args.recombination = c.de_cr;
-    args.strategy = c.strategy.clone();
+    args.strategy.clone_from(&c.strategy);
     args.tolerance = c.tolerance;
     args.refine = c.refine;
-    args.local_algo = c.local_algo.clone();
+    args.local_algo.clone_from(&c.local_algo);
     args.smooth = c.smooth;
     args.smooth_n = c.smooth_n;
     args.loss = sotf_audio_player::autoeq::parse_loss_type(&c.loss);
 
-    let result_slot = HEADPHONE_OPT_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
-    let progress_slot = HEADPHONE_OPT_PROGRESS
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(HEADPHONE_OPT_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
+    let progress_slot =
+        std::sync::Arc::clone(HEADPHONE_OPT_PROGRESS.get_or_init(|| Arc::new(Mutex::new(None))));
 
     // Clear stale results
     if let Ok(mut g) = result_slot.lock() {
@@ -66,7 +68,7 @@ pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
     std::thread::spawn(move || {
         use sotf_audio_player::autoeq::CallbackAction;
 
-        let progress_slot2 = progress_slot.clone();
+        let progress_slot2 = std::sync::Arc::clone(&progress_slot);
         let callback = move |p: &sotf_audio_player::autoeq::ProgressUpdate| {
             let pct = if p.max_iterations > 0 {
                 p.iteration as f32 / p.max_iterations as f32
@@ -93,15 +95,14 @@ pub(super) fn spawn_headphone_eq_optimization(app: &mut App) {
 }
 
 pub(super) fn spawn_headphone_list_load() {
-    let result_slot = HEADPHONE_LIST_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(HEADPHONE_LIST_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
 
     if let Ok(mut g) = result_slot.lock() {
         *g = None;
     }
 
-    let slot = result_slot.clone();
+    let slot = std::sync::Arc::clone(&result_slot);
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt
@@ -114,16 +115,15 @@ pub(super) fn spawn_headphone_list_load() {
 }
 
 pub(super) fn spawn_headphone_download(headphone_name: &str) {
-    let result_slot = HEADPHONE_DOWNLOAD_RESULT
-        .get_or_init(|| Arc::new(Mutex::new(None)))
-        .clone();
+    let result_slot =
+        std::sync::Arc::clone(HEADPHONE_DOWNLOAD_RESULT.get_or_init(|| Arc::new(Mutex::new(None))));
 
     if let Ok(mut g) = result_slot.lock() {
         *g = None;
     }
 
     let name = headphone_name.to_string();
-    let slot = result_slot.clone();
+    let slot = std::sync::Arc::clone(&result_slot);
     std::thread::spawn(move || {
         let rt = tokio::runtime::Runtime::new().expect("tokio runtime");
         let result = rt.block_on(async {

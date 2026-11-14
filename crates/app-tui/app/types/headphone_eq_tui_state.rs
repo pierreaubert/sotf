@@ -10,6 +10,10 @@ use sotf_audio_player::ui_models::headphone_eq::HeadphoneEqScreenModel;
 /// from `sotf-player`; this struct only holds view state that is specific to
 /// the terminal UI.
 #[derive(Debug, Clone, Default)]
+#[expect(
+    clippy::struct_excessive_bools,
+    reason = "Independent UI options and status flags retain their existing state schema"
+)]
 pub struct HeadphoneEqTuiState {
     /// Shared, UI-agnostic Headphone EQ wizard domain model.
     pub model: HeadphoneEqScreenModel,
@@ -44,7 +48,7 @@ pub struct HeadphoneEqTuiState {
 
     // Step 5: update plugin confirmation
     pub update_substep: SpinUpdateSubStep,
-    /// (slot_index, filter_count) of existing EQ to overwrite
+    /// (`slot_index`, `filter_count`) of existing EQ to overwrite
     pub update_existing_eq_info: Option<(usize, usize)>,
 }
 
@@ -64,12 +68,12 @@ impl HeadphoneEqTuiState {
                 .collect();
         }
         // Clamp index
-        if !self.model.headphone_suggestions.is_empty() {
+        if self.model.headphone_suggestions.is_empty() {
+            self.selected_headphone_idx = 0;
+        } else {
             self.selected_headphone_idx = self
                 .selected_headphone_idx
                 .min(self.model.headphone_suggestions.len() - 1);
-        } else {
-            self.selected_headphone_idx = 0;
         }
     }
 }

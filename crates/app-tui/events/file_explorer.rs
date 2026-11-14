@@ -59,13 +59,17 @@ pub(super) fn handle_file_explorer_mode(app: &mut App, key: KeyEvent) -> Option<
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the ordered UI workflow and its state updates in one operation"
+)]
 fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
     let path_str = path.to_string_lossy().to_string();
     match app.file_explorer.picker_origin {
         FilePickerOrigin::SofaFile => {
             app.plugin_rack.sofa_input = path_str;
             if let Err(e) = app.load_sofa_file() {
-                app.ui.status_message = Some(format!("Error: {}", e));
+                app.ui.status_message = Some(format!("Error: {e}"));
             } else {
                 app.ui.status_message = Some("SOFA file loaded".to_string());
                 app.request_plugin_update();
@@ -119,7 +123,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
         FilePickerOrigin::ApoFile => {
             app.plugin_rack.apo_input = path_str;
             if let Err(e) = app.load_apo_file() {
-                app.ui.status_message = Some(format!("APO error: {}", e));
+                app.ui.status_message = Some(format!("APO error: {e}"));
             } else {
                 app.ui.status_message = Some("APO file loaded".to_string());
                 app.request_plugin_update();
@@ -153,17 +157,16 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                                 }
                             }
                             let filename = path.file_name().unwrap_or_default().to_string_lossy();
-                            app.ui.status_message =
-                                Some(format!("Config loaded from {}", filename));
+                            app.ui.status_message = Some(format!("Config loaded from {filename}"));
                             app.request_plugin_update();
                         }
                         Err(e) => {
-                            app.ui.status_message = Some(format!("Invalid preset: {}", e));
+                            app.ui.status_message = Some(format!("Invalid preset: {e}"));
                         }
                     }
                 }
                 Err(e) => {
-                    app.ui.status_message = Some(format!("Failed to read config: {}", e));
+                    app.ui.status_message = Some(format!("Failed to read config: {e}"));
                 }
             }
         }
@@ -172,10 +175,10 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                 match app.playlists.controller.import_playlist(db, &path) {
                     Ok(()) => {
                         let name = path.file_stem().unwrap_or_default().to_string_lossy();
-                        app.ui.status_message = Some(format!("Imported playlist '{}'", name));
+                        app.ui.status_message = Some(format!("Imported playlist '{name}'"));
                         app.playlists.mode = crate::app::PlaylistMode::Tracks;
                     }
-                    Err(e) => app.ui.status_message = Some(format!("Import error: {}", e)),
+                    Err(e) => app.ui.status_message = Some(format!("Import error: {e}")),
                 }
             }
         }
@@ -186,8 +189,7 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                     .playlists
                     .controller
                     .active_playlist()
-                    .map(|p| p.name.as_str())
-                    .unwrap_or("playlist");
+                    .map_or("playlist", |p| p.name.as_str());
                 // Sanitize name for filename (replace non-alphanumeric with _)
                 let safe_name: String = playlist_name
                     .chars()
@@ -213,9 +215,9 @@ fn apply_file_selection(app: &mut App, path: std::path::PathBuf) {
                         .file_name()
                         .unwrap_or_default()
                         .to_string_lossy();
-                    app.ui.status_message = Some(format!("Exported to '{}'", name));
+                    app.ui.status_message = Some(format!("Exported to '{name}'"));
                 }
-                Err(e) => app.ui.status_message = Some(format!("Export error: {}", e)),
+                Err(e) => app.ui.status_message = Some(format!("Export error: {e}")),
             }
         }
     }
