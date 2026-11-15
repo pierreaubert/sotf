@@ -133,12 +133,12 @@ realfft = "3.5"
 metaheuristics-nature = { package = "sotf-metaheuristics-nature",  version = "10.1", git = "https://github.com/pierreaubert/sotf-3rdparties" }
 
 # Shared numerical and acoustic crates from sibling workspaces.
-math-test-functions = { version = "0.5", default-features = false, git = "https://github.com/pierreaubert/math-audio" }
-math-delaunay = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-iir-fir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-optimisation = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-dsp = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-rir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-test-functions = { version = "0.5", default-features = false, git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
+math-delaunay = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
+math-iir-fir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
+math-optimisation = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
+math-dsp = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
+math-rir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "0b64accb3be346e35f6e9eaf534dfb28b20636f2" }
 sofa-reader = { version = "0.2", git = "https://github.com/pierreaubert/sofa-reader" }
 autoeq-core = { path = "../autoeq/crates/autoeq-core" }
 autoeq-optim = { path = "../autoeq/crates/autoeq-optim" }
@@ -157,21 +157,21 @@ symphonia-codec-wavpack = { version = "0.1.1", git = "https://github.com/pierrea
 symphonia-format-sacd = { version = "0.1.2", git = "https://github.com/pierreaubert/symphonia-add-ons" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-px = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-audio-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-component-lab = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-design-tools = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-ui-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-ui-kit-macros = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-themes = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-miniapp = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-builder = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-design = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-keybinding = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-pretext = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-ios = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-au = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-d3rs = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-px = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-audio-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-component-lab = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-design-tools = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-ui-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-ui-kit-macros = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-themes = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-miniapp = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-builder = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-design = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-keybinding = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-pretext = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-ios = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-au = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
 
 # SotF
 sotf-host = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -467,4 +467,5 @@ strip = "symbols"
 
 [patch.crates-io]
 block = { git = "https://github.com/pierreaubert/sotf-3rdparties", rev = "5a4634af0916b5f53effa5ef6340efd90af32285" }
+
 

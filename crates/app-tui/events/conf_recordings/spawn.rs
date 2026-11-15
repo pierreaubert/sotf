@@ -21,11 +21,17 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
     // 16-speaker setup) and tries to address hardware outputs that
     // don't exist.
     let mappings = &app.recording.model.playback_config.channel_mappings;
-    let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-    let channel_indices: Vec<u16> = mappings
+    let pairs: Vec<(String, u16)> = mappings
         .iter()
-        .map(|m| m.interface_channel() as u16)
+        .map(|m| (m.group_name.clone(), m.interface_channel() as u16))
         .collect();
+    let channel_names: Vec<String> = pairs.iter().map(|(name, _)| name.clone()).collect();
+    // Raw interface indices do not name speakers on PipeWire sinks
+    // (positions are assigned by stream width, sotf#258).
+    let (channel_indices, output_stream_width) = sotf_audio_player::measurement_output_routes(
+        &pairs,
+        &app.recording.model.playback_config.device_name,
+    );
 
     // Build the output WAV path under the same directory the sweeps
     // landed in so everything travels together at save time.
@@ -71,6 +77,7 @@ pub(super) fn spawn_probe_capture(app: &mut App) {
         let wav_path = std::path::PathBuf::from(&wav_path_str);
         let result = sotf_audio::signal_recorder::probe_channel_delays_with_recording(
             &channel_indices,
+            output_stream_width,
             &channel_names,
             sample_rate,
             probe_ms,
@@ -154,11 +161,17 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
             BassAnchorCaptureStatus::Failed("Configure speakers first (Config step)".to_string());
         return;
     }
-    let channel_names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-    let channel_indices: Vec<u16> = mappings
+    let pairs: Vec<(String, u16)> = mappings
         .iter()
-        .map(|m| m.interface_channel() as u16)
+        .map(|m| (m.group_name.clone(), m.interface_channel() as u16))
         .collect();
+    let channel_names: Vec<String> = pairs.iter().map(|(name, _)| name.clone()).collect();
+    // Raw interface indices do not name speakers on PipeWire sinks
+    // (positions are assigned by stream width, sotf#258).
+    let (channel_indices, output_stream_width) = sotf_audio_player::measurement_output_routes(
+        &pairs,
+        &app.recording.model.playback_config.device_name,
+    );
 
     let wav_path_str = {
         let base_dir = if app.recording.output_directory.is_empty() {
@@ -222,6 +235,7 @@ pub(super) fn spawn_bass_anchor_capture(app: &mut App) {
         let wav_path = std::path::PathBuf::from(&wav_path_str);
         let result = sotf_audio::signal_recorder::run_bass_anchor_with_recording(
             &channel_indices,
+            output_stream_width,
             &channel_names,
             sample_rate,
             bass_freq_hz,

@@ -34,6 +34,19 @@ const EXPORT_FORMATS: &[(&str, &str)] = &[
     ("Roon DSP", "json"),
 ];
 
+/// Backend format for a dropdown index (0 = native SotF JSON).
+fn export_format_for_index(index: usize) -> Option<roomeq_workflow::ExportFormat> {
+    match index {
+        1 => Some(roomeq_workflow::ExportFormat::CamillaDsp),
+        2 => Some(roomeq_workflow::ExportFormat::EqualizerApo),
+        3 => Some(roomeq_workflow::ExportFormat::EasyEffects),
+        4 => Some(roomeq_workflow::ExportFormat::Wavelet),
+        5 => Some(roomeq_workflow::ExportFormat::PipeWire),
+        6 => Some(roomeq_workflow::ExportFormat::RoonDsp),
+        _ => None,
+    }
+}
+
 impl PlayerView {
     pub(crate) fn render_room_eq_export(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let d = Ds::from_cx(cx);
@@ -77,6 +90,37 @@ impl PlayerView {
             .get(selected_format_idx)
             .copied()
             .unwrap_or(EXPORT_FORMATS[0]);
+
+        // Export compatibility of the current result (computed when
+        // results landed): unsupported formats are disabled in the
+        // dropdown with their reason instead of failing at export
+        // time after a full optimization (sotf#192).
+        let capabilities = &room_eq.export_capabilities;
+        let format_supported = |index: usize| -> bool {
+            export_format_for_index(index).is_none_or(|format| {
+                capabilities
+                    .iter()
+                    .find(|capability| capability.format == format)
+                    .is_none_or(|capability| capability.supported)
+            })
+        };
+        let selected_unsupported_reason: Option<String> =
+            export_format_for_index(selected_format_idx)
+                .and_then(|format| {
+                    capabilities
+                        .iter()
+                        .find(|capability| capability.format == format)
+                })
+                .filter(|capability| !capability.supported)
+                .map(|capability| {
+                    capability
+                        .reasons
+                        .first()
+                        .map(|reason| reason.message.clone())
+                        .unwrap_or_else(|| {
+                            "This format cannot represent the current DSP graph.".to_string()
+                        })
+                });
 
         let mut stack = VStack::new()
             .spacing(StackSpacing::Md)
@@ -251,7 +295,10 @@ impl PlayerView {
                                 )
                                 .child(dev_track!(
                                     Button::new("export_file", translations.roomeq_export_button)
-                                        .disabled(!result_is_current)
+                                        .disabled(
+                                            !result_is_current
+                                                || selected_unsupported_reason.is_some(),
+                                        )
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
@@ -261,6 +308,13 @@ impl PlayerView {
                                     "roomeq.export_file"
                                 )),
                         );
+
+                        if let Some(reason) = &selected_unsupported_reason {
+                            export_content = export_content.child(dev_track!(
+                                Text::body(reason.clone()).color(theme.warning),
+                                "roomeq.export_unsupported_reason"
+                            ));
+                        }
 
                         // Keep failure feedback beside the action even when the wizard's
                         // general status banner has scrolled out of view.
@@ -293,46 +347,54 @@ impl PlayerView {
                                     .children(EXPORT_FORMATS.iter().enumerate().map(
                                         |(i, (name, ext))| {
                                             let is_selected = i == selected_format_idx;
+                                            let supported = format_supported(i);
                                             let name = name.to_string();
                                             let ext = ext.to_string();
-                                            div()
+                                            let item = div()
                                                 .id(SharedString::from(format!("export-fmt-{}", i)))
                                                 .px(px(10.0)) // intentional: compact dropdown item padding, no matching token
                                                 .py(px(5.0)) // intentional: compact dropdown item padding, no matching token
-                                                .cursor_pointer()
                                                 .bg(if is_selected {
                                                     theme.accent_muted
                                                 } else {
                                                     theme.surface
                                                 })
-                                                .hover(|s| s.bg(theme.surface_hover))
-                                                .on_mouse_down(MouseButton::Left, {
-                                                    cx.listener(move |view, _, _, cx| {
-                                                        view.state.update(cx, |state, _| {
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .export_format_index = i;
-                                                            state
-                                                                .app
-                                                                .measurement_state
-                                                                .room_eq_state
-                                                                .dropdowns
-                                                                .export_format_open = false;
-                                                        });
-                                                        cx.notify();
-                                                    })
-                                                })
                                                 .child(
                                                     Text::new(format!("{} (.{})", name, ext))
                                                         .size(TextSize::Xs)
-                                                        .color(if is_selected {
+                                                        .color(if !supported {
+                                                            theme.text_secondary
+                                                        } else if is_selected {
                                                             theme.accent
                                                         } else {
                                                             theme.text_primary
                                                         }),
-                                                )
+                                                );
+                                            if supported {
+                                                item.cursor_pointer()
+                                                    .hover(|s| s.bg(theme.surface_hover))
+                                                    .on_mouse_down(MouseButton::Left, {
+                                                        cx.listener(move |view, _, _, cx| {
+                                                            view.state.update(cx, |state, _| {
+                                                                state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .room_eq_state
+                                                                    .export_format_index = i;
+                                                                state
+                                                                    .app
+                                                                    .measurement_state
+                                                                    .room_eq_state
+                                                                    .dropdowns
+                                                                    .export_format_open = false;
+                                                            });
+                                                            cx.notify();
+                                                        })
+                                                    })
+                                                    .into_any_element()
+                                            } else {
+                                                item.into_any_element()
+                                            }
                                         },
                                     )),
                             );
@@ -410,17 +472,9 @@ impl PlayerView {
         }
 
         // External format via roomeq_workflow::export
-        let format = match format_idx {
-            1 => roomeq_workflow::ExportFormat::CamillaDsp,
-            2 => roomeq_workflow::ExportFormat::EqualizerApo,
-            3 => roomeq_workflow::ExportFormat::EasyEffects,
-            4 => roomeq_workflow::ExportFormat::Wavelet,
-            5 => roomeq_workflow::ExportFormat::PipeWire,
-            6 => roomeq_workflow::ExportFormat::RoonDsp,
-            _ => {
-                log::warn!("Unknown export format index {}", format_idx);
-                return;
-            }
+        let Some(format) = export_format_for_index(format_idx) else {
+            log::warn!("Unknown export format index {}", format_idx);
+            return;
         };
         let ext = format.default_extension();
         let file_name = format.default_file_name();

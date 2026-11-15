@@ -131,7 +131,7 @@ pub fn record_signal(
     microphone_compensation: Option<String>,
     mic_calibration_map: std::collections::HashMap<usize, String>,
 ) -> Result<(), String> {
-    use sotf_audio::engine_playback::EnginePlayback;
+    use sotf_audio::engine_playback::MeasurementPlayback;
     use sotf_audio::signal_recorder::*;
 
     let output_dir = match output_dir {
@@ -367,7 +367,10 @@ pub fn record_signal(
             .or(microphone_compensation.as_deref());
 
         let capture = record_and_analyze_with(
-            &mut EnginePlayback::new(true, "record_and_analyze"),
+            // CLI channel numbers are explicit stream indices; open
+            // exactly wide enough to address the requested channel.
+            &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", device.as_deref())
+                .with_stream_width(Some(send_ch + 1)),
             temp_wav.path(),  // Use the temporary WAV file for playback
             &wav_path,        // Record to the final output WAV file
             &prepared_signal, // Use the prepared mono signal for analysis

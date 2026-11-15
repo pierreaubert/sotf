@@ -73,6 +73,27 @@ impl PlayerView {
         let current_channel = room_eq.current_channel.clone();
         let current_iteration = room_eq.current_iteration;
         let current_loss = room_eq.current_loss;
+        // Throughput + ETA from the run's own progress fraction, so a
+        // slow machine shows honest remaining time instead of an
+        // apparently stuck iteration counter (sotf#222).
+        let rate_eta_text = match (
+            room_eq.progress_rate_per_sec,
+            room_eq.optimization_started_at,
+        ) {
+            (Some(rate), Some(started)) if is_running && progress > 0.02 && progress < 1.0 => {
+                let elapsed = started.elapsed().as_secs_f64();
+                let eta_secs = (elapsed * (1.0 - f64::from(progress)) / f64::from(progress))
+                    .round()
+                    .max(0.0) as u64;
+                let eta = if eta_secs >= 60 {
+                    format!("{}m {:02}s", eta_secs / 60, eta_secs % 60)
+                } else {
+                    format!("{eta_secs}s")
+                };
+                Some(workflow_text.rate_eta(rate, &eta))
+            }
+            _ => None,
+        };
         // Pipeline step strip — stable left-to-right render order,
         // colored by the latest status the optimizer has reported for
         // each step.
@@ -287,10 +308,16 @@ impl PlayerView {
                                                     {
                                                         status_msg.clone()
                                                     } else {
-                                                        workflow_text.iteration_loss(
+                                                        let base = workflow_text.iteration_loss(
                                                             current_iteration,
                                                             current_loss,
-                                                        )
+                                                        );
+                                                        match &rate_eta_text {
+                                                            Some(rate_eta) => {
+                                                                format!("{base}  ·  {rate_eta}")
+                                                            }
+                                                            None => base,
+                                                        }
                                                     }
                                                 } else {
                                                     workflow_text.progress(display_progress)

@@ -12,8 +12,8 @@ use super::types::ScenarioConfig;
 use super::types::ScenarioOutcome;
 use super::types::ScenarioTimings;
 use super::types::SuiteFile;
-use super::wait::wait_for_health;
 use super::wait::wait_or_kill;
+use super::wait::{wait_for_health, wait_for_painted_frame};
 use crate::parse_duration;
 use anyhow::{Context, Result, bail};
 use serde_json::Map;
@@ -335,6 +335,12 @@ fn run_one(
             &mut child,
             &run_id,
             &qa_dir,
+        )?;
+        wait_for_painted_frame(
+            &client,
+            &base_url,
+            parse_duration(&runner.readiness_timeout)?,
+            &mut child,
         )?;
         timings.readiness_ms = Some(elapsed_ms(readiness_started));
 

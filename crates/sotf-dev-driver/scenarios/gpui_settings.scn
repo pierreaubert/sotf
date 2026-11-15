@@ -160,6 +160,9 @@ sleep       300ms
 screenshot  settings-compact-100
 
 sleep       200ms
+# At 700x600 the font-scale control sits just below the fold of the
+# scrolling preferences content; reach it the way a user would.
+scroll_into_view preferences.content settings.appearance.font-scale
 assert_in_viewport settings.appearance.font-scale
 click       settings.appearance.font-scale
 key         cmd-a
@@ -206,6 +209,9 @@ wait_idle   500ms
 scroll_into_view preferences.content settings.tab.Language
 click       settings.tab.Language
 wait_until  settings.active_tab == "Language" timeout=2s
+# The tab click keeps the prior scroll offset at 200% text, leaving
+# the language buttons below the fold; scroll them into reach first.
+scroll_into_view preferences.content settings.language.en
 assert_in_viewport settings.language.en
 assert_in_viewport settings.language.fr
 assert_in_viewport settings.language.de

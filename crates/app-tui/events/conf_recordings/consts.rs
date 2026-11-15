@@ -102,14 +102,21 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let output_device = app.recording.model.playback_config.device_name.clone();
     let input_device = app.recording.model.recording_config.device_name.clone();
 
-    let output_channel = app
-        .recording
-        .model
-        .playback_config
-        .channel_mappings
-        .get(speaker_index)
-        .map(|m| m.interface_channel())
-        .unwrap_or(0) as u16;
+    // Translate the speaker's interface patch into the stream route
+    // for this output device (raw indices do not name speakers on
+    // PipeWire sinks; positions are assigned by stream width, #258).
+    let (output_channel, output_stream_width) = {
+        let mappings = &app.recording.model.playback_config.channel_mappings;
+        let pairs: Vec<(String, u16)> = mappings
+            .iter()
+            .map(|m| (m.group_name.clone(), m.interface_channel() as u16))
+            .collect();
+        let (indices, width) = sotf_audio_player::measurement_output_routes(
+            &pairs,
+            &app.recording.model.playback_config.device_name,
+        );
+        (indices.get(speaker_index).copied().unwrap_or(0), width)
+    };
     let input_channel = app
         .recording
         .model
@@ -332,7 +339,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let cancel_flag = app.recording.model.sweep_cancel_requested.clone();
 
     std::thread::spawn(move || {
-        use sotf_audio_player::EnginePlayback;
+        use sotf_audio_player::MeasurementPlayback;
         use sotf_audio_player::recording_helpers::summarize_take_quality;
         use sotf_audio_player::recording_types::RecordingResult;
         use sotf_audio_player::signal_recorder::{
@@ -409,7 +416,12 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 )
             } else {
                 record_and_analyze_with_multi(
-                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                    &mut MeasurementPlayback::new_for_device(
+                        false,
+                        "record_and_analyze_multi",
+                        None,
+                    )
+                    .with_stream_width(output_stream_width),
                     &temp_wav_path,
                     &wav_paths,
                     &reference_signal,
@@ -427,7 +439,12 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             };
             #[cfg(not(feature = "dev-api"))]
             let captures = record_and_analyze_with_multi(
-                &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                &mut MeasurementPlayback::new_for_device(
+                    false,
+                    "record_and_analyze_multi",
+                    out_dev,
+                )
+                .with_stream_width(output_stream_width),
                 &temp_wav_path,
                 &wav_paths,
                 &reference_signal,
@@ -473,7 +490,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 )
             } else {
                 record_and_analyze_with(
-                    &mut EnginePlayback::new(true, "record_and_analyze"),
+                    &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", out_dev)
+                        .with_stream_width(output_stream_width),
                     &temp_wav_path,
                     &recorded_wav_path,
                     &reference_signal,
@@ -491,7 +509,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             };
             #[cfg(not(feature = "dev-api"))]
             let capture = record_and_analyze_with(
-                &mut EnginePlayback::new(true, "record_and_analyze"),
+                &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", out_dev)
+                    .with_stream_width(output_stream_width),
                 &temp_wav_path,
                 &recorded_wav_path,
                 &reference_signal,

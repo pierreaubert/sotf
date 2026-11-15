@@ -987,6 +987,27 @@ sync_snapshot_windows() {
     return 0
 }
 
+# Instruction/glibc floor gate for shipped Linux artifacts
+# (x86-64-v2 / Apollo Lake, GLIBC <= 2.39 / Ubuntu 24.04; sotf#246).
+# The checker lives at the aggregate root; release builds always run
+# inside the aggregate tree, so ../scripts from sotf/ resolves there.
+# It is a hard gate: a missing checker fails the release rather than
+# silently skipping the floor check.
+verify_linux_artifact_floors() {
+    local checker="$PROJECT_ROOT/../scripts/check-linux-artifact.sh"
+    if [ ! -x "$checker" ]; then
+        log_error "Linux artifact floor checker not found: $checker"
+        record_result "Linux artifact floors: FAILED (checker missing)"
+        return 1
+    fi
+    if ! "$checker" "$@"; then
+        record_result "Linux artifact floors: FAILED"
+        return 1
+    fi
+    record_result "Linux artifact floors: OK"
+    return 0
+}
+
 verify_linux_appimage_arch() {
     local path="$1" arch="$2" description
     description=$(file -b "$path") || {
@@ -1313,6 +1334,10 @@ build_linux_arm64_local() {
         ! verify_linux_appimage_arch "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" arm64; then
         fetched_ok=false
     fi
+    if [ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" ] &&
+        ! verify_linux_artifact_floors "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.AppImage" "$DIST_DIR/sotf-desktop-${VERSION}-linux-arm64.tar.gz"; then
+        fetched_ok=false
+    fi
     [ "$fetched_ok" = true ] || return 1
     log_success "Linux arm64 artifacts verified"
     return 0
@@ -1384,6 +1409,10 @@ build_linux_x86_spin() {
     done
     if [ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" ] &&
         ! verify_linux_appimage_arch "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" x86_64; then
+        fetched_ok=false
+    fi
+    if [ -s "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" ] &&
+        ! verify_linux_artifact_floors "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.AppImage" "$DIST_DIR/sotf-desktop-${VERSION}-linux-x86_64.tar.gz"; then
         fetched_ok=false
     fi
     [ "$fetched_ok" = true ] || return 1

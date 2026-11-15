@@ -42,6 +42,9 @@ query performance.allocated_bytes_per_second
 # Regression ceilings come from three rendered 1440x900 samples with roughly
 # 15% headroom. Allocation ceilings preserve today's baseline; they are not a
 # claim that full-root playback rebuilds are allocation-efficient.
+# Allocation ceiling recalibrated 2026-11-14 from three Linux headless
+# samples (186k/189k/206k per second; the WGPU text/render path allocates
+# more per frame than Metal): max sample + ~15% headroom.
 assert performance.elapsed_ms > 1900
 assert performance.elapsed_ms < 3000
 assert performance.update_count > 0
@@ -56,7 +59,7 @@ assert performance.draw_max_ms < 25
 assert performance.dirty_to_draw_p95_ms < 16.7
 assert performance.invalidations_per_frame < 1.25
 assert performance.allocations_total > 0
-assert performance.allocations_per_second < 175000
+assert performance.allocations_per_second < 235000
 assert performance.allocated_bytes > 0
 assert performance.allocated_bytes_per_second < 115000000
 

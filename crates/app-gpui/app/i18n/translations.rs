@@ -1801,6 +1801,11 @@ pub struct WorkflowTranslations {
     pub evaluate_recordings: &'static str,
     pub empty_pass_through: &'static str,
     pub optimizing: &'static str,
+    pub export_limited_hint: &'static str,
+    pub speed_preset: &'static str,
+    pub speed_fast: &'static str,
+    pub speed_balanced: &'static str,
+    pub speed_thorough: &'static str,
 }
 
 impl WorkflowTranslations {
@@ -1822,6 +1827,11 @@ impl WorkflowTranslations {
                 evaluate_recordings: "Evaluate Recordings",
                 empty_pass_through: "Empty (pass-through)",
                 optimizing: "Optimizing…",
+                export_limited_hint: "Multichannel with bass management: exports are limited to SotF JSON, CamillaDSP, PipeWire and WAV — EasyEffects/Wavelet cannot represent routed bass management.",
+                speed_preset: "Speed",
+                speed_fast: "Fast",
+                speed_balanced: "Balanced",
+                speed_thorough: "Thorough",
             },
             Language::French => Self {
                 language,
@@ -1838,6 +1848,11 @@ impl WorkflowTranslations {
                 evaluate_recordings: "Évaluer les enregistrements",
                 empty_pass_through: "Vide (passage direct)",
                 optimizing: "Optimisation…",
+                export_limited_hint: "Multicanal avec gestion des graves : exports limités à SotF JSON, CamillaDSP, PipeWire et WAV — EasyEffects/Wavelet ne peuvent pas représenter le routage des graves.",
+                speed_preset: "Vitesse",
+                speed_fast: "Rapide",
+                speed_balanced: "Équilibré",
+                speed_thorough: "Approfondi",
             },
             Language::German => Self {
                 language,
@@ -1854,6 +1869,11 @@ impl WorkflowTranslations {
                 evaluate_recordings: "Aufnahmen auswerten",
                 empty_pass_through: "Leer (Durchleitung)",
                 optimizing: "Optimierung…",
+                export_limited_hint: "Mehrkanal mit Bassmanagement: Exporte sind auf SotF JSON, CamillaDSP, PipeWire und WAV beschränkt — EasyEffects/Wavelet können geroutetes Bassmanagement nicht darstellen.",
+                speed_preset: "Geschwindigkeit",
+                speed_fast: "Schnell",
+                speed_balanced: "Ausgewogen",
+                speed_thorough: "Gründlich",
             },
             Language::Spanish => Self {
                 language,
@@ -1870,6 +1890,11 @@ impl WorkflowTranslations {
                 evaluate_recordings: "Evaluar grabaciones",
                 empty_pass_through: "Vacío (paso directo)",
                 optimizing: "Optimizando…",
+                export_limited_hint: "Multicanal con gestión de graves: las exportaciones se limitan a SotF JSON, CamillaDSP, PipeWire y WAV; EasyEffects/Wavelet no pueden representar el enrutado de graves.",
+                speed_preset: "Velocidad",
+                speed_fast: "Rápido",
+                speed_balanced: "Equilibrado",
+                speed_thorough: "Exhaustivo",
             },
         }
     }
@@ -1884,6 +1909,19 @@ impl WorkflowTranslations {
             Language::French => format!("Progression : {percent:.0} %"),
             Language::German => format!("Fortschritt: {percent:.0} %"),
             Language::Spanish => format!("Progreso: {percent:.0} %"),
+        }
+    }
+
+    pub fn rate_eta(self, rate_per_sec: f64, eta: &str) -> String {
+        match self.language {
+            Language::Pseudo => pseudo_owned(
+                self.language,
+                Self::for_language(Language::English).rate_eta(rate_per_sec, eta),
+            ),
+            Language::English => format!("{rate_per_sec:.0} gen/s · ~{eta} left"),
+            Language::French => format!("{rate_per_sec:.0} gén/s · ~{eta} restantes"),
+            Language::German => format!("{rate_per_sec:.0} Gen/s · ~{eta} übrig"),
+            Language::Spanish => format!("{rate_per_sec:.0} gen/s · ~{eta} restantes"),
         }
     }
 

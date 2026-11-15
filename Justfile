@@ -156,6 +156,17 @@ test-device-fakes:
 test-realtime-safety:
 	cd ../sotf-daw && just test-realtime-safety
 
+# PipeWire channel-identity oracle (sotf#258): plays measurement tones
+# through the production capture backends into a throwaway 7.1 sink and
+# asserts each lands on exactly its named position. Manual gate: needs
+# a live PipeWire session (+ libpipewire-0.3-dev for the native
+# backend build); restores the previous default sink.
+[group('test')]
+test-pipewire-channels:
+	cargo test --manifest-path ../sotf-capture/Cargo.toml --features pipewire-io --test pipewire_oracle --no-run
+	python3 ../sotf-capture/scripts/pipewire-channel-oracle.py --backend cpal
+	python3 ../sotf-capture/scripts/pipewire-channel-oracle.py --backend pipewire
+
 # Client/server contracts: SOTF API loopback (typed client against the real
 # server), provider mocks, and MPD/DLNA/federation protocol tests. Loopback
 # only; live provider tests stay env-gated per TEST-CLIENTSERVER.md.

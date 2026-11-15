@@ -69,6 +69,10 @@ pub struct RoomEqOptimizerConfig {
     pub min_freq: f64,
     pub max_freq: f64,
     pub max_iter: usize,
+    /// Per-channel wall-clock optimization budget in seconds
+    /// (speed presets set this; `None` = iteration budget only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_budget_seconds: Option<f64>,
     pub peq_model: String,
     pub population: usize,
     #[serde(default)]
@@ -157,6 +161,7 @@ impl Default for RoomEqOptimizerConfig {
             min_freq: 20.0,
             max_freq: 1600.0,
             max_iter: 50000,
+            time_budget_seconds: None,
             peq_model: "pk".to_string(),
             population: 300,
             bo_initial_samples: 0,
@@ -213,6 +218,7 @@ impl RoomEqOptimizerConfig {
         self.min_freq = backend.min_freq;
         self.max_freq = backend.max_freq;
         self.max_iter = backend.max_iter;
+        self.time_budget_seconds = backend.time_budget_seconds;
         self.population = backend.population;
         self.peq_model = backend.peq_model.clone();
         self.loss_type = backend.loss_type.clone();
@@ -690,6 +696,7 @@ impl RoomEqOptimizerConfig {
             min_freq: self.min_freq,
             max_freq: self.max_freq,
             max_iter: self.max_iter,
+            time_budget_seconds: self.time_budget_seconds,
             population: self.population,
             peq_model: self.peq_model.clone(),
             processing_mode,

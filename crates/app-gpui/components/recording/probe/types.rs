@@ -337,6 +337,7 @@ impl PlayerView {
             input_channel,
             signal_level_db,
             channel_indices,
+            output_stream_width,
             channel_names,
             out_dev,
             in_dev,
@@ -355,11 +356,18 @@ impl PlayerView {
             // 32 entries for a 16-speaker setup) and tries to address
             // hardware outputs that don't exist.
             let mappings = &rec.playback_config.channel_mappings;
-            let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-            let indices: Vec<u16> = mappings
+            let pairs: Vec<(String, u16)> = mappings
                 .iter()
-                .map(|m| m.interface_channel() as u16)
+                .map(|m| (m.group_name.clone(), m.interface_channel() as u16))
                 .collect();
+            let names: Vec<String> = pairs.iter().map(|(name, _)| name.clone()).collect();
+            // Route through the shared measurement routing: raw
+            // interface indices do not name speakers on PipeWire
+            // sinks (positions are assigned by stream width, #258).
+            let (indices, stream_width) = sotf_audio_player::measurement_output_routes(
+                &pairs,
+                &rec.playback_config.device_name,
+            );
             let dir = rec
                 .recording_directory
                 .clone()
@@ -372,6 +380,7 @@ impl PlayerView {
                 rec.probe_capture.input_channel,
                 rec.signal_level_db + PROBE_SIGNAL_BOOST_DB,
                 indices,
+                stream_width,
                 names,
                 Some(rec.playback_config.device_name.clone()),
                 Some(rec.recording_config.device_name.clone()),
@@ -404,6 +413,7 @@ impl PlayerView {
                 {
                     sotf_audio::signal_recorder::probe_channel_delays_with_recording(
                         &channel_indices,
+                        output_stream_width,
                         &channel_names,
                         sample_rate,
                         probe_ms,
@@ -420,6 +430,7 @@ impl PlayerView {
                 {
                     let _ = (
                         &channel_indices,
+                        output_stream_width,
                         &channel_names,
                         sample_rate,
                         probe_ms,

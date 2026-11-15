@@ -1,0 +1,26 @@
+# Keyboard-only reachability of the Measure Config bottom at 1080p.
+#
+# Regression coverage for sotf#221/#247: on Linux the config step's
+# lower controls (channel routing table) were unreachable without a
+# scroll wheel because the scroll region had no visible scrollbar
+# and no keyboard scrolling. At 1920x1080 the routing table starts
+# below the fold; PageDown through the focused body must bring it
+# into the viewport.
+
+resize      1920 1080
+focus       recording
+assert      screen.focused == "Recording"
+assert      recording.step == "Config"
+
+# Focus a control inside the scrollable body, then page down with
+# the keyboard only (no wheel events anywhere in this scenario).
+click       recording.playback.channel.0
+key         pagedown
+key         pagedown
+key         pagedown
+key         pagedown
+key         pagedown
+key         pagedown
+wait_idle   500ms
+assert_in_viewport recording.playback.routing
+screenshot  recording-keyboard-1080p
