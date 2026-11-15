@@ -46,6 +46,13 @@ The main UI application shows you the audio player. You can access the other fun
 
 This is mainly a Rust application with some python and shell scripts. We want to keep it portable so we minimise C/C++ dependencies.
 
+**Clone the aggregate repository, not this one alone.** SotF builds against sibling workspaces (`../autoeq`, `../sotf-daw`, `../math-audio`, ...) through path dependencies, so a standalone clone of `sotf` will not compile. Clone everything at once, then work inside `sotf/`:
+
+```shell
+git clone --recurse-submodules https://github.com/pierreaubert/all_of_sotf
+cd all_of_sotf/sotf
+```
+
 
 ### Use of AI tooling
 

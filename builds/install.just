@@ -22,7 +22,26 @@ install-rustup:
 # ----------------------------------------------------------------------
 
 [group('install')]
-post-install: post-install-rust post-install-python
+post-install: check-sibling-workspaces post-install-rust post-install-python
+
+# SotF path-depends on sibling workspaces (../autoeq, ../sotf-daw, ...).
+# Fail with the actual remedy instead of a cargo manifest error (#247).
+[group('install')]
+check-sibling-workspaces:
+	#!/usr/bin/env bash
+	set -euo pipefail
+	missing=""
+	for d in ../autoeq ../sotf-daw ../math-audio ../sofa-reader ../sotf-capture ../sotf-systemwide; do
+		[ -f "$d/Cargo.toml" ] || missing="$missing $d"
+	done
+	if [ -n "$missing" ]; then
+		echo "error: missing sibling workspace(s):$missing" >&2
+		echo "SotF does not build from a standalone clone. Clone the aggregate repo instead:" >&2
+		echo "  git clone --recurse-submodules https://github.com/pierreaubert/all_of_sotf" >&2
+		echo "  cd all_of_sotf/sotf" >&2
+		exit 1
+	fi
+	echo "sibling workspaces: ok"
 
 [group('install')]
 post-install-rust:

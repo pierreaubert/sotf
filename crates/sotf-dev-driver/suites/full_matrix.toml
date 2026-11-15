@@ -108,7 +108,7 @@ name = "gpui-recording-io-failure-retry"
 path = "crates/sotf-dev-driver/scenarios/recording_cancel_retry_error.scn"
 timeout = "45s"
 tags = ["gpui", "recording", "error", "retry"]
-allowed_log_patterns = ["Recording failed: [record_and_analyze] Failed to stop capture: Recording error: unable to write capture data"]
+allowed_log_patterns = ["Recording failed: [record_and_analyze] Failed to stop capture: Recording error: unable to write capture data", "Recording failed: Recording error: unable to write capture data"]
 
 [scenario.fake_recording]
 channels = 2

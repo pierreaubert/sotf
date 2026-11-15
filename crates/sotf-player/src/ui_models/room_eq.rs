@@ -81,6 +81,16 @@ pub struct RoomEqScreenModel {
     /// Current iteration number reported by the optimizer.
     pub current_iteration: usize,
 
+    /// When the current optimization run started (for ETA).
+    pub optimization_started_at: Option<std::time::Instant>,
+
+    /// Smoothed optimizer throughput in generations/second, once
+    /// enough progress samples have arrived.
+    pub progress_rate_per_sec: Option<f64>,
+
+    /// Last (iteration, timestamp) sample used for the rate estimate.
+    pub progress_sample: Option<(usize, std::time::Instant)>,
+
     /// Current loss value reported by the optimizer.
     pub current_loss: f64,
 
@@ -92,6 +102,13 @@ pub struct RoomEqScreenModel {
 
     /// Generated DSP chain output.
     pub dsp_output: Option<DspChainOutput>,
+
+    /// Per-format export compatibility of the current result,
+    /// computed when results land (the query dry-runs every
+    /// renderer, so it must not run per render frame). Drives the
+    /// Step 6 format dropdown: unsupported formats are disabled
+    /// with their reason instead of failing at export time (#192).
+    pub export_capabilities: Vec<roomeq_workflow::ExportCapability>,
 
     /// Directory containing generated Room EQ convolution WAV sidecars.
     pub artifact_dir: Option<PathBuf>,
@@ -150,10 +167,14 @@ impl Default for RoomEqScreenModel {
             overall_progress: 0.0,
             progress_history: Vec::new(),
             current_iteration: 0,
+            optimization_started_at: None,
+            progress_rate_per_sec: None,
+            progress_sample: None,
             current_loss: 0.0,
             current_pipeline_step: None,
             step_history: HashMap::new(),
             dsp_output: None,
+            export_capabilities: Vec::new(),
             artifact_dir: None,
             export_format_index: 0,
             status_message: String::new(),
@@ -341,6 +362,36 @@ impl RoomEqScreenModel {
                 step_status,
             } => {
                 self.overall_progress = progress.clamp(0.0, 1.0);
+                // Throughput estimate for the progress readout: EMA
+                // over per-sample generation deltas. A new channel (or
+                // a counter reset) restarts sampling.
+                {
+                    let now = std::time::Instant::now();
+                    match self.progress_sample {
+                        Some((prev_iteration, prev_at))
+                            if iteration > prev_iteration
+                                && self.current_channel.as_deref()
+                                    == current_channel.as_deref() =>
+                        {
+                            let dt = now.duration_since(prev_at).as_secs_f64();
+                            if dt > 0.05 {
+                                #[expect(
+                                    clippy::cast_precision_loss,
+                                    reason = "Generation throughput is an approximate UI rate"
+                                )]
+                                let rate = (iteration - prev_iteration) as f64 / dt;
+                                self.progress_rate_per_sec = Some(
+                                    self.progress_rate_per_sec
+                                        .map_or(rate, |ema| ema * 0.7 + rate * 0.3),
+                                );
+                                self.progress_sample = Some((iteration, now));
+                            }
+                        }
+                        _ => {
+                            self.progress_sample = Some((iteration, now));
+                        }
+                    }
+                }
                 self.current_iteration = iteration;
                 self.current_loss = loss;
                 self.current_channel.clone_from(&current_channel);
@@ -363,6 +414,18 @@ impl RoomEqScreenModel {
                 artifact_dir,
             } => {
                 self.channel_results = channel_results;
+                // Compute export compatibility once per result so
+                // Step 6 can disable formats that cannot represent
+                // this graph, with reasons, before the user clicks
+                // Export (sotf#192).
+                self.export_capabilities = serde_json::to_string(&*dsp_output)
+                    .ok()
+                    .and_then(|json| {
+                        serde_json::from_str::<roomeq_model::DspChainOutput>(&json).ok()
+                    })
+                    .map_or_else(Vec::new, |graph| {
+                        roomeq_workflow::query_export_capabilities(&graph)
+                    });
                 self.dsp_output = Some(*dsp_output);
                 self.artifact_dir = Some(artifact_dir);
                 // The event carries results of the run started at the
@@ -454,6 +517,7 @@ impl RoomEqScreenModel {
         self.current_pipeline_step = None;
         self.step_history.clear();
         self.dsp_output = None;
+        self.export_capabilities.clear();
         self.artifact_dir = None;
         self.error_message = None;
         self.result_revision = None;
@@ -478,6 +542,7 @@ impl RoomEqScreenModel {
     pub fn invalidate_results(&mut self) {
         self.channel_results.clear();
         self.dsp_output = None;
+        self.export_capabilities.clear();
         self.artifact_dir = None;
         self.result_revision = None;
         if self.optimization_status == OptimizationStatus::Completed {
@@ -488,6 +553,9 @@ impl RoomEqScreenModel {
     /// Capture the current input revision for a starting run.
     pub fn begin_run(&mut self) -> u64 {
         self.run_revision = Some(self.input_revision);
+        self.optimization_started_at = Some(std::time::Instant::now());
+        self.progress_rate_per_sec = None;
+        self.progress_sample = None;
         self.input_revision
     }
 

@@ -140,7 +140,7 @@ pub fn record_signal<S: std::hash::BuildHasher>(
     microphone_compensation: Option<&str>,
     mic_calibration_map: &std::collections::HashMap<usize, String, S>,
 ) -> Result<(), String> {
-    use sotf_audio::engine_playback::EnginePlayback;
+    use sotf_audio::engine_playback::MeasurementPlayback;
     use sotf_audio::signal_recorder::{
         DEFAULT_MLS_ORDER, SignalParams, SignalType, generate_output_filenames_stereo,
         generate_signal, parse_channel_list, prepare_measurement_signal, prepare_signal,
@@ -373,7 +373,10 @@ pub fn record_signal<S: std::hash::BuildHasher>(
             .or(microphone_compensation);
 
         let capture = record_and_analyze_with(
-            &mut EnginePlayback::new(true, "record_and_analyze"),
+            // CLI channel numbers are explicit stream indices; open
+            // exactly wide enough to address the requested channel.
+            &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", device)
+                .with_stream_width(Some(send_ch + 1)),
             temp_wav.path(),  // Use the temporary WAV file for playback
             &wav_path,        // Record to the final output WAV file
             &prepared_signal, // Use the prepared mono signal for analysis

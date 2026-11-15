@@ -213,6 +213,7 @@ impl PlayerView {
             loopback_input_channel,
             signal_level_db,
             channel_indices,
+            output_stream_width,
             channel_names,
             out_dev,
             in_dev,
@@ -225,15 +226,22 @@ impl PlayerView {
                 log::warn!("Bass anchor capture: no speaker channels configured");
                 return;
             }
-            let names: Vec<String> = mappings.iter().map(|m| m.group_name.clone()).collect();
-            let Ok(indices) = mappings
+            let Ok(pairs) = mappings
                 .iter()
-                .map(|m| u16::try_from(m.interface_channel()))
+                .map(|mapping| {
+                    u16::try_from(mapping.interface_channel())
+                        .map(|channel| (mapping.group_name.clone(), channel))
+                })
                 .collect::<Result<Vec<_>, _>>()
             else {
                 log::error!("Output channel exceeds the capture channel range");
                 return;
             };
+            let names: Vec<String> = pairs.iter().map(|(name, _)| name.clone()).collect();
+            let (indices, stream_width) = sotf_audio_player::measurement_output_routes(
+                &pairs,
+                &rec.playback_config.device_name,
+            );
             let dir = rec
                 .recording_directory
                 .clone()
@@ -257,6 +265,7 @@ impl PlayerView {
                     }),
                 rec.signal_level_db + BASS_ANCHOR_SIGNAL_BOOST_DB,
                 indices,
+                stream_width,
                 names,
                 Some(rec.playback_config.device_name.clone()),
                 Some(rec.recording_config.device_name.clone()),
@@ -291,6 +300,7 @@ impl PlayerView {
                 {
                     sotf_audio::signal_recorder::run_bass_anchor_with_recording(
                         &channel_indices,
+                        output_stream_width,
                         &channel_names,
                         sample_rate,
                         bass_freq_hz,
@@ -311,6 +321,7 @@ impl PlayerView {
                 {
                     let _ = (
                         &channel_indices,
+                        output_stream_width,
                         &channel_names,
                         sample_rate,
                         bass_freq_hz,

@@ -28,6 +28,7 @@ RUN apk add --no-cache \
         openssl-dev \
         patchelf \
         perl \
+        pipewire-dev \
         pkgconf \
         sqlite-dev \
         tar \

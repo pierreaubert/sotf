@@ -145,10 +145,20 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let output_device = app.recording.model.playback_config.device_name.clone();
     let input_device = app.recording.model.recording_config.device_name.clone();
 
-    let output_channel = mapped_output_channels
-        .get(speaker_index)
-        .copied()
-        .unwrap_or(0);
+    // Keep interface identity and stream width consistent on virtual Linux sinks.
+    let (output_channel, output_stream_width) = {
+        let mappings = &app.recording.model.playback_config.channel_mappings;
+        let pairs: Vec<(String, u16)> = mappings
+            .iter()
+            .zip(&mapped_output_channels)
+            .map(|(mapping, &channel)| (mapping.group_name.clone(), channel))
+            .collect();
+        let (indices, width) = sotf_audio_player::measurement_output_routes(
+            &pairs,
+            &app.recording.model.playback_config.device_name,
+        );
+        (indices.get(speaker_index).copied().unwrap_or(0), width)
+    };
     let input_channel = mapped_input_channels.get(mic_index).copied().unwrap_or(0);
     let position_idx = selected.mic_position_index;
 
@@ -354,7 +364,7 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
     let cancel_flag = std::sync::Arc::clone(&app.recording.model.sweep_cancel_requested);
 
     std::thread::spawn(move || {
-        use sotf_audio_player::EnginePlayback;
+        use sotf_audio_player::MeasurementPlayback;
         use sotf_audio_player::recording_helpers::summarize_take_quality;
         use sotf_audio_player::recording_types::RecordingResult;
         use sotf_audio_player::signal_recorder::{
@@ -428,7 +438,12 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 )
             } else {
                 record_and_analyze_with_multi(
-                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                    &mut MeasurementPlayback::new_for_device(
+                        false,
+                        "record_and_analyze_multi",
+                        None,
+                    )
+                    .with_stream_width(output_stream_width),
                     &temp_wav_path,
                     &wav_paths,
                     &reference_signal,
@@ -446,7 +461,12 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             };
             #[cfg(not(feature = "dev-api"))]
             let captures = record_and_analyze_with_multi(
-                &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                &mut MeasurementPlayback::new_for_device(
+                    false,
+                    "record_and_analyze_multi",
+                    out_dev,
+                )
+                .with_stream_width(output_stream_width),
                 &temp_wav_path,
                 &wav_paths,
                 &reference_signal,
@@ -492,7 +512,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
                 )
             } else {
                 record_and_analyze_with(
-                    &mut EnginePlayback::new(true, "record_and_analyze"),
+                    &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", out_dev)
+                        .with_stream_width(output_stream_width),
                     &temp_wav_path,
                     &recorded_wav_path,
                     &reference_signal,
@@ -510,7 +531,8 @@ pub(super) fn start_recording_channel(app: &mut App, channel_idx: usize) {
             };
             #[cfg(not(feature = "dev-api"))]
             let capture = record_and_analyze_with(
-                &mut EnginePlayback::new(true, "record_and_analyze"),
+                &mut MeasurementPlayback::new_for_device(true, "record_and_analyze", out_dev)
+                    .with_stream_width(output_stream_width),
                 &temp_wav_path,
                 &recorded_wav_path,
                 &reference_signal,

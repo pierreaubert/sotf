@@ -324,10 +324,13 @@ install_linuxdeploy() {
 }
 
 run_linuxdeploy() {
+    # NO_STRIP: keep symbols like the .deb binaries. Stripping also
+    # defeats scripts/check-linux-artifact.sh, which attributes
+    # AVX-512 to CPUID-dispatched code by symbol name.
     if [ -f /.dockerenv ] || [ ! -e /dev/fuse ]; then
-        APPIMAGE_EXTRACT_AND_RUN=1 "$LINUXDEPLOY_BIN" "$@"
+        NO_STRIP=1 APPIMAGE_EXTRACT_AND_RUN=1 "$LINUXDEPLOY_BIN" "$@"
     else
-        "$LINUXDEPLOY_BIN" "$@"
+        NO_STRIP=1 "$LINUXDEPLOY_BIN" "$@"
     fi
 }
 
@@ -400,10 +403,10 @@ build_binary() {
         sotf_prepare_report_assets "$PROJECT_ROOT" || exit 1
         if $CROSS_COMPILE; then
             log_info "Cross-compiling for $TARGET..."
-            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled --target "$TARGET"
+            CROSS_CONFIG=./builds/CrossFromMacARM.toml cross build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled,pipewire-io --target "$TARGET"
         else
             log_info "Building native Linux binary..."
-            cargo build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled
+            cargo build --profile dist --package "$PACKAGE_NAME" --features report-export-bundled,pipewire-io
         fi
 
         if [ ! -f "$BUILD_DIR/$BINARY_NAME" ]; then
@@ -573,7 +576,7 @@ Requirements
 - X11 or Wayland display server
 - ALSA or PulseAudio for audio output
 
-For more information, visit: https://github.com/coderdelphit/stypes
+For more information, visit: https://github.com/pierreaubert/sotf
 EOF
 
     # Create tarball
@@ -677,10 +680,17 @@ create_appimage() {
     esac
     export OUTPUT="$DIST_DIR/${APP_NAME}-${VERSION}-linux-${arch}.AppImage"
 
+    # Keep host audio libraries: bundling ALSA/PipeWire would break host
+    # plugin/config resolution. The AppImage therefore requires the host
+    # libasound and libpipewire client libraries (Ubuntu 24.04 floor
+    # ships both; no PipeWire server is required to start).
     local deploy_args=(
         --appdir "$appdir"
         --executable "$BUILD_DIR/$BINARY_NAME"
         --desktop-file "$desktop_file"
+        --exclude-library "libasound.so*"
+        --exclude-library "libpipewire-0.3.so*"
+        --exclude-library "libspa-*.so*"
         --output appimage
     )
 
@@ -778,7 +788,7 @@ create_deb() {
     cat > "$deb_dir/usr/share/doc/sotf/copyright" << EOF
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: SotF
-Source: https://github.com/coderdelphit/stypes
+Source: https://github.com/pierreaubert/sotf
 
 Files: *
 Copyright: $(date +%Y) SotF Authors
@@ -807,10 +817,10 @@ Section: sound
 Priority: optional
 Architecture: ${deb_arch}
 Installed-Size: ${installed_size}
-Depends: libasound2 (>= 1.0.16), libgtk-3-0 (>= 3.0), libglib2.0-0 (>= 2.12.0)
+Depends: libasound2t64 | libasound2 (>= 1.0.16), libgtk-3-0t64 | libgtk-3-0 (>= 3.0), libglib2.0-0t64 | libglib2.0-0 (>= 2.12.0), libpipewire-0.3-0
 Recommends: pulseaudio | pipewire-pulse
 Maintainer: SotF Team <sotf@example.com>
-Homepage: https://github.com/coderdelphit/stypes
+Homepage: https://github.com/pierreaubert/sotf
 Description: High-quality audio player with advanced EQ and upmixing
  SotF (Sound of the Future) is a comprehensive audio player with:
   - Advanced parametric EQ optimization

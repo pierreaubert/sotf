@@ -17,6 +17,8 @@ testing = ["sotf-capture/test-util", "sotf-engine/test-util"]
 dev-api = ["sotf-capture/test-util", "sotf-engine/test-util"]
 # Enable HAL audio input support (macOS only)
 hal = ["sotf-engine/hal"]
+# Native PipeWire measurement playback (Linux in effect).
+pipewire-io = ["sotf-engine/pipewire-io"]
 streaming = ["sotf-engine/streaming"]
 hls = ["streaming", "sotf-engine/hls"]
 tidal = ["dep:sotf-services", "dep:sotf-service-tidal", "sotf-federation/tidal"]

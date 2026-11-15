@@ -1868,6 +1868,60 @@ impl PlayerView {
                 }))
         };
 
+        // Speed preset row: moves only the work knobs (iteration
+        // budget, population, per-channel time budget) so a slow
+        // machine can bound optimization time up front (#222).
+        let workflow_text =
+            crate::app::i18n::WorkflowTranslations::for_language(state.app.ui_state.language);
+        let speed_selector = {
+            use sotf_audio_player::room_eq_types::{
+                OptimizationSpeedPreset, apply_speed_preset, detect_speed_preset,
+            };
+            let current_preset = detect_speed_preset(&room_eq.optimizer_config);
+            HStack::new()
+                .spacing(StackSpacing::Xs)
+                .child(
+                    Text::new(workflow_text.speed_preset)
+                        .size(TextSize::Sm)
+                        .color(theme.text_primary),
+                )
+                .children(OptimizationSpeedPreset::ALL.iter().map(|preset| {
+                    let is_selected = current_preset == Some(*preset);
+                    let preset_val = *preset;
+                    let label = match preset_val {
+                        OptimizationSpeedPreset::Fast => workflow_text.speed_fast,
+                        OptimizationSpeedPreset::Balanced => workflow_text.speed_balanced,
+                        OptimizationSpeedPreset::Thorough => workflow_text.speed_thorough,
+                    };
+                    Button::new(
+                        SharedString::from(format!("cfg-speed-{}", preset_val.code())),
+                        label,
+                    )
+                    .variant(if is_selected {
+                        ButtonVariant::Primary
+                    } else {
+                        ButtonVariant::Secondary
+                    })
+                    .size(ButtonSize::Xs)
+                    .theme(theme.to_button_theme())
+                    .build()
+                    .w(px(90.0))
+                    .on_mouse_up(
+                        MouseButton::Left,
+                        cx.listener(move |view, _, _, cx| {
+                            view.state.update(cx, |state, _| {
+                                apply_speed_preset(
+                                    preset_val,
+                                    &mut state.app.measurement_state.room_eq_state.optimizer_config,
+                                );
+                            });
+                            cx.notify();
+                        }),
+                    )
+                    .into_any_element()
+                }))
+        };
+
         // Full Wizard: all parameters in two visual sections —
         // Acoustic (what to correct) and Optimizer (how to optimize).
         // The AutoEqForm renders them sequentially; we add section
@@ -1879,6 +1933,17 @@ impl PlayerView {
                     .weight(TextWeight::Bold)
                     .size(TextSize::Md),
             )
+            .child(speed_selector)
+            // Early export warning (sotf#192): say before the run,
+            // not at export time after it, that routed
+            // multichannel results only fit some formats.
+            .when(room_eq.channel_measurements.len() > 2, |stack| {
+                stack.child(
+                    Text::new(workflow_text.export_limited_hint)
+                        .size(TextSize::Xs)
+                        .color(theme.warning),
+                )
+            })
             .child(autoeq_form);
 
         // Only show channel configuration for multi-driver measurements

@@ -19,6 +19,12 @@ timeout = "30s"
 tags = ["smoke", "library", "metadata"]
 
 [[scenario]]
+name = "recording-keyboard-1080p"
+path = "crates/sotf-dev-driver/scenarios/recording_keyboard_1080p.scn"
+timeout = "30s"
+tags = ["smoke", "recording", "keyboard", "linux"]
+
+[[scenario]]
 name = "recording-fake-capture"
 path = "crates/sotf-dev-driver/scenarios/recording_fake_capture.scn"
 timeout = "30s"

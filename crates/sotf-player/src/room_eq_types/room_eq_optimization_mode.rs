@@ -219,6 +219,68 @@ where
 /// user doesn't lose any manual tuning done in a previous Full Wizard
 /// session.  This is the "mutate in place" path used when the full wizard
 /// needs to incorporate simple-mode choices into an existing config.
+/// Optimization speed preset (full-wizard Step 3).
+///
+/// Presets only move the work knobs — iteration budget, population
+/// and the per-channel wall-clock budget — never the correction
+/// targets, so switching preset cannot change *what* is corrected,
+/// only how long the search may take (sotf#222).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OptimizationSpeedPreset {
+    Fast,
+    Balanced,
+    Thorough,
+}
+
+impl OptimizationSpeedPreset {
+    /// All presets in UI order.
+    pub const ALL: [Self; 3] = [Self::Fast, Self::Balanced, Self::Thorough];
+
+    /// Stable code used in element ids and logs.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Balanced => "balanced",
+            Self::Thorough => "thorough",
+        }
+    }
+}
+
+/// Apply a speed preset's work knobs to `config`.
+pub fn apply_speed_preset(preset: OptimizationSpeedPreset, config: &mut RoomEqOptimizerConfig) {
+    match preset {
+        OptimizationSpeedPreset::Fast => {
+            config.max_iter = 5_000;
+            config.population = 100;
+            config.time_budget_seconds = Some(120.0);
+        }
+        OptimizationSpeedPreset::Balanced => {
+            config.max_iter = 50_000;
+            config.population = 300;
+            config.time_budget_seconds = Some(600.0);
+        }
+        OptimizationSpeedPreset::Thorough => {
+            config.max_iter = 200_000;
+            config.population = 300;
+            config.time_budget_seconds = None;
+        }
+    }
+}
+
+/// The preset whose knobs exactly match `config`, if any (for
+/// highlighting the active preset in the UI).
+#[must_use]
+pub fn detect_speed_preset(config: &RoomEqOptimizerConfig) -> Option<OptimizationSpeedPreset> {
+    OptimizationSpeedPreset::ALL.into_iter().find(|&preset| {
+        let mut candidate = config.clone();
+        apply_speed_preset(preset, &mut candidate);
+        candidate.max_iter == config.max_iter
+            && candidate.population == config.population
+            && candidate.time_budget_seconds == config.time_budget_seconds
+    })
+}
+
 pub fn apply_simple_preset(preset: &SimplePresetConfig, config: &mut RoomEqOptimizerConfig) {
     // Processing mode
     config.mode = match preset.processing {

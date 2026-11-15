@@ -1479,6 +1479,7 @@ impl PlayerView {
             output_device: String,
             input_device: String,
             output_channel: u16,
+            output_stream_width: Option<u16>,
             sample_rate: u32,
             speaker_name: String,
             recording_directory: Option<String>,
@@ -1672,17 +1673,27 @@ impl PlayerView {
             // to Sweep with a warning).
             let signal_type = signal_type_for(rec_state.signal_type);
 
-            let output_ch = u16::try_from(
-                rec_state
-                    .playback_config
-                    .channel_mappings
-                    .get(speaker_idx)
-                    .map_or(
-                        0,
-                        sotf_audio_player::recording_types::ChannelMapping::interface_channel,
-                    ),
-            )
-            .unwrap_or(0);
+            // Translate the speaker's interface patch into the stream
+            // route for this output device: on PipeWire/Pulse sinks the
+            // raw index names whatever position ALSA assigns by stream
+            // width, not the speaker (sotf#258). Physical devices keep
+            // the patch verbatim.
+            let mapping_pairs: Vec<(String, u16)> = rec_state
+                .playback_config
+                .channel_mappings
+                .iter()
+                .map(|m| {
+                    (
+                        m.group_name.clone(),
+                        u16::try_from(m.interface_channel()).unwrap_or(0),
+                    )
+                })
+                .collect();
+            let (route_indices, route_width) = sotf_audio_player::measurement_output_routes(
+                &mapping_pairs,
+                &rec_state.playback_config.device_name,
+            );
+            let output_ch = route_indices.get(speaker_idx).copied().unwrap_or(0);
 
             let speaker_name = channel.channel_name.find(" (Mic ").map_or_else(
                 || channel.channel_name.clone(),
@@ -1704,6 +1715,7 @@ impl PlayerView {
                 output_device: rec_state.playback_config.device_name.clone(),
                 input_device: rec_state.recording_config.device_name.clone(),
                 output_channel: imported_route.map_or(output_ch, |(output, _)| output),
+                output_stream_width: route_width,
                 sample_rate: rec_state.playback_config.sample_rate,
                 speaker_name,
                 recording_directory: rec_state.recording_directory.clone(),
@@ -1852,6 +1864,7 @@ impl PlayerView {
         let sweep_start_freq = params.sweep_start_freq;
         let sweep_end_freq = params.sweep_end_freq;
         let output_channel = params.output_channel;
+        let output_stream_width = params.output_stream_width;
         let output_device = params.output_device.clone();
         let input_device = params.input_device.clone();
         let sample_rate = params.sample_rate;
@@ -1976,7 +1989,7 @@ impl PlayerView {
                     macro_rules! capture_with_native_devices {
                         () => {{
                             if num_mics <= 1 {
-                                use sotf_audio_player::EnginePlayback;
+                                use sotf_audio_player::MeasurementPlayback;
                                 use sotf_audio_player::signal_recorder::{
                                     CpalRecorder, SweepRecorder as _,
                                     record_and_analyze_with_recorder,
@@ -1984,7 +1997,12 @@ impl PlayerView {
                                 let mut recorder = CpalRecorder::new("record_and_analyze");
                                 recorder.set_level_meter(executor_level_meter.clone());
                                 record_and_analyze_with_recorder(
-                                    &mut EnginePlayback::new(true, "record_and_analyze"),
+                                    &mut MeasurementPlayback::new_for_device(
+                                        true,
+                                        "record_and_analyze",
+                                        out_dev,
+                                    )
+                                    .with_stream_width(output_stream_width),
                                     &mut recorder,
                                     &temp_wav_path,
                                     &capture_wav_paths[0],
@@ -2002,7 +2020,7 @@ impl PlayerView {
                                 )
                                 .map(|capture| vec![capture])
                             } else {
-                                use sotf_audio_player::EnginePlayback;
+                                use sotf_audio_player::MeasurementPlayback;
                                 use sotf_audio_player::signal_recorder::{
                                     CpalRecorder, SweepRecorder as _,
                                     record_and_analyze_with_multi_recorder,
@@ -2011,7 +2029,12 @@ impl PlayerView {
                                     CpalRecorder::new("record_and_analyze_multi");
                                 recorder.set_level_meter(executor_level_meter.clone());
                                 record_and_analyze_with_multi_recorder(
-                                    &mut EnginePlayback::new(false, "record_and_analyze_multi"),
+                                    &mut MeasurementPlayback::new_for_device(
+                                        false,
+                                        "record_and_analyze_multi",
+                                        out_dev,
+                                    )
+                                    .with_stream_width(output_stream_width),
                                     &mut recorder,
                                     &temp_wav_path,
                                     &capture_wav_paths,

@@ -12,9 +12,10 @@ repository.workspace = true
 
 [features]
 default = ["gpu-2d", "report-webview"]
-shipping = ["report-webview", "report-export-bundled", "gpu-2d", "gpu-3d", "iamf", "streaming", "hls", "tidal", "spotify", "mimalloc-allocator"]
+shipping = ["report-webview", "report-export-bundled", "gpu-2d", "gpu-3d", "iamf", "streaming", "hls", "tidal", "spotify", "mimalloc-allocator", "pipewire-io"]
 full = ["shipping", "tidal", "spotify", "onnx"]
 hal = ["sotf-engine/hal", "sotf-player/hal", "driver-hal"]
+pipewire-io = ["sotf-engine/pipewire-io", "sotf-player/pipewire-io"]
 onnx = ["sotf-plugins/onnx"]
 iamf = ["sotf-engine/iamf", "sotf-plugins/iamf"]
 streaming = ["sotf-engine/streaming", "sotf-player/streaming"]

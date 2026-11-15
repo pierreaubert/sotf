@@ -1,10 +1,20 @@
-# Multi-stage build: Builder stage
-# NOTE: the Rust toolchain comes from the rust:bookworm base image instead of
-# being installed via rustup-init, because large downloads from
-# static.rust-lang.org are truncated on some networks (curl 18) and neither
-# rustup-init nor rustup retries/resumes them sufficiently. Base-image layers
-# arrive through Docker's own resumable pull. We track stable (rolling tag).
-FROM --platform=linux/arm64 rust:bookworm AS builder
+# Builder stage: Ubuntu 24.04 is the supported glibc floor
+# (linux-2026114.md D1), so system libraries and headers come from
+# noble — including libpipewire-0.3-dev 1.0.5, which Debian bookworm
+# cannot provide for the native PipeWire backend. The Rust toolchain
+# still comes from the rust:bookworm image (copied in below) instead
+# of rustup-init, because large downloads from static.rust-lang.org
+# are truncated on some networks (curl 18) and neither rustup-init
+# nor rustup retries/resumes them sufficiently. Base-image layers
+# arrive through Docker's own resumable pull, and a toolchain built
+# against bookworm glibc runs fine on noble's newer glibc.
+FROM --platform=linux/arm64 rust:bookworm AS toolchain
+
+FROM --platform=linux/arm64 ubuntu:24.04 AS builder
+COPY --from=toolchain /usr/local/cargo /usr/local/cargo
+COPY --from=toolchain /usr/local/rustup /usr/local/rustup
+ENV CARGO_HOME=/usr/local/cargo RUSTUP_HOME=/usr/local/rustup
+ENV PATH="/usr/local/cargo/bin:${PATH}"
 
 ARG DEBIAN_FRONTEND=noninteractive
 
@@ -29,6 +39,8 @@ RUN apt-get update && \
     libayatana-appindicator3-dev \
     librsvg2-dev \
     libasound2-dev \
+    libpipewire-0.3-dev \
+    libspa-0.2-dev \
     libxkbcommon-x11-dev \
     libclang-dev \
     patchelf \
@@ -37,10 +49,11 @@ RUN apt-get update && \
     gnome-browser-connector \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
-# We always compile on stable. rust:bookworm ships the current stable toolchain
-# under its versioned name, so expose it as `stable` via a symlink (rustup
-# discovers toolchains by directory scan). This keeps both this override and
-# the workspace rust-toolchain.toml resolving without any downloads.
+# We always compile on stable. The copied toolchain ships under its
+# versioned name, so expose it as `stable` via a symlink (rustup
+# discovers toolchains by directory scan). This keeps both this
+# override and the workspace rust-toolchain.toml resolving without
+# any downloads.
 ENV RUSTUP_TOOLCHAIN=stable
 RUN set -u; \
     cd /usr/local/rustup/toolchains; \

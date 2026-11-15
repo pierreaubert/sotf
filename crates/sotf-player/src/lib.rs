@@ -72,7 +72,10 @@ pub mod ui_params;
 pub mod waveform_scanner;
 
 // Re-export commonly used types
-pub use audio_device::{AudioOutputDeviceState, is_virtual_device};
+pub use audio_device::{
+    AudioOutputDeviceState, MeasurementRoute, is_virtual_device, measurement_output_route,
+    measurement_output_routes,
+};
 pub use bliss::{BlissAnalysis, BlissScanManager, BlissScanMessage, BlissScanner};
 pub use config::AppConfig;
 pub use database::MusicDatabase;
@@ -158,7 +161,7 @@ pub use waveform_scanner::{WaveformScanManager, WaveformScanMessage, WaveformSca
 
 // Re-export measurement functionality
 #[cfg(not(target_os = "ios"))]
-pub use sotf_audio::engine_playback::EnginePlayback;
+pub use sotf_audio::engine_playback::{EnginePlayback, MeasurementPlayback};
 pub use sotf_capture::signal_recorder;
 
 // Re-export math_audio_iir_fir types needed by TUI

@@ -27,6 +27,8 @@ install-ubuntu-common:
 			 libayatana-appindicator3-dev \
 			 librsvg2-dev \
 			 libasound2-dev \
+			 libpipewire-0.3-dev \
+			 libspa-0.2-dev \
 			 libnetcdf-dev \
 			 libopencv-dev \
 			 libclang-dev \

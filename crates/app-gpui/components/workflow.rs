@@ -9,7 +9,7 @@ use crate::components::design::Ds;
 use crate::ui::PlayerView;
 use gpui::prelude::*;
 use gpui::{AnyElement, SharedString, div, rems};
-use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, Select, SelectOption, Text};
+use gpui_ui_kit::{Button, ButtonSize, ButtonVariant, ScrollArea, Select, SelectOption, Text};
 
 fn recording_config_confirmation_labels(
     language: crate::app::i18n::Language,
@@ -375,24 +375,27 @@ impl PlayerView {
                     });
                 })
             }));
-        let body = div()
-            .id(content_id)
-            .track_scroll(match screen {
-                Screen::Recording => &self.scroll.recording,
-                Screen::RoomEq => &self.scroll.room_eq,
-                Screen::HeadphoneEq => &self.scroll.headphone_eq,
-                _ => &self.scroll.spinorama_eq,
-            })
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .overflow_y_scroll()
-            .p(d.card)
-            // Leave enough scrollable clearance for the final wrapped content
-            // row to move above the persistent footer on short windows.
-            .pb(d.card * 5.0)
-            .child(self.render_workflow_result_status(cx))
-            .child(content);
+        // The step body scrolls inside a toolkit ScrollArea so the
+        // overflow is visible (thumb) and keyboard scrolling works
+        // on Linux, where GPUI divs render no scrollbar (sotf#221).
+        let body_handle = match screen {
+            Screen::Recording => &self.scroll.recording,
+            Screen::RoomEq => &self.scroll.room_eq,
+            Screen::HeadphoneEq => &self.scroll.headphone_eq,
+            _ => &self.scroll.spinorama_eq,
+        };
+        let body = ScrollArea::new(
+            content_id,
+            div()
+                .p(d.card)
+                // Leave enough scrollable clearance for the final wrapped content
+                // row to move above the persistent footer on short windows.
+                .pb(d.card * 5.0)
+                .child(self.render_workflow_result_status(cx))
+                .child(content),
+        )
+        .flex_1()
+        .track_scroll(body_handle);
         #[cfg(feature = "dev-api")]
         let body = {
             use crate::app::dev_api::DevTrackExt;

@@ -42,9 +42,29 @@ pub(super) fn assert_clean_logs(scenario_dir: &Path, allowed_patterns: &[String]
     bail!("unexpected panic/ERROR log output:\n{preview}")
 }
 
+/// Known-benign platform teardown noise that is never an app error:
+/// wgpu's GL backend reports `EGL_BAD_DISPLAY` (0x3008) when its
+/// context is destroyed after the display at process exit on
+/// headless Linux. Exact substrings only, like the allowlist.
+const BENIGN_TEARDOWN_PATTERNS: &[&str] = &[
+    "EGL 'eglDestroyContext' code 0x3008",
+    "EGL 'eglTerminate' code 0x3008",
+];
+
 fn is_unexpected_log(line: &str, allowed_patterns: &[String]) -> bool {
+    if BENIGN_TEARDOWN_PATTERNS
+        .iter()
+        .any(|pattern| line.contains(pattern))
+    {
+        return false;
+    }
     let lower = line.to_ascii_lowercase();
-    let is_failure = line.contains("ERROR")
+    // Match ERROR as a log-level token ("[ts ERROR crate]" from
+    // env_logger, or "[ERROR]"), not as a substring: dependency
+    // debug lines such as h2's `error=GoAway(.., NO_ERROR, ..)`
+    // are not ERROR-level logs.
+    let is_failure = line.contains(" ERROR ")
+        || line.contains("[ERROR]")
         || lower.contains("panicked at")
         || lower.contains("thread '") && lower.contains("panic");
 
@@ -86,5 +106,33 @@ mod tests {
         .expect("stderr log");
 
         assert!(assert_clean_logs(dir.path(), &[]).is_err());
+    }
+}
+
+#[cfg(test)]
+mod no_error_token_tests {
+    use super::assert_clean_logs;
+    use std::fs;
+
+    #[test]
+    fn clean_log_gate_ignores_no_error_debug_lines() {
+        let dir = tempfile::tempdir().expect("temporary scenario directory");
+        fs::write(
+            dir.path().join("sotf.stderr.log"),
+            "[2026-11-14T16:20:49Z DEBUG h2::proto::connection] Connection::poll; connection error error=GoAway(\"\", NO_ERROR, Library)\n",
+        )
+        .expect("stderr log");
+        assert!(assert_clean_logs(dir.path(), &[]).is_ok());
+    }
+
+    #[test]
+    fn clean_log_gate_ignores_wgpu_egl_teardown_noise() {
+        let dir = tempfile::tempdir().expect("temporary scenario directory");
+        fs::write(
+            dir.path().join("sotf.stderr.log"),
+            "[2026-11-14T17:34:50Z ERROR wgpu_hal::gles::egl] EGL 'eglDestroyContext' code 0x3008: \n[2026-11-14T17:34:50Z ERROR wgpu_hal::gles::egl] EGL 'eglTerminate' code 0x3008: \n",
+        )
+        .expect("stderr log");
+        assert!(assert_clean_logs(dir.path(), &[]).is_ok());
     }
 }

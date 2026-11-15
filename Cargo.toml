@@ -110,10 +110,10 @@ rustfft = "6.4"
 realfft = "3.5"
 
 # Shared numerical and acoustic crates from sibling workspaces.
-math-iir-fir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-optimisation = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-dsp = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
-math-rir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio" }
+math-iir-fir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "df9d84095835ace6af4b8a2b79bd65c6a5250cf6" }
+math-optimisation = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "df9d84095835ace6af4b8a2b79bd65c6a5250cf6" }
+math-dsp = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "df9d84095835ace6af4b8a2b79bd65c6a5250cf6" }
+math-rir = { version = "0.5", git = "https://github.com/pierreaubert/math-audio", rev = "df9d84095835ace6af4b8a2b79bd65c6a5250cf6" }
 autoeq-core = { path = "../autoeq/crates/autoeq-core" }
 autoeq-optim = { path = "../autoeq/crates/autoeq-optim" }
 autoeq-optim-types = { path = "../autoeq/crates/autoeq-optim-types" }
@@ -128,16 +128,16 @@ autoeq-measurements = { version = "0.5.4", path = "../autoeq/crates/autoeq-measu
 symphonia-codec-wavpack = { version = "0.1.1", git = "https://github.com/pierreaubert/symphonia-add-ons" }
 
 # GPUI toolkit
-gpui-d3rs = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-px = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-audio-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-design-tools = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-ui-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-themes = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-builder = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-design = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-keybinding = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
-gpui-ios = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit" }
+gpui-d3rs = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-px = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-audio-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-design-tools = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-ui-kit = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-themes = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-builder = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-design = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-keybinding = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
+gpui-ios = { version = "0.11", git = "https://github.com/pierreaubert/gpui-toolkit", rev = "36bb357e8d17667c6dc0bce7c2443223c9b9070e" }
 
 # SotF
 sotf-host = { path = "../sotf-daw/crates/sotf-plugins/crates/sotf-host", default-features = false }
@@ -360,4 +360,3 @@ strip = "symbols"
 
 [patch.crates-io]
 block = { git = "https://github.com/pierreaubert/sotf-3rdparties", rev = "5a4634af0916b5f53effa5ef6340efd90af32285" }
-

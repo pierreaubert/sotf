@@ -60,6 +60,35 @@ pub(super) fn verb_assert(rest: &str, ctx: &Ctx) -> Result<()> {
     Ok(())
 }
 
+/// Resolve a scenario baseline path, preferring a platform-specific
+/// sibling (`<stem>-linux.png`, `<stem>-macos.png`, ...) when one
+/// exists. Rendering differs across platforms (menu bar presence,
+/// font stack, scale factor), so a baseline captured on one OS cannot
+/// gate another; the sibling keeps each platform honest against its
+/// own rendering while scenarios stay platform-agnostic.
+fn platform_snapshot_baseline(baseline: &Path) -> PathBuf {
+    let stem = baseline
+        .file_stem()
+        .map_or_else(String::new, |stem| stem.to_string_lossy().into_owned());
+    let platform_name = match baseline.extension() {
+        Some(extension) => format!(
+            "{stem}-{}.{}",
+            std::env::consts::OS,
+            extension.to_string_lossy()
+        ),
+        None => format!("{stem}-{}", std::env::consts::OS),
+    };
+    baseline.with_file_name(platform_name)
+}
+
+fn resolve_snapshot_baseline(baseline: &Path) -> PathBuf {
+    let platform = platform_snapshot_baseline(baseline);
+    if platform.exists() {
+        return platform;
+    }
+    baseline.to_path_buf()
+}
+
 /// Compare a QA screenshot against a baseline using mean absolute RGBA delta.
 ///
 /// On a mismatch, write expected, actual, difference, and side-by-side
@@ -90,7 +119,7 @@ pub(super) fn verb_assert_snapshot(rest: &str, ctx: &Ctx) -> Result<()> {
     let actual_image = image::open(&actual)
         .with_context(|| format!("opening actual screenshot {}", actual.display()))?
         .to_rgba8();
-    let baseline = std::path::PathBuf::from(baseline);
+    let baseline = resolve_snapshot_baseline(&std::path::PathBuf::from(baseline));
     let baseline_image = image::open(&baseline)
         .with_context(|| format!("opening snapshot baseline {}", baseline.display()))?
         .to_rgba8();
@@ -335,7 +364,13 @@ pub(super) fn verb_assert_perceptual_snapshot(rest: &str, ctx: &Ctx) -> Result<(
     })?;
     let thresholds = parse_perceptual_snapshot_thresholds(parts)?;
     let actual = qa_screenshot_path(ctx, name)?;
-    let baseline = PathBuf::from(baseline);
+    // Updates always write this platform's sibling so refreshing a
+    // baseline on one OS never clobbers another OS's rendering.
+    let baseline = if snapshot_update_requested() {
+        platform_snapshot_baseline(&PathBuf::from(baseline))
+    } else {
+        resolve_snapshot_baseline(&PathBuf::from(baseline))
+    };
 
     if snapshot_update_requested() {
         if let Some(parent) = baseline
@@ -874,7 +909,7 @@ pub(super) fn verb_click(rest: &str, ctx: &Ctx) -> Result<()> {
     // Routing nodes are resolved to a point within the tracked canvas by the
     // server, rather than having a separate tracked selector here.
     if !selector.starts_with("routing.node.") {
-        let elements = fetch_elements(ctx)?;
+        let elements = wait_for_element(ctx, selector, false)?;
         let element = find_element(&elements, selector)
             .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
         let health = fetch_health(ctx)?;
@@ -899,7 +934,7 @@ pub(super) fn verb_double_click(rest: &str, ctx: &Ctx) -> Result<()> {
     if selector.is_empty() {
         bail!("double_click verb needs a selector");
     }
-    let elements = fetch_elements(ctx)?;
+    let elements = wait_for_element(ctx, selector, false)?;
     let element = find_element(&elements, selector)
         .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
     let health = fetch_health(ctx)?;
@@ -1092,6 +1127,13 @@ pub(super) fn verb_scroll_into_view(rest: &str, ctx: &Ctx) -> Result<()> {
     if container.is_empty() || target.is_empty() {
         bail!("scroll_into_view needs `<container> <target>`");
     }
+    // The target may not be painted yet even though the state query a
+    // scenario waited on already flipped (tab switches, resizes);
+    // poll like the other selector verbs instead of failing the
+    // first fetch. Visibility is not required: off-viewport items
+    // are listed with their scrolled content coordinates.
+    wait_for_element(ctx, container, false)?;
+    wait_for_element(ctx, target, false)?;
     for _ in 0..4 {
         let elements = fetch_elements(ctx)?;
         let port = find_element(&elements, container)
@@ -1413,12 +1455,7 @@ pub(super) fn verb_assert_visible(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("assert_visible verb needs a selector");
     }
 
-    let elements = fetch_elements(ctx)?;
-    let element = find_element(&elements, selector)
-        .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
-    if !element_is_visible(element) {
-        bail!("rendered selector `{selector}` has empty or invalid bounds: {element}");
-    }
+    wait_for_element(ctx, selector, true)?;
     Ok(())
 }
 
@@ -1428,10 +1465,7 @@ pub(super) fn verb_assert_absent(rest: &str, ctx: &Ctx) -> Result<()> {
     if selector.is_empty() {
         bail!("assert_absent verb needs a selector");
     }
-    if find_element(&fetch_elements(ctx)?, selector).is_some() {
-        bail!("rendered selector `{selector}` is still present");
-    }
-    Ok(())
+    wait_for_absent(ctx, selector)
 }
 
 /// Assert that a rendered selector fits entirely inside the current viewport.
@@ -1441,7 +1475,7 @@ pub(super) fn verb_assert_in_viewport(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("assert_in_viewport verb needs a selector");
     }
 
-    let elements = fetch_elements(ctx)?;
+    let elements = wait_for_element(ctx, selector, false)?;
     let element = find_element(&elements, selector)
         .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
     let health = fetch_health(ctx)?;
@@ -1469,7 +1503,7 @@ pub(super) fn verb_assert_within(rest: &str, ctx: &Ctx) -> Result<()> {
     if parts.next().is_some() {
         bail!("assert_within accepts exactly `<child> <container>`");
     }
-    let elements = fetch_elements(ctx)?;
+    let elements = wait_for_element(ctx, selector, false)?;
     let child = find_element(&elements, selector)
         .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
     let parent = find_element(&elements, container)
@@ -1493,7 +1527,12 @@ pub(super) fn verb_assert_non_overlapping(rest: &str, ctx: &Ctx) -> Result<()> {
         bail!("assert_non_overlapping accepts exactly two selectors");
     }
 
-    let elements = fetch_elements(ctx)?;
+    let elements = wait_for_element(ctx, first, false)?;
+    let elements = if find_element(&elements, second).is_some() {
+        elements
+    } else {
+        wait_for_element(ctx, second, false)?
+    };
     let first_element = find_element(&elements, first)
         .ok_or_else(|| anyhow!("rendered selector `{first}` is not present"))?;
     let second_element = find_element(&elements, second)
@@ -1552,21 +1591,91 @@ pub(super) fn verb_assert_element_state(rest: &str, field: &str, ctx: &Ctx) -> R
         bail!("assert_{field} needs `<selector> <operator> <literal>`");
     }
     let comparison = parse_compare(&format!("state {comparison}"))?;
-    let elements = fetch_elements(ctx)?;
-    let element = find_element(&elements, selector)
-        .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
-    let actual = element_state_value(element, selector, field)?;
-    if !comparison.matches(actual) {
-        bail!(
-            "semantic assertion failed: `{selector}` {field} {} {} (got {actual})",
-            comparison.op.as_str(),
-            comparison.expected_text,
-        );
+    // A click or other action is processed asynchronously by the app, and
+    // the semantic state is published only when the updated control is
+    // painted. Poll like selector presence does instead of sampling a
+    // potentially stale pre-action frame exactly once.
+    let deadline = Instant::now() + SELECTOR_WAIT_TIMEOUT;
+    let mut last_actual = None;
+    loop {
+        let elements = fetch_elements(ctx)?;
+        let field_state = find_element(&elements, selector)
+            .map(|element| element_state_value(element, selector, field))
+            .transpose()?;
+        if let Some(actual) = field_state {
+            if comparison.matches(actual) {
+                if ctx.verbose {
+                    println!("    -> ok ({field}={actual})");
+                }
+                return Ok(());
+            }
+            last_actual = Some(actual.clone());
+        }
+        if Instant::now() >= deadline {
+            if let Some(actual) = last_actual {
+                bail!(
+                    "semantic assertion failed: `{selector}` {field} {} {} (got {actual})",
+                    comparison.op.as_str(),
+                    comparison.expected_text,
+                );
+            }
+            // Preserve the missing-state diagnostic (rather than reporting a
+            // timeout) for the final snapshot.
+            let elements = fetch_elements(ctx)?;
+            let element = find_element(&elements, selector)
+                .ok_or_else(|| anyhow!("rendered selector `{selector}` is not present"))?;
+            element_state_value(element, selector, field)?;
+            bail!("rendered selector `{selector}` {field} state did not settle");
+        }
+        sleep(Duration::from_millis(50));
     }
-    if ctx.verbose {
-        println!("    -> ok ({field}={actual})");
+}
+
+/// Default patience for assert/click on rendered selectors. The app
+/// paints asynchronously (and on headless Linux frames are driven by
+/// the platform loop), so a selector can legitimately appear a few
+/// frames after the action that creates it; single-shot asserts
+/// flake on exactly that race.
+const SELECTOR_WAIT_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Poll the rendered-element snapshot until `selector` is present
+/// (and visible when `require_visible`), or the timeout expires.
+/// Returns the snapshot that satisfied the wait.
+fn wait_for_element(ctx: &Ctx, selector: &str, require_visible: bool) -> Result<Value> {
+    let deadline = Instant::now() + SELECTOR_WAIT_TIMEOUT;
+    loop {
+        let elements = fetch_elements(ctx)?;
+        let found = find_element(&elements, selector)
+            .is_some_and(|element| !require_visible || element_is_visible(element));
+        if found {
+            return Ok(elements);
+        }
+        if Instant::now() >= deadline {
+            if require_visible {
+                bail!(
+                    "rendered selector `{selector}` is not present or not visible after {SELECTOR_WAIT_TIMEOUT:?}"
+                );
+            }
+            bail!("rendered selector `{selector}` is not present after {SELECTOR_WAIT_TIMEOUT:?}");
+        }
+        sleep(Duration::from_millis(50));
     }
-    Ok(())
+}
+
+/// Poll until `selector` is no longer rendered.
+fn wait_for_absent(ctx: &Ctx, selector: &str) -> Result<()> {
+    let deadline = Instant::now() + SELECTOR_WAIT_TIMEOUT;
+    loop {
+        if find_element(&fetch_elements(ctx)?, selector).is_none() {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "rendered selector `{selector}` is still present after {SELECTOR_WAIT_TIMEOUT:?}"
+            );
+        }
+        sleep(Duration::from_millis(50));
+    }
 }
 
 fn fetch_elements(ctx: &Ctx) -> Result<Value> {
@@ -1704,10 +1813,32 @@ mod rendered_selector_tests {
     use super::{
         accessibility_element_matches, element_center_is_within_viewport, element_is_visible,
         element_is_within_element, element_is_within_viewport, element_state_value,
-        elements_overlap, find_element,
+        elements_overlap, find_element, platform_snapshot_baseline, resolve_snapshot_baseline,
     };
     use crate::parse::parse_compare;
     use serde_json::json;
+
+    #[test]
+    fn platform_snapshot_baseline_suffixes_the_current_os() {
+        let resolved = platform_snapshot_baseline(std::path::Path::new(
+            "baselines/gpui/playback-dark-english-1440x900.png",
+        ));
+        assert_eq!(
+            resolved,
+            std::path::PathBuf::from(format!(
+                "baselines/gpui/playback-dark-english-1440x900-{}.png",
+                std::env::consts::OS
+            ))
+        );
+    }
+
+    #[test]
+    fn resolve_snapshot_baseline_falls_back_without_platform_sibling() {
+        let baseline =
+            std::path::PathBuf::from("baselines/gpui/definitely-missing-baseline-1440x900.png");
+        let resolved = resolve_snapshot_baseline(&baseline);
+        assert_eq!(resolved, baseline);
+    }
 
     #[test]
     fn accessibility_focus_matches_stable_application_id() {

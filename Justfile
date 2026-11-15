@@ -7,7 +7,7 @@ cargo_bin := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo;
 # Filter only vendored warnings from Cargo's structured diagnostics on Unix.
 # Direct Cargo commands and Windows recipes retain their existing output.
 cargo := if os() == "windows" { cargo_bin } else {
-    "python3 '" + justfile_directory() + "/../scripts/cargo/quiet-thirdparty-lints.py' " + cargo_bin
+    "python3 '" + justfile_directory() + "/scripts/cargo_with_pipewire_sysroot.py' python3 '" + justfile_directory() + "/../scripts/cargo/quiet-thirdparty-lints.py' " + cargo_bin
 }
 
 _default:
@@ -155,6 +155,17 @@ test-device-fakes:
 [group('test')]
 test-realtime-safety:
 	cd ../sotf-daw && just test-realtime-safety
+
+# PipeWire channel-identity oracle (sotf#258): plays measurement tones
+# through the production capture backends into a throwaway 7.1 sink and
+# asserts each lands on exactly its named position. Manual gate: needs
+# a live PipeWire session (+ libpipewire-0.3-dev for the native
+# backend build); restores the previous default sink.
+[group('test')]
+test-pipewire-channels:
+	cargo test --manifest-path ../sotf-capture/Cargo.toml --features pipewire-io --test pipewire_oracle --no-run
+	python3 ../sotf-capture/scripts/pipewire-channel-oracle.py --backend cpal
+	python3 ../sotf-capture/scripts/pipewire-channel-oracle.py --backend pipewire
 
 # Client/server contracts: SOTF API loopback (typed client against the real
 # server), provider mocks, and MPD/DLNA/federation protocol tests. Loopback

@@ -1,3 +1,48 @@
+# 0.7.18
+
+## Linux
+
+- Measurement sweeps now reach the correct speakers on multichannel
+  systems, on both backends. ALSA measurement playback opens the
+  stream at the sink's full width and routes by channel role, and
+  PipeWire endpoints use a new native PipeWire backend that declares
+  explicit channel positions — including sinks with permuted
+  positions ([#258](https://github.com/pierreaubert/sotf/issues/258)).
+- Linux binaries are built for x86-64-v2 (Apollo Lake, e.g. Celeron
+  J3455, and later; no AVX required) on Ubuntu 24.04, and every
+  release artifact is gated against newer CPU instructions or glibc
+  creeping in. This fixes "Illegal instruction" crashes on Intel
+  machines ([#246](https://github.com/pierreaubert/sotf/issues/246)).
+  Ubuntu 24.04+ is the supported floor.
+- Device lists are honest now: duplicate and fictional ALSA entries
+  are merged away, PipeWire-owned hardware explains how to reach it
+  instead of failing silently, dead playback streams surface an
+  error instead of hanging a measurement, and ALSA library noise no
+  longer spams the console ([#247](https://github.com/pierreaubert/sotf/issues/247)).
+- Scrollable panels have real scrollbars (drag, wheel, keyboard) and
+  dialogs are capped to the viewport, so long forms stay usable at
+  small window sizes ([#221](https://github.com/pierreaubert/sotf/issues/221)).
+- RoomEQ export: routed (bass-managed) setups can now be exported to
+  PipeWire in addition to CamillaDSP; formats that cannot express a
+  setup are disabled upfront with the reason instead of failing at
+  export time ([#192](https://github.com/pierreaubert/sotf/issues/192)).
+- The optimizer reports honest progress with rate and ETA, gained
+  Fast/Balanced/Thorough speed presets and an optional per-channel
+  time budget that keeps the best result found so far, so long
+  optimizations on small machines no longer look stuck
+  ([#222](https://github.com/pierreaubert/sotf/issues/222)).
+- The .deb declares the correct homepage and dependencies
+  (including the PipeWire client library used by the native
+  backend); the AppImage keeps using the host ALSA/PipeWire
+  libraries and needs `libpipewire-0.3-0` installed (client library
+  only — no PipeWire server required to start the app).
+
+## Testing
+
+- The full GPUI dev-driver matrix runs headlessly on Linux
+  (frame driving, resize propagation, and screenshot rendering in
+  the headless platform), and runs in CI for this release.
+
 # 0.7.17
 
 ## Features

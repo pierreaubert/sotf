@@ -283,6 +283,11 @@ impl WorkflowTranslations {
                 evaluate_recordings: pseudo_static("Evaluate Recordings"),
                 empty_pass_through: pseudo_static("Empty (pass-through)"),
                 optimizing: pseudo_static("Optimizing…"),
+                export_limited_hint: pseudo_static("Multichannel with bass management: exports are limited to SotF JSON, CamillaDSP, PipeWire and WAV — EasyEffects/Wavelet cannot represent routed bass management."),
+                speed_preset: pseudo_static("Speed"),
+                speed_fast: pseudo_static("Fast"),
+                speed_balanced: pseudo_static("Balanced"),
+                speed_thorough: pseudo_static("Thorough"),
             }
     }
 }

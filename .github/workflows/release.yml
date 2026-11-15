@@ -103,8 +103,8 @@ jobs:
             libssl-dev ca-certificates patchelf \
             libglib2.0-dev libxkbcommon-x11-dev libgtk-3-dev \
             libwebkit2gtk-4.1-dev libayatana-appindicator3-dev \
-            librsvg2-dev libasound2-dev libclang-dev \
-            imagemagick fakeroot
+            librsvg2-dev libasound2-dev libpipewire-0.3-dev \
+            libspa-0.2-dev libclang-dev imagemagick fakeroot
 
       - name: Install just
         run: |

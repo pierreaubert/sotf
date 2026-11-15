@@ -257,7 +257,8 @@ pub fn run_multi_speaker_optimization(
             let legacy_progress = multi_speaker_progress_from_pipeline_event(event);
             match cb(&legacy_progress) {
                 autoeq_optim::de::CallbackAction::Continue => PipelineControl::Continue,
-                autoeq_optim::de::CallbackAction::Stop => PipelineControl::Stop,
+                autoeq_optim::de::CallbackAction::Stop
+                | autoeq_optim::de::CallbackAction::StopAcceptBest => PipelineControl::Stop,
             }
         });
         observer

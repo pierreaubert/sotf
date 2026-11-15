@@ -48,7 +48,7 @@ walkdir = { workspace = true }
 math-iir-fir = { workspace = true }
 sotf-plugins = { workspace = true }
 sotf-engine = { workspace = true }
-sotf-player = { workspace = true }
+sotf-player = { workspace = true, features = ["pipewire-io"] }
 num-complex = { workspace = true }
 
 # Audio decoding/encoding

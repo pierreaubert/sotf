@@ -7,7 +7,11 @@ MACOSX_DEPLOYMENT_TARGET = "15.0"
 # RUSTFLAGS = "-Zthreads=8"
 
 [build]
-rustflags = ["-Ctarget-cpu=native"]
+# No workspace-wide target-cpu: `native` here silently applies to any
+# target without an explicit section below and ships build-machine
+# instructions (AMD SSE4a from a Zen builder -> SIGILL on every Intel
+# CPU, sotf#246). Every shipped target pins its own baseline below;
+# anything unlisted builds for the portable generic CPU (fail-safe).
 # jobs intentionally unset: cargo defaults to the logical CPU count
 # (14 on macOS, 64 on the Linux EPYC), which is what we want per host.
 # Disabled: sccache is not installed in this environment; re-enable where
@@ -47,10 +51,13 @@ rustflags = [
 linker = "clang"
 rustflags = [
   "-C", "link-arg=-fuse-ld=mold",  # Force the mold linker
-  # Portable x86-64-v2 baseline for shipped binaries (AppImage/tarball):
-  # target-cpu=native here made release binaries SIGILL on pre-Haswell
-  # machines. DSP SIMD kernels are runtime-dispatched, so modern CPUs keep
-  # their AVX2/AVX-512 paths. This overrides [build] target-cpu=native.
+  # Portable x86-64-v2 baseline for shipped binaries. Floor hardware
+  # is Apollo Lake (Celeron J3455): full v2 set, no AVX at all, so no
+  # AVX/AVX2/FMA/BMI instruction may appear outside runtime-dispatched
+  # kernels. target-cpu=native on the AMD release builder emitted
+  # AMD-only SSE4a and SIGILLed on every Intel CPU (sotf#246). DSP
+  # SIMD kernels are runtime-dispatched, so modern CPUs keep their
+  # AVX2/FMA paths.
   "-C", "target-cpu=x86-64-v2",
   "-C", "symbol-mangling-version=v0", # Faster mangling, better demangling
 ]
@@ -81,8 +88,6 @@ rustflags = [
 ]
 
 # Windows GNU (llvm-mingw/gnullvm) — used by the Docker Windows builds.
-# Explicit sections are required: without one, [build] target-cpu=native
-# applies and the binaries SIGILL on CPUs older than the build machine.
 # Mirrors the MSVC sections above.
 [target.x86_64-pc-windows-gnullvm]
 rustflags = [
@@ -94,11 +99,13 @@ rustflags = [
   "-C", 'target-feature=+neon',
 ]
 
-# Linux x86_64 musl configuration (static linking)
+# Linux x86_64 musl configuration (static linking). Same x86-64-v2
+# baseline as gnu: forcing +avx,+avx2 here SIGILLs on the Apollo Lake
+# floor machines (no AVX at all).
 [target.x86_64-unknown-linux-musl]
 rustflags = [
   "-C", "target-feature=+crt-static",
-  "-C", "target-feature=+sse,+sse2,+sse3,+ssse3,+sse4.1,+sse4.2,+avx,+avx2",
+  "-C", "target-cpu=x86-64-v2",
 ]
 
 # Linux ARM64 musl configuration (static linking)

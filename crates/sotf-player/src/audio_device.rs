@@ -125,19 +125,155 @@ impl AudioOutputDeviceState {
 }
 
 /// Check if a device name is a virtual/passthrough device that shouldn't be default.
+/// Whether `name` is a virtual/null endpoint rather than a physical
+/// output. Delegates to the shared endpoint classifier in
+/// sotf-capture so player, engine and daemon agree — including Linux
+/// names (monitor sources, `PipeWire` loopbacks, the ALSA sample
+/// discarder). The old hand-rolled list also matched the bare
+/// substring "hal", which false-positives on real hardware names
+/// (e.g. "Wharfedale"); the `SotF` HAL device is covered by the "sotf"
+/// and "virtual" markers instead.
 #[must_use]
 pub fn is_virtual_device(name: &str) -> bool {
-    let lower_name = name.to_lowercase();
-    lower_name.contains("sotf")
-        || lower_name.contains("hal")
-        || lower_name.contains("blackhole")
-        || lower_name.contains("zoomaudio")
-        || lower_name.contains("soundflower")
-        || lower_name.contains("loopback")
-        || lower_name.contains("virtual")
-        || lower_name.contains("background music")
-        || lower_name.contains("audio bridge")
-        || name.trim().eq_ignore_ascii_case("null")
+    !sotf_audio::devices::classify_device(name, None).is_physical_output_candidate()
+        || sotf_audio::devices::is_null_device(name)
+}
+
+/// ALSA's fixed channel order, truncated by stream width. Measured
+/// empirically through the ALSA->PipeWire path (oracle matrix in
+/// sotf-capture's `pipewire_oracle` test): an N-channel stream gets
+/// the first N of these positions, whatever the caller intended.
+const ALSA_POSITION_ORDER: [&str; 8] = ["FL", "FR", "RL", "RR", "FC", "LFE", "SL", "SR"];
+
+/// Standard stream widths whose ALSA position maps are well-defined.
+const STANDARD_STREAM_WIDTHS: [u16; 4] = [2, 4, 6, 8];
+
+/// Canonical speaker position for a speaker/group name, or `None`
+/// when the name carries no recognizable position. Accepts the short
+/// codes the speaker configs use plus common spellings.
+fn speaker_position(name: &str) -> Option<&'static str> {
+    let normalized: String = name
+        .trim()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .flat_map(char::to_uppercase)
+        .collect();
+    // Strip a trailing instance number ("SL1", "SUB2") for matching.
+    let stem = normalized.trim_end_matches(|ch: char| ch.is_ascii_digit());
+    match stem {
+        "L" | "FL" | "LEFT" | "FRONTLEFT" => Some("FL"),
+        "R" | "FR" | "RIGHT" | "FRONTRIGHT" => Some("FR"),
+        "C" | "FC" | "CENTER" | "CENTRE" | "FRONTCENTER" | "FRONTCENTRE" => Some("FC"),
+        "LFE" | "SUB" | "SW" | "SUBWOOFER" => Some("LFE"),
+        "SL" | "LS" | "LEFTSURROUND" | "SURROUNDLEFT" | "SIDELEFT" => Some("SL"),
+        "SR" | "RS" | "RIGHTSURROUND" | "SURROUNDRIGHT" | "SIDERIGHT" => Some("SR"),
+        "BL" | "RL" | "BACKLEFT" | "REARLEFT" => Some("RL"),
+        "BR" | "RR" | "BACKRIGHT" | "REARRIGHT" => Some("RR"),
+        _ => None,
+    }
+}
+
+/// How to address one speaker on the measurement output stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MeasurementRoute {
+    /// Index to write the stimulus to in the opened stream.
+    pub stream_index: u16,
+    /// Width the stream must be opened at for that index to mean
+    /// what the caller intends. `None` = backend default.
+    pub stream_width: Option<u16>,
+}
+
+/// Compute the measurement output route for one speaker.
+///
+/// Physical devices keep the user's interface-channel patch verbatim.
+/// Server/virtual sinks (PipeWire/Pulse through ALSA) reassign
+/// channel *positions by stream width* in ALSA's fixed order, so a
+/// raw interface index does not name a speaker there: translate the
+/// speaker's position (from its name) into that order at the
+/// smallest standard width containing every mapped speaker's
+/// position. Unrecognized speaker names fall back to the physical
+/// patch on every device class.
+#[must_use]
+pub fn measurement_output_route(
+    speaker_name: &str,
+    interface_channel: u16,
+    all_speaker_names: &[String],
+    total_interface_channels: u16,
+    output_device_name: &str,
+) -> MeasurementRoute {
+    let physical = MeasurementRoute {
+        stream_index: interface_channel,
+        stream_width: Some(total_interface_channels.max(interface_channel + 1)),
+    };
+    let class = sotf_audio::devices::classify_device(output_device_name, None);
+    if class == sotf_audio::devices::DeviceClass::Physical {
+        return physical;
+    }
+    let Some(position) = speaker_position(speaker_name) else {
+        return physical;
+    };
+    // The stream must be wide enough that *every* mapped speaker's
+    // position exists in the ALSA map for that width, so all takes
+    // in the session share one consistent width.
+    let mut needed: Vec<&'static str> = all_speaker_names
+        .iter()
+        .filter_map(|name| speaker_position(name))
+        .collect();
+    if needed.is_empty() {
+        needed.push(position);
+    }
+    let Some(width) = STANDARD_STREAM_WIDTHS.into_iter().find(|&width| {
+        needed
+            .iter()
+            .all(|role| ALSA_POSITION_ORDER[..usize::from(width)].contains(role))
+    }) else {
+        return physical;
+    };
+    let Some(index) = ALSA_POSITION_ORDER[..usize::from(width)]
+        .iter()
+        .position(|&role| role == position)
+    else {
+        return physical;
+    };
+    MeasurementRoute {
+        stream_index: u16::try_from(index).unwrap_or(interface_channel),
+        stream_width: Some(width),
+    }
+}
+
+/// Translate a whole speaker mapping set at once: `(group_name,
+/// interface_channel)` pairs in, `(stream indices, shared stream
+/// width)` out. All routes share one width by construction, so a
+/// multi-speaker measurement session opens every take at the same
+/// width. See [`measurement_output_route`].
+#[must_use]
+pub fn measurement_output_routes(
+    mappings: &[(String, u16)],
+    output_device_name: &str,
+) -> (Vec<u16>, Option<u16>) {
+    let total_interface_channels = mappings
+        .iter()
+        .map(|(_, channel)| *channel)
+        .max()
+        .map_or(2, |max| max + 1);
+    let names: Vec<String> = mappings.iter().map(|(name, _)| name.clone()).collect();
+    let routes: Vec<MeasurementRoute> = mappings
+        .iter()
+        .map(|(name, channel)| {
+            measurement_output_route(
+                name,
+                *channel,
+                &names,
+                total_interface_channels,
+                output_device_name,
+            )
+        })
+        .collect();
+    let width = routes.first().and_then(|route| route.stream_width);
+    (
+        routes.iter().map(|route| route.stream_index).collect(),
+        width,
+    )
 }
 
 #[cfg(test)]
@@ -164,6 +300,58 @@ mod tests {
         assert!(is_virtual_device("BlackHole 2ch"));
         assert!(is_virtual_device("Loopback Audio"));
         assert!(is_virtual_device("Generic Virtual Device"));
+    }
+
+    #[test]
+    fn measurement_route_translates_roles_for_pipewire_sinks() {
+        // The #258 setup: 5.1 speakers auto-numbered 0..5 into a
+        // PipeWire sink. ALSA assigns positions [FL FR RL RR FC LFE
+        // SL SR] truncated by width, so SL/SR force width 8 and the
+        // indices below; anything narrower misroutes FC/LFE/SL.
+        let names: Vec<String> = ["FL", "FR", "C", "LFE", "SL", "SR"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let route = |speaker: &str, iface: u16| {
+            measurement_output_route(speaker, iface, &names, 6, "PipeWire Sound Server")
+        };
+        assert_eq!(
+            route("FL", 0),
+            MeasurementRoute {
+                stream_index: 0,
+                stream_width: Some(8)
+            }
+        );
+        assert_eq!(route("C", 2).stream_index, 4);
+        assert_eq!(route("LFE", 3).stream_index, 5);
+        assert_eq!(route("SL", 4).stream_index, 6);
+        assert_eq!(route("SR", 5).stream_index, 7);
+        assert_eq!(route("SR", 5).stream_width, Some(8));
+    }
+
+    #[test]
+    fn measurement_route_keeps_physical_patch_on_hardware() {
+        // MOTU-style patch: speakers wired to interface channels 2..7.
+        let names: Vec<String> = ["FL", "FR", "C", "LFE", "SL", "SR"]
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect();
+        let route = measurement_output_route("SL", 6, &names, 8, "MOTU UltraLite mk5");
+        assert_eq!(route.stream_index, 6);
+        assert_eq!(route.stream_width, Some(8));
+    }
+
+    #[test]
+    fn measurement_route_stereo_stays_stereo() {
+        let names: Vec<String> = vec!["FL".to_string(), "FR".to_string()];
+        let route = measurement_output_route("FR", 1, &names, 2, "PipeWire Sound Server");
+        assert_eq!(
+            route,
+            MeasurementRoute {
+                stream_index: 1,
+                stream_width: Some(2)
+            }
+        );
     }
 
     #[test]
