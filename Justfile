@@ -7,7 +7,7 @@ cargo_bin := `if command -v mbx >/dev/null 2>&1; then echo mbx; else echo cargo;
 # Filter only vendored warnings from Cargo's structured diagnostics on Unix.
 # Direct Cargo commands and Windows recipes retain their existing output.
 cargo := if os() == "windows" { cargo_bin } else {
-    "python3 '" + justfile_directory() + "/../scripts/cargo/quiet-thirdparty-lints.py' " + cargo_bin
+    "python3 '" + justfile_directory() + "/scripts/cargo_with_pipewire_sysroot.py' python3 '" + justfile_directory() + "/../scripts/cargo/quiet-thirdparty-lints.py' " + cargo_bin
 }
 
 _default:

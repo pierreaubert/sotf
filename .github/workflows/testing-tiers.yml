@@ -85,7 +85,7 @@ jobs:
       - name: Install audio build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libssl-dev pkg-config
       - name: Install just
         run: cargo install just
       - name: Run unit tier
@@ -171,7 +171,7 @@ jobs:
       - name: Install audio build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libssl-dev pkg-config
       - name: Install just
         run: cargo install just
       - name: Run release performance gate
@@ -258,7 +258,7 @@ jobs:
       - name: Install audio build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libasound2-dev libssl-dev pkg-config
+          sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libspa-0.2-dev libssl-dev pkg-config
       - name: Install test tools
         run: |
           cargo install just
