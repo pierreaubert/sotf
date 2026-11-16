@@ -13,6 +13,8 @@ RUN apt-get update && \
         curl \
         git \
         libasound2-dev \
+        libpipewire-0.3-dev \
+        libspa-0.2-dev \
         libclang-dev \
         libsqlite3-dev \
         pkg-config \

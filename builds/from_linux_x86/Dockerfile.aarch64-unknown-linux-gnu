@@ -16,6 +16,8 @@ RUN apt-get update && \
     ninja-build \
     perl \
     pkg-config \
+    libpipewire-0.3-dev \
+    libspa-0.2-dev \
     libssl-dev \
     libsqlite3-dev \
     libglib2.0-dev \

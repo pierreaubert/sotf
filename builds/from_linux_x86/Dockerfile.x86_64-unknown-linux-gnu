@@ -12,6 +12,8 @@ RUN apt-get update && \
     gcc \
     g++ \
     pkg-config \
+    libpipewire-0.3-dev \
+    libspa-0.2-dev \
     libssl-dev \
     libsqlite3-dev \
     ca-certificates \

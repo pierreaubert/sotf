@@ -32,6 +32,7 @@ RUN apt-get update && \
         libnetcdf-dev \
         libopenblas-dev \
         libpipewire-0.3-dev \
+        libspa-0.2-dev \
         libopencv-dev \
         librsvg2-dev \
         libsqlite3-dev \

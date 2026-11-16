@@ -194,6 +194,26 @@ class BuildDependencyDeclarationTests(unittest.TestCase):
                 self.assertIn("libpipewire-0.3-dev", text)
                 self.assertIn("libspa-0.2-dev", text)
 
+    def test_gnu_linux_builder_dockerfiles_install_pipewire_headers(self):
+        root = Path(__file__).resolve().parents[1]
+        dockerfiles = [
+            root / "builds/from_linux_x86/Dockerfile.aarch64-unknown-linux-gnu",
+            root / "builds/from_linux_x86/Dockerfile.base.x86_64-unknown-linux-gnu",
+            root / "builds/from_linux_x86/Dockerfile.build.x86_64-unknown-linux-gnu",
+            root / "builds/from_linux_x86/Dockerfile.x86_64-unknown-linux-gnu",
+            root / "builds/from_macos_arm/Dockerfile.aarch64-unknown-linux-gnu",
+            root / "builds/from_macos_arm/Dockerfile.base.aarch64-unknown-linux-gnu",
+            root / "builds/from_macos_arm/Dockerfile.base.x86_64-unknown-linux-gnu",
+            root / "builds/from_macos_arm/Dockerfile.x86_64-unknown-linux-gnu",
+            root / "builds/linux-distros/Dockerfile.debian-x86_64-gnu",
+            root / "builds/systemwide/Dockerfile.test-linux-arm64",
+        ]
+        for dockerfile in dockerfiles:
+            with self.subTest(dockerfile=dockerfile.relative_to(root)):
+                text = dockerfile.read_text(encoding="utf-8")
+                self.assertIn("libpipewire-0.3-dev", text)
+                self.assertIn("libspa-0.2-dev", text)
+
 
 if __name__ == "__main__":
     unittest.main()
