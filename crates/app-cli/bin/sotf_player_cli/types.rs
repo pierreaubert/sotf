@@ -21,13 +21,57 @@ use std::path::PathBuf;
     reason = "Independent CLI flags preserve the plugin parameter surface"
 )]
 pub(super) struct UpmixerArgs {
-    /// Enable stereo-to-surround upmixer (converts 2ch to multi-channel surround)
+    /// Enable the upmixer for stereo or an explicitly declared surround input
     #[arg(id = "upmixer_enabled", long = "upmixer", default_value_t = false)]
     pub(super) enabled: bool,
 
     /// Upmixer speaker configuration (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
     #[arg(id = "upmixer_config", long = "upmixer-config", default_value = "5.1")]
     pub(super) config: String,
+
+    /// Input channel layout and ordering for surround input
+    #[arg(long = "upmixer-input-layout", value_parser = ["5.0", "5.1", "7.1"])]
+    pub(super) input_layout: Option<String>,
+
+    /// Surround bass routing: off, derived feed, or managed crossover
+    #[arg(long = "upmixer-bass-mode", value_parser = ["off", "derived", "managed"], default_value = "off")]
+    pub(super) bass_mode: String,
+
+    /// Surround bass crossover frequency in Hz
+    #[arg(long = "upmixer-bass-cutoff", default_value_t = 80.0)]
+    pub(super) bass_cutoff_hz: f32,
+
+    /// Comma-separated bass sources: front-left, front-right, center, side-left, side-right, back-left, back-right
+    #[arg(long = "upmixer-bass-sources", value_delimiter = ',')]
+    pub(super) bass_sources: Option<Vec<String>>,
+
+    /// Gain for the derived or redirected bass feed, in dB
+    #[arg(
+        long = "upmixer-bass-gain-db",
+        default_value_t = 0.0,
+        allow_hyphen_values = true
+    )]
+    pub(super) bass_gain_db: f32,
+
+    /// Playback gain applied to the output LFE channel, in dB
+    #[arg(
+        long = "upmixer-lfe-playback-gain-db",
+        default_value_t = 0.0,
+        allow_hyphen_values = true
+    )]
+    pub(super) lfe_playback_gain_db: f32,
+
+    /// Explicitly combine an existing LFE channel with redirected bass
+    #[arg(long = "upmixer-combine-input-lfe", default_value_t = false)]
+    pub(super) combine_input_lfe: bool,
+
+    /// Mute generated heights while leaving bass routing active
+    #[arg(long = "upmixer-bypass-heights", default_value_t = false)]
+    pub(super) bypass_heights: bool,
+
+    /// Bypass surround height and bass processing while keeping latency stable
+    #[arg(long = "upmixer-bypass-surround", default_value_t = false)]
+    pub(super) bypass_surround: bool,
 
     /// Upmixer FFT size (must be power of 2: 1024, 2048, 4096)
     #[arg(

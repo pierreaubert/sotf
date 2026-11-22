@@ -9,8 +9,7 @@
 use serde::{Deserialize, Serialize};
 use sotf_audio::PluginConfig;
 use sotf_audio::plugins::{
-    ChannelConflict, Plugin, PluginSettings, PluginType, UpmixerOutputSettings,
-    plugin_output_channels, resize_matrix,
+    ChannelConflict, Plugin, PluginSettings, PluginType, plugin_output_channels, resize_matrix,
 };
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt::Write as _;
@@ -1535,13 +1534,11 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output:
-                        UpmixerOutputSettings {
-                            binaural_preview, ..
-                        },
+                    output,
+                    multichannel,
                     ..
                 } => {
-                    return Some(if *binaural_preview {
+                    return Some(if output.binaural_preview_active(multichannel) {
                         "2.0".to_string()
                     } else {
                         speaker_config.clone()
@@ -1572,13 +1569,11 @@ impl PluginGraph {
             match &node.plugin.settings {
                 PluginSettings::Upmixer {
                     speaker_config,
-                    output:
-                        UpmixerOutputSettings {
-                            binaural_preview, ..
-                        },
+                    output,
+                    multichannel,
                     ..
                 } => {
-                    config = Some(if *binaural_preview {
+                    config = Some(if output.binaural_preview_active(multichannel) {
                         "2.0".to_string()
                     } else {
                         speaker_config.clone()
@@ -1824,6 +1819,9 @@ impl PluginGraph {
             // Its nodes still have configured input counts, so keep channel
             // controls available and preserve flags on retained channels.
             for node in self.nodes.values_mut() {
+                if matches!(node.plugin.settings, PluginSettings::Upmixer { .. }) {
+                    node.update_channel_counts();
+                }
                 if matches!(
                     node.plugin.settings,
                     PluginSettings::Gate { .. } | PluginSettings::DeEsser { .. }

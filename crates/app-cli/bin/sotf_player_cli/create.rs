@@ -28,7 +28,74 @@ use math_audio_iir_fir::{Biquad, BiquadFilterType};
 use sotf_audio::LoudnessCompensation;
 use sotf_audio::PluginConfig;
 
-pub(super) fn create_upmixer_plugin_config(args: &UpmixerArgs) -> Result<PluginConfig, String> {
+pub(super) fn upmixer_multichannel_params(
+    args: &UpmixerArgs,
+    input_channels: usize,
+) -> Result<sotf_plugins::plugin_upmixer::UpmixerMultichannelParams, String> {
+    use sotf_plugins::plugin_upmixer::{SurroundBassMode, UpmixerMultichannelParams};
+    use sotf_plugins::speaker_config::{ChannelLayout, ChannelRole, get_speaker_config};
+
+    let input_layout = match args.input_layout.as_deref() {
+        Some(name) => {
+            let config = get_speaker_config(name)
+                .ok_or_else(|| format!("Unknown upmixer input layout {name}"))?;
+            let layout = ChannelLayout::from_speaker_config(config)?;
+            layout.validate_for_width(input_channels)?;
+            Some(layout)
+        }
+        None if input_channels == 2 => None,
+        None => {
+            return Err(format!(
+                "Upmixer input has {input_channels} channels; specify --upmixer-input-layout with its actual channel order"
+            ));
+        }
+    };
+    let bass_mode = match args.bass_mode.as_str() {
+        "off" => SurroundBassMode::Off,
+        "derived" => SurroundBassMode::Derived,
+        "managed" => SurroundBassMode::Managed,
+        mode => return Err(format!("Unknown upmixer bass mode {mode}")),
+    };
+    if input_layout.is_none() && bass_mode != SurroundBassMode::Off {
+        return Err("Surround bass modes require an explicit surround input layout".into());
+    }
+    let bass_sources = args
+        .bass_sources
+        .as_ref()
+        .map(|sources| {
+            sources
+                .iter()
+                .map(|source| match source.as_str() {
+                    "front-left" => Ok(ChannelRole::FrontLeft),
+                    "front-right" => Ok(ChannelRole::FrontRight),
+                    "center" => Ok(ChannelRole::FrontCenter),
+                    "side-left" => Ok(ChannelRole::SideLeft),
+                    "side-right" => Ok(ChannelRole::SideRight),
+                    "back-left" => Ok(ChannelRole::BackLeft),
+                    "back-right" => Ok(ChannelRole::BackRight),
+                    _ => Err(format!("Unknown upmixer bass source {source}")),
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })
+        .transpose()?;
+    Ok(UpmixerMultichannelParams {
+        input_layout,
+        bass_mode,
+        bass_cutoff_hz: args.bass_cutoff_hz,
+        bass_sources,
+        bass_source_mask: None,
+        bass_gain_db: args.bass_gain_db,
+        lfe_playback_gain_db: args.lfe_playback_gain_db,
+        combine_input_lfe: args.combine_input_lfe,
+        bypass_heights: args.bypass_heights,
+        bypass_surround: args.bypass_surround,
+    })
+}
+
+pub(super) fn create_upmixer_plugin_config(
+    args: &UpmixerArgs,
+    input_channels: usize,
+) -> Result<PluginConfig, String> {
     use serde_json::json;
 
     if !args.fft_size.is_power_of_two() {
@@ -39,7 +106,8 @@ pub(super) fn create_upmixer_plugin_config(args: &UpmixerArgs) -> Result<PluginC
     }
     let _ = get_speaker_config_channels(&args.config)?;
 
-    let parameters = json!({
+    let multichannel = upmixer_multichannel_params(args, input_channels)?;
+    let mut parameters = json!({
         "speaker_config": args.config,
         "fft_size": args.fft_size,
         "gain_front_direct": args.gain_front_direct,
@@ -82,6 +150,16 @@ pub(super) fn create_upmixer_plugin_config(args: &UpmixerArgs) -> Result<PluginC
         "enable_ml_detection": args.enable_ml_detection,
         "low_latency": args.low_latency,
     });
+    let multichannel = serde_json::to_value(multichannel).map_err(|err| err.to_string())?;
+    parameters
+        .as_object_mut()
+        .expect("upmixer parameters are an object")
+        .extend(
+            multichannel
+                .as_object()
+                .expect("multichannel parameters are an object")
+                .clone(),
+        );
 
     Ok(PluginConfig {
         plugin_type: "upmixer".to_string(),

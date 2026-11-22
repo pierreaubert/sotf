@@ -106,10 +106,16 @@ pub(super) fn apply_structural_side_effects(
         sotf_plugins::param_specs::upmixer::PARAMS,
         "binaural_preview",
     );
+    let upmixer_input_format_idx = sotf_plugins::param_specs::index_of(
+        sotf_plugins::param_specs::upmixer::PARAMS,
+        "input_format",
+    );
 
     match settings {
         PluginSettings::Upmixer { .. }
-            if param_idx == 0 || param_idx == upmixer_binaural_preview_idx =>
+            if param_idx == 0
+                || param_idx == upmixer_binaural_preview_idx
+                || param_idx == upmixer_input_format_idx =>
         {
             *channel_count_changed = true;
         }

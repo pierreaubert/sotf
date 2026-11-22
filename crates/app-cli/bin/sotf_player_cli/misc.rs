@@ -1,17 +1,32 @@
 /// Get channel count for a speaker configuration
 pub(super) fn get_speaker_config_channels(config: &str) -> Result<usize, String> {
-    match config {
-        "2.0" => Ok(2),
-        "5.0" => Ok(5),
-        "5.1" => Ok(6),
-        "7.1" | "5.1.2" => Ok(8),
-        "5.1.4" | "7.1.2" => Ok(10),
-        "7.1.4" => Ok(12),
-        "9.1.4" => Ok(14),
-        "9.1.6" => Ok(16),
-        _ => Err(format!(
-            "Invalid speaker configuration '{config}'. Valid options: 2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6"
-        )),
+    let supported = sotf_plugins::param_specs::upmixer::SPEAKER_CONFIGS;
+    supported
+        .contains(&config)
+        .then(|| sotf_plugins::speaker_config::get_speaker_config(config))
+        .flatten()
+        .map(|layout| layout.total_channels)
+        .ok_or_else(|| {
+            format!(
+                "Invalid speaker configuration '{config}'. Valid options: {}",
+                supported.join(", ")
+            )
+        })
+}
+
+#[cfg(test)]
+mod speaker_config_tests {
+    #[test]
+    fn cli_layouts_use_the_upmixer_speaker_catalog() {
+        for id in sotf_plugins::param_specs::upmixer::SPEAKER_CONFIGS {
+            let layout = sotf_plugins::speaker_config::get_speaker_config(id).unwrap();
+            assert_eq!(
+                super::get_speaker_config_channels(id),
+                Ok(layout.total_channels)
+            );
+        }
+        assert_eq!(super::get_speaker_config_channels("5.1.6"), Ok(12));
+        assert!(super::get_speaker_config_channels("2.1").is_err());
     }
 }
 

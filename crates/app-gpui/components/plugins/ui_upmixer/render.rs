@@ -547,6 +547,19 @@ fn render_compact_config_content(
             text.configuration,
             vec![
                 (
+                    "upmixer-surround-input",
+                    text.label("Surround Input & Bass"),
+                    render_surround_bass_settings(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        state,
+                        layout_scale,
+                        text,
+                        theme,
+                    ),
+                ),
+                (
                     "upmixer-lfe",
                     text.label("LFE & Bass"),
                     render_compact_config_content(
@@ -610,7 +623,12 @@ fn render_compact_config_content(
                     )
                     .into_any_element(),
                 ),
-            ],
+            ]
+            .into_iter()
+            .filter(|(id, _, _)| {
+                state.multichannel.input_layout.is_none() || *id == "upmixer-surround-input"
+            })
+            .collect(),
         ),
         11 => render_upmixer_section_accordion(
             entity.clone(),
@@ -688,7 +706,12 @@ fn render_compact_config_content(
                         theme,
                     ),
                 ),
-            ],
+            ]
+            .into_iter()
+            .filter(|(id, _, _)| {
+                state.multichannel.input_layout.is_none() || *id != "upmixer-hr-direct"
+            })
+            .collect(),
         ),
         12 => render_compact_config_content(
             d,
@@ -960,6 +983,16 @@ fn render_compact_config_content(
             d,
             "Height",
             vec![
+                render_compact_toggle_row(
+                    d,
+                    entity.clone(),
+                    plugin_idx,
+                    "Bypass Heights",
+                    state.multichannel.bypass_heights,
+                    param_idx::BYPASS_HEIGHTS,
+                    theme,
+                    text,
+                ),
                 compact_lane(
                     d,
                     entity.clone(),
@@ -1119,16 +1152,20 @@ fn render_compact_config_content(
                     theme,
                     text,
                 ),
-                render_compact_toggle_row(
-                    d,
-                    entity.clone(),
-                    plugin_idx,
-                    text.label("Binaural"),
-                    state.binaural_preview,
-                    param_idx::BINAURAL_PREVIEW,
-                    theme,
-                    text,
-                ),
+                if state.multichannel.input_layout.is_none() {
+                    render_compact_toggle_row(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        text.label("Binaural"),
+                        state.binaural_preview,
+                        param_idx::BINAURAL_PREVIEW,
+                        theme,
+                        text,
+                    )
+                } else {
+                    div().into_any_element()
+                },
                 render_compact_resolution_choices(
                     d,
                     entity.clone(),
@@ -1218,6 +1255,131 @@ fn render_compact_config_content(
 
 #[allow(
     clippy::too_many_arguments,
+    reason = "GPUI helpers share the complete rendering context"
+)]
+fn render_surround_bass_settings(
+    d: &Ds,
+    entity: Entity<AppState>,
+    plugin_idx: usize,
+    state: &UpmixerRenderState,
+    layout_scale: f32,
+    text: PluginCommonTranslations,
+    theme: &Theme,
+) -> AnyElement {
+    use sotf_plugins::plugin_upmixer::SurroundBassMode;
+    let settings = state.multichannel;
+    let input_format = settings.input_format_index();
+    let mut controls = vec![render_compact_choice_row(
+        d,
+        entity.clone(),
+        plugin_idx,
+        input_format,
+        param_idx::INPUT_FORMAT,
+        "Input",
+        theme,
+    )];
+    if input_format != 0 {
+        controls.push(render_compact_toggle_row(
+            d,
+            entity.clone(),
+            plugin_idx,
+            "Bypass Surround",
+            settings.bypass_surround,
+            param_idx::BYPASS_SURROUND,
+            theme,
+            text,
+        ));
+        let mode = match settings.bass_mode {
+            SurroundBassMode::Off => 0,
+            SurroundBassMode::Derived => 1,
+            SurroundBassMode::Managed => 2,
+        };
+        controls.push(render_compact_choice_row(
+            d,
+            entity.clone(),
+            plugin_idx,
+            mode,
+            param_idx::BASS_MODE,
+            "Bass",
+            theme,
+        ));
+        for (label, value, key, index, unit) in [
+            (
+                "Crossover",
+                f64::from(settings.bass_cutoff_hz),
+                "bass_cutoff_hz",
+                param_idx::BASS_CUTOFF_HZ,
+                "Hz",
+            ),
+            (
+                "Bass Gain",
+                f64::from(settings.bass_gain_db),
+                "bass_gain_db",
+                param_idx::BASS_GAIN_DB,
+                "dB",
+            ),
+            (
+                "LFE Playback",
+                f64::from(settings.lfe_playback_gain_db),
+                "lfe_playback_gain_db",
+                param_idx::LFE_PLAYBACK_GAIN_DB,
+                "dB",
+            ),
+        ] {
+            controls.push(compact_lane(
+                d,
+                entity.clone(),
+                plugin_idx,
+                state,
+                layout_scale,
+                label,
+                value,
+                key,
+                index,
+                unit,
+                theme,
+            ));
+        }
+        controls.push(render_compact_toggle_row(
+            d,
+            entity.clone(),
+            plugin_idx,
+            "Combine existing LFE",
+            settings.combine_input_lfe,
+            param_idx::COMBINE_INPUT_LFE,
+            theme,
+            text,
+        ));
+        let mask = settings.source_mask();
+        for (bit, label, index) in [
+            (0, "Front Left", param_idx::BASS_SOURCE_FRONT_LEFT),
+            (1, "Front Right", param_idx::BASS_SOURCE_FRONT_RIGHT),
+            (2, "Center", param_idx::BASS_SOURCE_CENTER),
+            (3, "Side Left", param_idx::BASS_SOURCE_SIDE_LEFT),
+            (4, "Side Right", param_idx::BASS_SOURCE_SIDE_RIGHT),
+            (5, "Back Left", param_idx::BASS_SOURCE_BACK_LEFT),
+            (6, "Back Right", param_idx::BASS_SOURCE_BACK_RIGHT),
+        ] {
+            controls.push(render_compact_toggle_row(
+                d,
+                entity.clone(),
+                plugin_idx,
+                label,
+                mask & (1 << bit) != 0,
+                index,
+                theme,
+                text,
+            ));
+        }
+        controls.push(gpui_ui_kit::Text::caption(
+            "Derived bass retains full-range mains. Managed bass uses LFE as the subwoofer feed; disable downstream bass management for these channels. Summed bass can exceed digital headroom.",
+        ).muted(true).into_any_element());
+    }
+    render_compact_lane_group(d, "Surround Input & Bass", controls, theme).into_any_element()
+}
+
+#[allow(
+    clippy::too_many_arguments,
     reason = "GPUI rendering and callback interfaces accept the complete UI context"
 )]
 fn render_compact_resolution_choices(
@@ -1276,7 +1438,10 @@ fn render_compact_choice_row(
                 .choice_labels()
                 .iter()
                 .enumerate()
-                .map(|(index, label)| ButtonSetOption::new(index.to_string(), *label))
+                .map(|(index, label)| {
+                    ButtonSetOption::new(index.to_string(), *label)
+                        .disabled(param_idx == param_idx::INPUT_FORMAT && index == 4)
+                })
                 .collect(),
         )
         .selected(selected.to_string())
@@ -1509,36 +1674,40 @@ fn render_upmixer_summary_strip(
             state.speaker_config.to_string(),
             theme,
         ))
-        .child(render_summary_chip(
-            d,
-            text.upmixer_summary.width,
-            format_compact_value(state.stereo_width, ""),
-            theme,
-        ))
-        .child(render_summary_chip(
-            d,
-            text.upmixer_summary.center,
-            format_compact_value(state.center_spread, ""),
-            theme,
-        ))
-        .child(render_summary_chip(
-            d,
-            text.upmixer_summary.rear,
-            format_compact_value(state.gain_rear_ambient, "x"),
-            theme,
-        ))
+        .when(state.multichannel.input_layout.is_none(), |row| {
+            row.child(render_summary_chip(
+                d,
+                text.upmixer_summary.width,
+                format_compact_value(state.stereo_width, ""),
+                theme,
+            ))
+            .child(render_summary_chip(
+                d,
+                text.upmixer_summary.center,
+                format_compact_value(state.center_spread, ""),
+                theme,
+            ))
+            .child(render_summary_chip(
+                d,
+                text.upmixer_summary.rear,
+                format_compact_value(state.gain_rear_ambient, "x"),
+                theme,
+            ))
+        })
         .child(render_summary_chip(
             d,
             text.upmixer_summary.height,
             format_compact_value(state.height_gain, "x"),
             theme,
         ))
-        .child(render_summary_chip(
-            d,
-            text.upmixer_summary.lfe,
-            format_compact_value(state.lfe_gain, "x"),
-            theme,
-        ))
+        .when(state.multichannel.input_layout.is_none(), |row| {
+            row.child(render_summary_chip(
+                d,
+                text.upmixer_summary.lfe,
+                format_compact_value(state.lfe_gain, "x"),
+                theme,
+            ))
+        })
         .child(render_summary_chip(
             d,
             text.upmixer_summary.cap,
@@ -1586,7 +1755,45 @@ fn render_primary_control_strip(
     state: &UpmixerRenderState,
     layout_scale: f32,
     theme: &Theme,
-) -> impl IntoElement {
+) -> AnyElement {
+    if state.multichannel.input_layout.is_some() {
+        return div()
+            .w_full()
+            .child(render_control_group(
+                d,
+                "Height",
+                vec![
+                    compact_lane(
+                        d,
+                        entity.clone(),
+                        plugin_idx,
+                        state,
+                        layout_scale,
+                        "Height Gain",
+                        state.height_gain,
+                        "height_gain",
+                        param_idx::HEIGHT_GAIN,
+                        "x",
+                        theme,
+                    ),
+                    compact_lane(
+                        d,
+                        entity,
+                        plugin_idx,
+                        state,
+                        layout_scale,
+                        "Height Safety",
+                        state.safety_cap_db,
+                        "safety_cap_db",
+                        param_idx::SAFETY_CAP_DB,
+                        "dB",
+                        theme,
+                    ),
+                ],
+                theme,
+            ))
+            .into_any_element();
+    }
     div()
         .w_full()
         .min_w_0()
@@ -1726,6 +1933,7 @@ fn render_primary_control_strip(
             ],
             theme,
         ))
+        .into_any_element()
 }
 
 fn render_control_group(
