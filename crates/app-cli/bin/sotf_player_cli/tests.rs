@@ -3,6 +3,82 @@ use super::parse::parse_filters;
 use super::parse::parse_loudness_compensation;
 use super::types::Cli;
 
+fn upmixer_args(flags: &[&str]) -> super::types::UpmixerArgs {
+    use clap::Parser;
+    let mut args = vec!["player-cli", "play", "input.wav", "--upmixer"];
+    args.extend_from_slice(flags);
+    match Cli::try_parse_from(args)
+        .expect("valid play arguments")
+        .command
+    {
+        super::types::Commands::Play { plugins, .. } => plugins.upmixer,
+        _ => panic!("expected play command"),
+    }
+}
+
+#[test]
+fn upmixer_cli_preserves_stereo_and_routes_declared_surround_layouts() {
+    use super::create::create_upmixer_plugin_config;
+    use sotf_plugins::factory::create_plugin;
+
+    let stereo = create_upmixer_plugin_config(&upmixer_args(&[]), 2).unwrap();
+    assert!(stereo.parameters["input_layout"].is_null());
+    for (layout, channels) in [("5.0", 5), ("5.1", 6), ("7.1", 8)] {
+        let args = upmixer_args(&[
+            "--upmixer-input-layout",
+            layout,
+            "--upmixer-config",
+            "7.1.4",
+        ]);
+        let config = create_upmixer_plugin_config(&args, channels).unwrap();
+        let plugin =
+            create_plugin(&config.plugin_type, &config.parameters, channels, 48_000).unwrap();
+        assert_eq!(plugin.input_channels(), channels);
+        assert_eq!(plugin.output_channels(), 12);
+    }
+    assert!(create_upmixer_plugin_config(&upmixer_args(&[]), 5).is_err());
+    assert!(
+        create_upmixer_plugin_config(&upmixer_args(&["--upmixer-input-layout", "5.1"]), 5).is_err()
+    );
+}
+
+#[test]
+fn upmixer_cli_passes_bass_routing_to_the_plugin() {
+    use super::create::create_upmixer_plugin_config;
+    use sotf_plugins::factory::create_plugin;
+    let args = upmixer_args(&[
+        "--upmixer-input-layout",
+        "5.0",
+        "--upmixer-config",
+        "5.1",
+        "--upmixer-bass-mode",
+        "managed",
+        "--upmixer-bass-sources",
+        "front-left,center",
+        "--upmixer-bass-cutoff",
+        "90",
+        "--upmixer-bass-gain-db",
+        "-3",
+        "--upmixer-bypass-surround",
+    ]);
+    let config = create_upmixer_plugin_config(&args, 5).unwrap();
+    assert_eq!(config.parameters["bass_mode"], "managed");
+    assert_eq!(
+        config.parameters["bass_sources"],
+        serde_json::json!(["front_left", "front_center"])
+    );
+    assert_eq!(config.parameters["bass_cutoff_hz"], 90.0);
+    assert_eq!(config.parameters["bypass_surround"], true);
+    assert!(create_plugin(&config.plugin_type, &config.parameters, 5, 48_000).is_ok());
+    let invalid = upmixer_args(&[
+        "--upmixer-input-layout",
+        "5.0",
+        "--upmixer-bass-sources",
+        "lfe",
+    ]);
+    assert!(create_upmixer_plugin_config(&invalid, 5).is_err());
+}
+
 #[test]
 fn cli_definition_has_unique_argument_ids() {
     use clap::CommandFactory;

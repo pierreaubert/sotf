@@ -1117,6 +1117,7 @@ pub(super) fn render_upmixer(
                 auto_gain_max_db,
                 auto_gain_smoothing_ms,
             },
+        multichannel,
     } = ctx.settings
     {
         let (upmixer_tab, expanded_sections, loudness_info, spatial_spider) = {
@@ -1138,6 +1139,7 @@ pub(super) fn render_upmixer(
             ctx.plugin_idx,
             ui_upmixer::UpmixerRenderState {
                 speaker_config,
+                multichannel,
                 gain_front_direct: *gain_front_direct,
                 gain_front_ambient: *gain_front_ambient,
                 gain_rear_ambient: *gain_rear_ambient,

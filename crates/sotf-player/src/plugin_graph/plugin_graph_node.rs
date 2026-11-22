@@ -1,9 +1,10 @@
-use super::misc::upmixer_settings_output_channels;
 use super::node_position::NodePosition;
 use super::types::GraphNodeId;
 use super::types::NodeRole;
 use serde::{Deserialize, Serialize};
-use sotf_audio::plugins::{Plugin, PluginSettings, UpmixerOutputSettings, upmixer_output_channels};
+use sotf_audio::plugins::{
+    Plugin, PluginSettings, plugin_output_channels, upmixer_output_channels,
+};
 use uuid::Uuid;
 
 /// A plugin node in the graph
@@ -45,17 +46,10 @@ impl PluginGraphNode {
     /// Get default channel counts based on plugin type
     pub(super) fn channel_counts_for(plugin: &Plugin) -> (usize, usize) {
         match &plugin.settings {
-            PluginSettings::Upmixer {
-                speaker_config,
-                output:
-                    UpmixerOutputSettings {
-                        binaural_preview, ..
-                    },
-                ..
-            } => (
-                2,
-                upmixer_settings_output_channels(speaker_config, *binaural_preview),
-            ),
+            settings @ PluginSettings::Upmixer { .. } => {
+                let input = settings.required_input_channels().unwrap_or(2);
+                (input, plugin_output_channels(settings, input))
+            }
             PluginSettings::AAE { speaker_config, .. } => {
                 (2, upmixer_output_channels(speaker_config))
             }

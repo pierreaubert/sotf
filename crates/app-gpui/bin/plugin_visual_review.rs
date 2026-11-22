@@ -79,6 +79,14 @@ mod macos {
         #[arg(long)]
         plugin: Option<String>,
 
+        /// Seed an upmixer surround-input and managed-bass scenario.
+        #[arg(long, value_parser = ["5.0", "5.1", "7.1"])]
+        upmixer_input: Option<String>,
+
+        /// Capture one viewport instead of the standard set, for example 1050x1600.
+        #[arg(long)]
+        viewport: Option<String>,
+
         /// Capture the rack detail or the external-plugin Settings surface.
         #[arg(long, value_enum, default_value_t)]
         surface: ReviewSurface,
@@ -292,6 +300,7 @@ mod macos {
         height: u32,
         plugin_types: &'a [PluginType],
         external_fixture: &'a Path,
+        upmixer_input: Option<&'a str>,
         surface: ReviewSurface,
         zoom: f32,
     }
@@ -315,6 +324,7 @@ mod macos {
             height,
             plugin_types,
             external_fixture,
+            upmixer_input,
             surface,
             zoom,
         } = capture;
@@ -343,6 +353,45 @@ mod macos {
                         state.app.add_plugin(&requested_type);
                     }
                     let selected = state.app.plugin_state.selected_plugin_index;
+                    if let Some(input) = upmixer_input
+                        && requested_type == PluginType::Upmixer
+                    {
+                        let plugin = state
+                            .app
+                            .plugin_state
+                            .graph
+                            .get_plugin_mut(selected)
+                            .ok_or_else(|| anyhow!("upmixer visual-review node is missing"))?;
+                        let PluginSettings::Upmixer {
+                            speaker_config,
+                            multichannel,
+                            ..
+                        } = &mut plugin.settings
+                        else {
+                            return Err(anyhow!("upmixer visual-review settings are missing"));
+                        };
+                        *speaker_config = "7.1.4".into();
+                        let index = match input {
+                            "5.0" => 1,
+                            "5.1" => 2,
+                            "7.1" => 3,
+                            _ => return Err(anyhow!("unsupported upmixer input {input}")),
+                        };
+                        multichannel.set_input_format_index(index).map_err(|error| anyhow!(error))?;
+                        multichannel.combine_input_lfe = input != "5.0";
+                        multichannel.bass_mode = sotf_plugins::plugin_upmixer::SurroundBassMode::Managed;
+                        state.app.plugin_ui.upmixer_expanded_sections =
+                            vec!["upmixer-surround-input".into()];
+                        let input_node = state.app.plugin_state.graph.input_node_mut()
+                            .ok_or_else(|| anyhow!("visual-review input node is missing"))?;
+                        input_node.channels = match input {
+                            "5.0" => 5,
+                            "5.1" => 6,
+                            "7.1" => 8,
+                            _ => unreachable!("validated upmixer input"),
+                        };
+                        state.app.plugin_state.graph.update_channel_dependent_plugins();
+                    }
                     state.app.plugin_state.editing_plugin_index = Some(selected);
                     state.app.plugin_state.plugin_param_selection = 0;
                     state.app.plugin_state.update_state.pending_plugin_update = None;
@@ -508,6 +557,7 @@ mod macos {
                 "requested_plugin": requested_name,
                 "rendered_plugin": rendered_name,
                 "surface": surface_name,
+                "upmixer_input": upmixer_input,
                 "viewport": { "width": width, "height": height },
                 "file": filename,
                 "accessibility": accessibility,
@@ -574,11 +624,28 @@ mod macos {
             plugin_types
         };
 
+        if args.upmixer_input.is_some() && plugin_types != [PluginType::Upmixer] {
+            return Err(anyhow!("--upmixer-input requires --plugin Upmixer"));
+        }
+
         let mut manifest = Vec::new();
         if !args.zoom.is_finite() || !(0.5..=2.0).contains(&args.zoom) {
             return Err(anyhow!("--zoom must be a finite scale between 0.5 and 2.0"));
         }
-        for (width, height) in VIEWPORTS {
+        let viewports = if let Some(viewport) = args.viewport.as_deref() {
+            let (width, height) = viewport
+                .split_once('x')
+                .ok_or_else(|| anyhow!("--viewport must have the form WIDTHxHEIGHT"))?;
+            let width: u32 = width.parse().context("invalid viewport width")?;
+            let height: u32 = height.parse().context("invalid viewport height")?;
+            if !(200..=4096).contains(&width) || !(200..=4096).contains(&height) {
+                return Err(anyhow!("viewport dimensions must be between 200 and 4096"));
+            }
+            vec![(width, height)]
+        } else {
+            VIEWPORTS.to_vec()
+        };
+        for (width, height) in viewports {
             capture_viewport(
                 &mut cx,
                 ViewportCapture {
@@ -587,6 +654,7 @@ mod macos {
                     height,
                     plugin_types: &plugin_types,
                     external_fixture: &external_fixture,
+                    upmixer_input: args.upmixer_input.as_deref(),
                     surface: args.surface,
                     zoom: args.zoom,
                 },

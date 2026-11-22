@@ -50,6 +50,21 @@ pub(super) mod param_idx {
     pub const AUTO_GAIN_ENABLED: usize = index_of(P, "auto_gain_enabled");
     pub const AUTO_GAIN_MAX_DB: usize = index_of(P, "auto_gain_max_db");
     pub const AUTO_GAIN_SMOOTHING_MS: usize = index_of(P, "auto_gain_smoothing_ms");
+    pub const BYPASS_HEIGHTS: usize = index_of(P, "bypass_heights");
+    pub const BYPASS_SURROUND: usize = index_of(P, "bypass_surround");
+    pub const INPUT_FORMAT: usize = index_of(P, "input_format");
+    pub const BASS_MODE: usize = index_of(P, "bass_mode");
+    pub const BASS_CUTOFF_HZ: usize = index_of(P, "bass_cutoff_hz");
+    pub const BASS_GAIN_DB: usize = index_of(P, "bass_gain_db");
+    pub const LFE_PLAYBACK_GAIN_DB: usize = index_of(P, "lfe_playback_gain_db");
+    pub const COMBINE_INPUT_LFE: usize = index_of(P, "combine_input_lfe");
+    pub const BASS_SOURCE_FRONT_LEFT: usize = index_of(P, "bass_source_front_left");
+    pub const BASS_SOURCE_FRONT_RIGHT: usize = index_of(P, "bass_source_front_right");
+    pub const BASS_SOURCE_CENTER: usize = index_of(P, "bass_source_center");
+    pub const BASS_SOURCE_SIDE_LEFT: usize = index_of(P, "bass_source_side_left");
+    pub const BASS_SOURCE_SIDE_RIGHT: usize = index_of(P, "bass_source_side_right");
+    pub const BASS_SOURCE_BACK_LEFT: usize = index_of(P, "bass_source_back_left");
+    pub const BASS_SOURCE_BACK_RIGHT: usize = index_of(P, "bass_source_back_right");
 }
 
 /// Configuration menu items

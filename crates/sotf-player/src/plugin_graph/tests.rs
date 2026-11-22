@@ -231,6 +231,80 @@ fn test_upmixer_propagates_per_channel_connections_through_chain() {
 }
 
 #[test]
+fn surround_upmixer_graph_routes_every_input_with_stereo_preview_saved() {
+    use sotf_plugins::param_specs::{index_of, upmixer::PARAMS};
+
+    for (format_index, input_channels) in [(1, 5), (2, 6), (3, 8)] {
+        let mut settings = PluginSettings::default_for(&PluginType::Upmixer).unwrap();
+        if let PluginSettings::Upmixer {
+            speaker_config,
+            output,
+            ..
+        } = &mut settings
+        {
+            *speaker_config = "7.1.4".into();
+            output.binaural_preview = true;
+        }
+        settings.set_param_value(index_of(PARAMS, "input_format"), format_index as f64);
+        let mut graph = PluginGraph::new();
+        let input = graph.add_special_node(
+            SpecialNodeType::Input,
+            NodePosition::new(0.0, 0.0),
+            input_channels,
+        );
+        let upmixer = graph
+            .add_plugin_node_with_settings_role(
+                settings,
+                NodePosition::new(1.0, 0.0),
+                NodeRole::User,
+            )
+            .unwrap();
+        let output =
+            graph.add_special_node(SpecialNodeType::Output, NodePosition::new(2.0, 0.0), 12);
+        assert_eq!(graph.node_input_channels(upmixer), input_channels);
+        assert_eq!(graph.node_output_channels(upmixer), 12);
+        graph
+            .nodes
+            .get_mut(&upmixer)
+            .unwrap()
+            .update_channel_counts();
+        assert_eq!(graph.node_input_channels(upmixer), input_channels);
+        assert_eq!(graph.node_output_channels(upmixer), 12);
+        for channel in 0..input_channels {
+            graph
+                .add_connection(input, channel, upmixer, channel)
+                .unwrap();
+        }
+        for channel in 0..12 {
+            graph
+                .add_connection(upmixer, channel, output, channel)
+                .unwrap();
+        }
+        graph.validate_routing().unwrap();
+        assert_eq!(graph.output_speaker_config().as_deref(), Some("7.1.4"));
+        assert_eq!(graph.speaker_config_at_index(1).as_deref(), Some("7.1.4"));
+    }
+}
+
+#[test]
+fn surround_upmixer_ports_follow_edits_in_an_unfinished_graph() {
+    use sotf_plugins::param_specs::{index_of, upmixer::PARAMS};
+
+    let mut graph = PluginGraph::new();
+    let node = graph
+        .add_plugin_node(&PluginType::Upmixer, NodePosition::new(0.0, 0.0))
+        .unwrap();
+    let settings = &mut graph.nodes.get_mut(&node).unwrap().plugin.settings;
+    if let PluginSettings::Upmixer { speaker_config, .. } = settings {
+        *speaker_config = "7.1.4".into();
+    }
+    settings.set_param_value(index_of(PARAMS, "input_format"), 3.0);
+    graph.update_channel_dependent_plugins();
+    assert_eq!(graph.node_input_channels(node), 8);
+    assert_eq!(graph.node_output_channels(node), 12);
+}
+
+#[test]
 fn test_add_user_plugin() {
     let mut g = PluginGraph::with_default_rack();
     let eq_id = g.add_user_plugin(&PluginType::EQ).unwrap();

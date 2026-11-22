@@ -9,6 +9,7 @@ use sotf_plugins::param_specs::upmixer::PARAMS as UP;
 )]
 pub struct UpmixerRenderState<'a> {
     pub speaker_config: &'a str,
+    pub multichannel: &'a sotf_plugins::plugin_upmixer::UpmixerMultichannelParams,
     // Gains (vertical sliders)
     pub gain_front_direct: f64,
     pub gain_front_ambient: f64,

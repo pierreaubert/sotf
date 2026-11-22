@@ -26,6 +26,7 @@ use super::create::create_pnd_plugin_config;
 use super::create::create_spectrum_analyzer_plugin_config;
 use super::create::create_upmixer_plugin_config;
 use super::create::create_xtc_plugin_config;
+use super::create::upmixer_multichannel_params;
 use super::error_output::redact_secrets;
 use super::misc::get_speaker_config_channels;
 use super::parse::parse_channel_mapping;
@@ -308,12 +309,9 @@ pub(super) fn build_rack_mode_plugins(
     for plugin_name in rack {
         match plugin_name.to_lowercase().as_str() {
             "upmixer" => {
-                if audio_info.spec.channels != 2 {
-                    return Err(format!(
-                        "Upmixer requires stereo input, got {} channels",
-                        audio_info.spec.channels
-                    ));
-                }
+                let input_channels =
+                    chain.output_channels_for_input(audio_info.spec.channels as usize);
+                let multichannel = upmixer_multichannel_params(&plugins.upmixer, input_channels)?;
 
                 let idx = chain.add_plugin(&PluginType::Upmixer)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
@@ -397,6 +395,7 @@ pub(super) fn build_rack_mode_plugins(
                             auto_gain_max_db: 12.0,
                             auto_gain_smoothing_ms: 100.0,
                         },
+                        multichannel,
                     };
                 }
                 log::info!("Rack: Added Upmixer plugin ({})", plugins.upmixer.config);
@@ -1166,20 +1165,15 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 2. Upmixer (if enabled)
     let output_channels = if plugins.upmixer.enabled {
-        if output_channels != 2 {
-            return Err(format!(
-                "Upmixer requires stereo input, got {output_channels} channels"
-            ));
-        }
-
         let output_channel_count = get_speaker_config_channels(&plugins.upmixer.config)?;
 
         log::info!(
-            "Enabling stereo-to-{} upmixer plugin",
+            "Enabling upmixer for {} channels to {}",
+            output_channels,
             plugins.upmixer.config
         );
 
-        let upmixer_plugin = create_upmixer_plugin_config(&plugins.upmixer)?;
+        let upmixer_plugin = create_upmixer_plugin_config(&plugins.upmixer, output_channels)?;
         plugin_configs.push(upmixer_plugin);
         output_channel_count
     } else {
