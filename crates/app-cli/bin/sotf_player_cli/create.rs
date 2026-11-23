@@ -587,12 +587,35 @@ pub(super) fn create_band_merge_plugin_config(args: &BandMergeArgs) -> sotf_audi
 pub(super) fn create_downmix_plugin_config(
     args: &DownmixArgs,
     input_channels: usize,
-) -> sotf_audio::PluginConfig {
+    known_input_layout: Option<&str>,
+) -> Result<sotf_audio::PluginConfig, String> {
     use serde_json::json;
-    PluginConfig {
+    // An explicitly declared layout wins and must match the chain width.
+    // Otherwise thread the layout a known upstream producer (the upmixer)
+    // declares, but only while the width still agrees, so a same-width
+    // layout such as 5.1.6 is never guessed from the channel count alone
+    // and a stale layout is never claimed after a width change.
+    let width_of = |name: &str| {
+        sotf_plugins::speaker_config::get_speaker_config(name).map(|c| c.total_channels)
+    };
+    let input_layout = match args.input_layout.as_deref() {
+        Some(name) => {
+            let width =
+                width_of(name).ok_or_else(|| format!("Unknown downmix input layout {name}"))?;
+            if width != input_channels {
+                return Err(format!(
+                    "Downmix input layout {name} has {width} channels, but the chain provides {input_channels}"
+                ));
+            }
+            Some(name)
+        }
+        None => known_input_layout.filter(|name| width_of(name) == Some(input_channels)),
+    };
+    Ok(PluginConfig {
         plugin_type: "downmix".to_string(),
         parameters: json!({
             "input_channels": input_channels,
+            "input_layout": input_layout,
             "center_gain_db": args.center_gain_db,
             "surround_gain_db": args.surround_gain_db,
             "height_gain_db": args.height_gain_db,
@@ -602,7 +625,7 @@ pub(super) fn create_downmix_plugin_config(
             "phase_blend_high_hz": args.phase_blend_high_hz,
             "itu_mode": args.itu_mode,
         }),
-    }
+    })
 }
 
 pub(super) fn create_mono_to_stereo_plugin_config(

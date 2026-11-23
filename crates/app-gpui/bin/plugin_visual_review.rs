@@ -80,7 +80,7 @@ mod macos {
         plugin: Option<String>,
 
         /// Seed an upmixer surround-input and managed-bass scenario.
-        #[arg(long, value_parser = ["5.0", "5.1", "7.1"])]
+        #[arg(long, value_parser = ["5.0", "5.1", "7.0", "7.1"])]
         upmixer_input: Option<String>,
 
         /// Capture one viewport instead of the standard set, for example 1050x1600.
@@ -371,25 +371,21 @@ mod macos {
                             return Err(anyhow!("upmixer visual-review settings are missing"));
                         };
                         *speaker_config = "7.1.4".into();
-                        let index = match input {
-                            "5.0" => 1,
-                            "5.1" => 2,
-                            "7.1" => 3,
-                            _ => return Err(anyhow!("unsupported upmixer input {input}")),
-                        };
+                        let index = sotf_plugins::param_specs::upmixer::INPUT_FORMATS
+                            .iter()
+                            .position(|id| *id == input)
+                            .ok_or_else(|| anyhow!("unsupported upmixer input {input}"))?;
                         multichannel.set_input_format_index(index).map_err(|error| anyhow!(error))?;
-                        multichannel.combine_input_lfe = input != "5.0";
+                        multichannel.combine_input_lfe = matches!(input, "5.1" | "7.1");
                         multichannel.bass_mode = sotf_plugins::plugin_upmixer::SurroundBassMode::Managed;
                         state.app.plugin_ui.upmixer_expanded_sections =
                             vec!["upmixer-surround-input".into()];
                         let input_node = state.app.plugin_state.graph.input_node_mut()
                             .ok_or_else(|| anyhow!("visual-review input node is missing"))?;
-                        input_node.channels = match input {
-                            "5.0" => 5,
-                            "5.1" => 6,
-                            "7.1" => 8,
-                            _ => unreachable!("validated upmixer input"),
-                        };
+                        input_node.channels =
+                            sotf_plugins::speaker_config::get_speaker_config(input)
+                                .ok_or_else(|| anyhow!("unsupported upmixer input {input}"))?
+                                .total_channels;
                         state.app.plugin_state.graph.update_channel_dependent_plugins();
                     }
                     state.app.plugin_state.editing_plugin_index = Some(selected);

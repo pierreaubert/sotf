@@ -23,7 +23,7 @@ fn upmixer_cli_preserves_stereo_and_routes_declared_surround_layouts() {
 
     let stereo = create_upmixer_plugin_config(&upmixer_args(&[]), 2).unwrap();
     assert!(stereo.parameters["input_layout"].is_null());
-    for (layout, channels) in [("5.0", 5), ("5.1", 6), ("7.1", 8)] {
+    for (layout, channels) in [("5.0", 5), ("5.1", 6), ("7.0", 7), ("7.1", 8)] {
         let args = upmixer_args(&[
             "--upmixer-input-layout",
             layout,
@@ -77,6 +77,55 @@ fn upmixer_cli_passes_bass_routing_to_the_plugin() {
         "lfe",
     ]);
     assert!(create_upmixer_plugin_config(&invalid, 5).is_err());
+}
+
+fn downmix_args(flags: &[&str]) -> super::types::DownmixArgs {
+    use clap::Parser;
+    let mut args = vec!["player-cli", "play", "input.wav", "--downmix"];
+    args.extend_from_slice(flags);
+    match Cli::try_parse_from(args)
+        .expect("valid play arguments")
+        .command
+    {
+        super::types::Commands::Play { plugins, .. } => plugins.downmix,
+        _ => panic!("expected play command"),
+    }
+}
+
+#[test]
+fn downmix_cli_threads_the_known_upmixer_layout_at_twelve_channels() {
+    use super::create::create_downmix_plugin_config;
+    use sotf_plugins::factory::create_plugin;
+
+    // Without a declared layout, 12 channels stay ambiguous and the
+    // downmix plugin refuses instead of reading 5.1.6 as 7.1.4.
+    let undeclared = create_downmix_plugin_config(&downmix_args(&[]), 12, None).unwrap();
+    assert!(undeclared.parameters["input_layout"].is_null());
+    assert!(create_plugin(&undeclared.plugin_type, &undeclared.parameters, 12, 48_000).is_err());
+
+    // The layout a known upstream upmixer declares is threaded through.
+    let threaded = create_downmix_plugin_config(&downmix_args(&[]), 12, Some("5.1.6")).unwrap();
+    assert_eq!(threaded.parameters["input_layout"], "5.1.6");
+    let plugin = create_plugin(&threaded.plugin_type, &threaded.parameters, 12, 48_000).unwrap();
+    assert_eq!(plugin.input_channels(), 12);
+    assert_eq!(plugin.output_channels(), 2);
+
+    // An explicit layout wins and must match the chain width.
+    let explicit = create_downmix_plugin_config(
+        &downmix_args(&["--downmix-input-layout", "7.1.4"]),
+        12,
+        Some("5.1.6"),
+    )
+    .unwrap();
+    assert_eq!(explicit.parameters["input_layout"], "7.1.4");
+    assert!(
+        create_downmix_plugin_config(&downmix_args(&["--downmix-input-layout", "5.1"]), 12, None,)
+            .is_err()
+    );
+    assert!(
+        create_downmix_plugin_config(&downmix_args(&["--downmix-input-layout", "nope"]), 12, None,)
+            .is_err()
+    );
 }
 
 #[test]

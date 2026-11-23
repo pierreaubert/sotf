@@ -958,11 +958,34 @@ pub(super) fn build_rack_mode_plugins(
             }
             "downmix" => {
                 let input_channels = chain.output_channels();
+                // Thread the layout the chain already knows (for example
+                // from an upstream upmixer) unless the user declared one,
+                // and only while its width still matches the chain.
+                let input_layout = match &plugins.downmix.input_layout {
+                    Some(name) => {
+                        let width = sotf_plugins::speaker_config::get_speaker_config(name)
+                            .ok_or_else(|| format!("Unknown downmix input layout {name}"))?
+                            .total_channels;
+                        if width != input_channels {
+                            return Err(format!(
+                                "Downmix input layout {name} has {width} channels, but the chain provides {input_channels}"
+                            ));
+                        }
+                        Some(name.clone())
+                    }
+                    None => chain
+                        .output_speaker_config()
+                        .map(str::to_string)
+                        .filter(|name| {
+                            sotf_plugins::speaker_config::get_speaker_config(name)
+                                .is_some_and(|c| c.total_channels == input_channels)
+                        }),
+                };
                 let idx = chain.add_plugin(&PluginType::Downmix)?;
                 if let Some(plugin) = chain.get_plugin_mut(idx) {
                     plugin.settings = PluginSettings::Downmix {
                         input_channels,
-                        input_layout: None,
+                        input_layout,
                         center_gain_db: f64::from(plugins.downmix.center_gain_db),
                         surround_gain_db: f64::from(plugins.downmix.surround_gain_db),
                         height_gain_db: f64::from(plugins.downmix.height_gain_db),
@@ -1370,7 +1393,12 @@ pub(super) fn build_traditional_mode_plugins(
 
     // 23. Downmix
     let output_channels = if plugins.downmix.enabled {
-        let downmix_plugin = create_downmix_plugin_config(&plugins.downmix, output_channels);
+        // The matrix plugin can reorder channels at the same width, so the
+        // upmixer output layout is only known downstream without it.
+        let known_layout = (plugins.upmixer.enabled && !plugins.matrix.enabled)
+            .then_some(plugins.upmixer.config.as_str());
+        let downmix_plugin =
+            create_downmix_plugin_config(&plugins.downmix, output_channels, known_layout)?;
         plugin_configs.push(downmix_plugin);
         log::info!("Enabled downmix plugin ({output_channels}ch -> 2ch)");
         2

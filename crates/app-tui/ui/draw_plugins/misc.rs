@@ -7,6 +7,7 @@ pub(crate) fn format_channel_config(channels: usize) -> &'static str {
         4 => "Quad",
         5 => "5.0",
         6 => "5.1",
+        7 => "7.0",
         8 => "7.1",
         10 => "7.1.2",
         12 => "7.1.4",

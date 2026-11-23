@@ -25,12 +25,12 @@ pub(super) struct UpmixerArgs {
     #[arg(id = "upmixer_enabled", long = "upmixer", default_value_t = false)]
     pub(super) enabled: bool,
 
-    /// Upmixer speaker configuration (2.0, 5.0, 5.1, 7.1, 5.1.2, 5.1.4, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
+    /// Upmixer speaker configuration (2.0, 5.0, 5.1, 7.0, 7.1, 5.1.2, 5.1.4, 5.1.6, 7.1.2, 7.1.4, 9.1.4, 9.1.6)
     #[arg(id = "upmixer_config", long = "upmixer-config", default_value = "5.1")]
     pub(super) config: String,
 
     /// Input channel layout and ordering for surround input
-    #[arg(long = "upmixer-input-layout", value_parser = ["5.0", "5.1", "7.1"])]
+    #[arg(long = "upmixer-input-layout", value_parser = ["5.0", "5.1", "7.0", "7.1"])]
     pub(super) input_layout: Option<String>,
 
     /// Surround bass routing: off, derived feed, or managed crossover
@@ -1492,6 +1492,11 @@ pub(super) struct DownmixArgs {
     /// Enable downmix plugin (phase-coherent surround to stereo)
     #[arg(id = "downmix_enabled", long = "downmix", default_value_t = false)]
     pub(super) enabled: bool,
+
+    /// Input speaker layout for the downmix (required for ambiguous 8-, 10-,
+    /// and 12-channel inputs when no upstream plugin declares the layout)
+    #[arg(id = "downmix_input_layout", long = "downmix-input-layout")]
+    pub(super) input_layout: Option<String>,
 
     /// Downmix center channel gain in dB (-12 to 0)
     #[arg(long = "downmix-center-gain-db", default_value = "-3.0")]
