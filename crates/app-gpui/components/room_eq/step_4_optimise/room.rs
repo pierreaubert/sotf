@@ -1,3 +1,4 @@
+use super::super::step_6_export::misc::{EXPORT_FORMATS, export_format_for_index};
 use super::compute::compute_group_delay_from_curve;
 use super::compute::compute_phase_response_from_curve;
 use super::misc::downsample_xy;
@@ -14,7 +15,7 @@ use crate::components::graphs::common::theme_to_chart_theme;
 use crate::components::icons::{Icon, IconName, IconSize};
 use crate::ui::PlayerView;
 use gpui::prelude::*;
-use gpui::{div, px};
+use gpui::{MouseButton, SharedString, div, px};
 use gpui_px::{StrokeDashArray, line};
 
 macro_rules! dev_track {
@@ -113,6 +114,26 @@ impl PlayerView {
 
         // Build the actual RoomConfig that will be sent to the optimizer
         let room_config = room_eq.to_room_config();
+        let selected_format_idx = room_eq.export_format_index;
+        let format_dropdown_open = room_eq.dropdowns.export_format_open;
+        let (format_name, format_ext) = EXPORT_FORMATS
+            .get(selected_format_idx)
+            .copied()
+            .unwrap_or(EXPORT_FORMATS[0]);
+        let target_advice: Vec<&'static str> = export_format_for_index(selected_format_idx)
+            .map(|format| {
+                roomeq_workflow::query_config_export_advice(&room_config, format)
+                    .into_iter()
+                    .map(|item| match item.code {
+                        roomeq_workflow::ExportConfigAdviceCode::RoutedBassManagement => translations.roomeq_target_routed,
+                        roomeq_workflow::ExportConfigAdviceCode::RoutedBassManagementUnsupported => translations.roomeq_target_routing_unsupported,
+                        roomeq_workflow::ExportConfigAdviceCode::MandatoryRuntimeLimiter => translations.roomeq_target_limiter,
+                        roomeq_workflow::ExportConfigAdviceCode::NormalizedMagnitudeProfile => translations.roomeq_target_normalized_profile,
+                        roomeq_workflow::ExportConfigAdviceCode::FinalGraphRequired => translations.roomeq_target_final_check,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
         // Serialize only the optimizer config — RoomConfig itself can't serialize
         // because MeasurementSource::InMemory(Curve) has #[serde(skip)]
         let room_config_json =
@@ -161,6 +182,74 @@ impl PlayerView {
                 Text::new(translations.roomeq_run_optimization_desc)
                     .size(TextSize::Xs)
                     .color(theme.text_secondary),
+            )
+            .child(
+                VStack::new()
+                    .spacing(StackSpacing::Xs)
+                    .child(Text::label(translations.roomeq_playback_target).color(theme.text_primary))
+                    .child(dev_track!(
+                        div()
+                            .id("optimize-export-format-selector")
+                            .px(d.pad_x)
+                            .py(d.pad_y_half)
+                            .rounded(d.r_md)
+                            .border_1()
+                            .border_color(theme.accent)
+                            .cursor_pointer()
+                            .hover(|s| s.bg(theme.surface_hover))
+                            .on_mouse_down(MouseButton::Left, cx.listener(|view, _, _, cx| {
+                                view.state.update(cx, |state, _| {
+                                    let open = &mut state.app.measurement_state.room_eq_state.dropdowns.export_format_open;
+                                    *open = !*open;
+                                });
+                                cx.notify();
+                            }))
+                            .child(Text::label(format!("{format_name} (.{format_ext})")).color(theme.text_primary)),
+                        "roomeq.optimize_target"
+                    ))
+                    .when(format_dropdown_open, |stack| {
+                        stack.child(
+                            div()
+                                .id("optimize-export-format-dropdown")
+                                .max_h(px(250.0)) // intentional: matches the export dropdown height
+                                .overflow_y_scroll()
+                                .bg(theme.surface)
+                                .rounded(d.r_md)
+                                .border_1()
+                                .border_color(theme.border)
+                                .children(EXPORT_FORMATS.iter().enumerate().map(|(i, (name, ext))| {
+                                    dev_track!(div()
+                                        .id(SharedString::from(format!("optimize-export-fmt-{i}")))
+                                        .px(d.pad_x)
+                                        .py(d.pad_y_half)
+                                        .cursor_pointer()
+                                        .hover(|s| s.bg(theme.surface_hover))
+                                        .on_mouse_down(MouseButton::Left, cx.listener(move |view, _, _, cx| {
+                                            view.state.update(cx, |state, _| {
+                                                let room_eq = &mut state.app.measurement_state.room_eq_state;
+                                                room_eq.export_format_index = i;
+                                                room_eq.dropdowns.export_format_open = false;
+                                            });
+                                            cx.notify();
+                                        }))
+                                        .child(Text::selectable(format!("{name} (.{ext})"), i == selected_format_idx)
+                                            .color(if i == selected_format_idx { theme.accent } else { theme.text_primary })),
+                                        format!("roomeq.optimize_target.{i}"))
+                                }))
+                        )
+                    })
+                    .children(target_advice.into_iter().enumerate().map(|(i, advice)| {
+                        let caption = Text::caption(advice).color(theme.text_secondary);
+                        #[cfg(feature = "dev-api")]
+                        let caption = {
+                            use crate::app::dev_api::{DevElementState, DevTrackExt};
+                            caption.dev_track_with_state(
+                                format!("roomeq.optimize_target.advice.{i}"),
+                                DevElementState::default().text(advice),
+                            )
+                        };
+                        caption
+                    })),
             )
             // Delay-detection failure banner: the optimizer silently
             // falls back to WAV-onset detection when the probe didn't
@@ -894,6 +983,7 @@ impl PlayerView {
         };
 
         use sotf_audio_player::room_eq_types::RoomEqWizardMode;
+        use sotf_audio_player::ui_models::room_eq::RoomEqViewEvent;
 
         if self
             .state
@@ -1026,9 +1116,23 @@ impl PlayerView {
                 built_config.system.as_ref().map(|_| "Some(System)"),
             );
 
+            // The workflow reports configured outputs (e.g. Sub1), while
+            // the import lists the measurement keys those outputs use.
+            let output_names = if let Some(system) = &built_config.system {
+                let mut names: Vec<_> = system.speakers.keys().cloned().collect();
+                if let Some(subs) = &system.subwoofers {
+                    names.extend(subs.outputs.iter().map(|sub| sub.id.clone()));
+                }
+                names.sort();
+                names.dedup();
+                names
+            } else {
+                channel_names
+            };
+
             (
                 built_config,
-                channel_names,
+                output_names,
                 room_eq.optimizer_config.max_iter,
                 room_eq.delay_detection.probe_arrival_map(),
                 room_eq.optimizer_config.sample_rate as f64,
@@ -1055,7 +1159,7 @@ impl PlayerView {
             }
         };
 
-        if channel_names.is_empty() {
+        if room_config.speakers.is_empty() || channel_names.is_empty() {
             log::warn!("No channels to optimize");
             self.state.update(cx, |state, _cx| {
                 state
@@ -1386,6 +1490,7 @@ impl PlayerView {
             // the probe-arrivals entry point when the user measured
             // per-channel delays in the Delay Detection step; otherwise
             // fall back to WAV-onset detection.
+            let result_artifact_dir = artifact_dir.clone();
             let result = smol::unblock(move || {
                 std::fs::create_dir_all(&artifact_dir).map_err(|e| {
                     format!(
@@ -1469,13 +1574,15 @@ impl PlayerView {
                     );
                     let missing: Vec<&String> = channel_names
                         .iter()
-                        .filter(|n| !room_result.channel_results.contains_key(n.as_str()))
+                        .filter(|name| {
+                            room_eq_channel_chain_by_name(&room_result.channels, name).is_none()
+                                && !room_result.channel_results.contains_key(name.as_str())
+                        })
                         .collect();
                     if !missing.is_empty() {
                         log::error!(
-                            "Room EQ regression signal — {} channel(s) in channel_names have no \
-                             entry in room_result.channel_results and will be dropped by \
-                             filter_map: {:?}",
+                            "Room EQ result missing {} configured output(s) from both \
+                             channel results and DSP chains: {:?}",
                             missing.len(),
                             missing,
                         );
@@ -1649,15 +1756,16 @@ impl PlayerView {
                     // Update final state
                     state_clone.update(&mut cx.clone(), |state, cx| {
                         let room_eq = &mut state.app.measurement_state.room_eq_state;
-                        room_eq.optimization_status = OptimizationStatus::Completed;
+                        room_eq.model.apply(RoomEqViewEvent::SetOptimizationResults {
+                            channel_results: all_results,
+                            dsp_output: Box::new(dsp_output),
+                            artifact_dir: result_artifact_dir,
+                        });
                         room_eq.status_message = format!(
                             "Optimization complete! Score: {avg_pre:.2} -> {avg_post:.2}"
                         );
-                        room_eq.channel_results = all_results;
-                        room_eq.overall_progress = 1.0;
                         room_eq.current_channel = None;
                         room_eq.delivery.calculated();
-                        room_eq.dsp_output = Some(dsp_output);
                         room_eq.step = crate::app::types::RoomEqStep::Review;
                         finalize_pipeline_step_state(room_eq, true);
                         cx.notify();

@@ -175,6 +175,21 @@ impl PlayerView {
                 button
             })
             .child({
+                let button = gpui_ui_kit::Button::new(
+                    "roomeq-open-saved-field",
+                    translations.roomeq_open_saved_field,
+                )
+                .disabled(cfg!(any(target_os = "ios", target_os = "tvos")))
+                .theme(theme.to_button_theme())
+                .on_click_event(cx.listener(|view, _, _, cx| view.open_saved_field_report(cx)));
+                #[cfg(feature = "dev-api")]
+                let button = {
+                    use crate::app::dev_api::DevTrackExt;
+                    button.dev_track("roomeq.report.open_saved_review")
+                };
+                button
+            })
+            .child({
                 let button =
                     gpui_ui_kit::Button::new("roomeq-save-report", shared_report_text.save)
                         .aria_label(shared_report_text.save)

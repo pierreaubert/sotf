@@ -418,14 +418,8 @@ impl RoomEqScreenModel {
                 // Step 6 can disable formats that cannot represent
                 // this graph, with reasons, before the user clicks
                 // Export (sotf#192).
-                self.export_capabilities = serde_json::to_string(&*dsp_output)
-                    .ok()
-                    .and_then(|json| {
-                        serde_json::from_str::<roomeq_model::DspChainOutput>(&json).ok()
-                    })
-                    .map_or_else(Vec::new, |graph| {
-                        roomeq_workflow::query_export_capabilities(&graph)
-                    });
+                self.export_capabilities =
+                    roomeq_workflow::query_export_capabilities(&dsp_output);
                 self.dsp_output = Some(*dsp_output);
                 self.artifact_dir = Some(artifact_dir);
                 // The event carries results of the run started at the

@@ -7,7 +7,7 @@ use gpui::{AnyElement, ObjectFit, Window, div, img, rems};
 use gpui_ui_kit::{
     Button, ButtonSize, ButtonVariant, IconButton, IconButtonSize, IconButtonVariant, Text,
 };
-use sotf_audio_player::{Album, QueuePlaybackEffect};
+use sotf_audio_player::{Album, QueuePlaybackEffect, group_and_merge_albums};
 use std::sync::Arc;
 
 #[cfg(feature = "dev-api")]
@@ -87,6 +87,8 @@ impl PlayerView {
                 return;
             };
             selection.tracks = vec![track.clone()];
+        } else if let Some(grouped) = group_and_merge_albums(vec![album]).pop() {
+            selection = grouped;
         }
         if matches!(action, AlbumAction::Next)
             && state.app.playback.is_playing
@@ -140,31 +142,7 @@ impl PlayerView {
         let Some(snapshot) = state.app.library_state.album_detail.as_ref() else {
             return div().into_any_element();
         };
-        // A queued album may be split by Play next. Resolve the complete library
-        // album using both its ID and track identity, never the current filter.
-        let album = state
-            .app
-            .library_state
-            .library
-            .albums
-            .iter()
-            .find(|candidate| {
-                candidate.id.is_some()
-                    && candidate.id == snapshot.id
-                    && candidate
-                        .tracks
-                        .iter()
-                        .any(|track| snapshot.tracks.iter().any(|shown| shown.path == track.path))
-            })
-            .unwrap_or(snapshot);
-        let mut display_album = album.clone();
-        display_album.tracks.sort_by_key(|track| {
-            (
-                track.disc_number.unwrap_or(1),
-                track.track_number.unwrap_or(u32::MAX),
-            )
-        });
-        let album = Arc::new(display_album);
+        let album = Arc::new(state.app.library_state.album_for_detail(snapshot));
         let mut identity = div().flex().flex_wrap().gap(d.section);
         if let Some(path) = album.album_art_path.clone() {
             identity = identity.child(

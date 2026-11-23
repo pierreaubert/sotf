@@ -2,6 +2,23 @@ use crate::ui::PlayerView;
 use gpui::prelude::*;
 use std::fmt::Write as _;
 
+#[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+async fn pick_room_eq_measurements() -> Option<std::path::PathBuf> {
+    #[cfg(feature = "dev-api")]
+    if let Some(directory) = std::env::var_os("SOTF_QA_DIR") {
+        let fixture = std::path::PathBuf::from(directory).join("room-eq-import/room.json");
+        if fixture.is_file() {
+            return Some(fixture);
+        }
+    }
+    rfd::AsyncFileDialog::new()
+        .add_filter("JSON", &["json"])
+        .set_title("Load Room EQ Measurements")
+        .pick_file()
+        .await
+        .map(|file| file.path().to_path_buf())
+}
+
 impl PlayerView {
     #[expect(
         clippy::too_many_lines,
@@ -182,15 +199,7 @@ impl PlayerView {
             let state_entity = self.state.clone();
 
             cx.spawn(async move |_, cx| {
-                // Open file dialog
-                let file = rfd::AsyncFileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .set_title("Load Room EQ Measurements")
-                    .pick_file()
-                    .await;
-
-            if let Some(file) = file {
-                let file_path = file.path().to_path_buf();
+            if let Some(file_path) = pick_room_eq_measurements().await {
                 let file_dir = file_path.parent().map(std::path::Path::to_path_buf);
                 log::info!("Loading measurements from {}", file_path.display());
 
@@ -327,6 +336,7 @@ impl PlayerView {
                                     .room_eq_state
                                     .imported_crossovers = backend_crossovers;
                                 state.app.measurement_state.room_eq_state.model.init_speaker_configs();
+                                state.app.measurement_state.room_eq_state.select_measured_easy_layout();
                                 state.app.measurement_state.room_eq_state.data_source =
                                     RoomEqDataSource::FromFile(file_path.clone());
                                 if truncated {

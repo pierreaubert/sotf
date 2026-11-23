@@ -50,6 +50,8 @@ impl PlayerView {
             crate::app::i18n::TakeReviewTranslations::for_language(state.app.ui_state.language);
         let d = Ds::from_cx(cx);
         let busy = recording.workflow_is_busy();
+        let registration = recording.pending_field_registration.clone();
+        let has_registration = registration.is_some();
         let current = recording.capture_inputs_are_current();
         let (outputs, inputs) = self.imported_retake_device_channels(cx);
         div()
@@ -57,6 +59,15 @@ impl PlayerView {
             .flex_col()
             .gap(d.gap)
             .child(Text::section_header(text.title))
+            .when_some(registration, |review, registration| {
+                let cancel = self.state.clone();
+                review.child(Text::caption(format!("Register rig {} · source {} · seat {}. Choose the matching acquisition and its physical route.",
+                    registration.request.rig_id, registration.request.source_id, registration.request.seat_id)).color(theme.warning))
+                    .child(Button::new("cancel-field-registration", "Cancel registration").size(ButtonSize::Sm)
+                        .variant(ButtonVariant::Secondary).theme(theme.to_button_theme()).on_click_event(move |_, _, cx| {
+                            cancel.update(cx, |state, cx| { state.app.measurement_state.recording_state.pending_field_registration = None; cx.notify(); });
+                        }))
+            })
             .when(recording.has_imported_takes(), |review| {
                 review.child(Text::caption(text.imported_routing_required).color(theme.warning))
             })
@@ -149,6 +160,11 @@ impl PlayerView {
                                 row.child(self.render_imported_take_route(index, true, cx))
                                     .child(self.render_imported_take_route(index, false, cx))
                             })
+                            .when(has_registration && take.imported_source.is_some(), |row| {
+                                row.child(Button::new(SharedString::from(format!("register-field-acquisition-{index}")), "Register this acquisition")
+                                    .size(ButtonSize::Sm).variant(ButtonVariant::Secondary).disabled(!can_retake).theme(theme.to_button_theme())
+                                    .on_click_event(cx.listener(move |view, _, _, cx| view.register_field_retake(index, cx))))
+                            })
                             .child({
                                 let button = Button::new(
                                     SharedString::from(format!("review-retake-{index}")),
@@ -156,7 +172,7 @@ impl PlayerView {
                                 )
                                 .size(ButtonSize::Sm)
                                 .variant(ButtonVariant::Secondary)
-                                .disabled(!can_retake)
+                                .disabled(!can_retake || has_registration)
                                 .theme(theme.to_button_theme())
                                 .on_click_event(cx.listener(move |view, _, _, cx| {
                                     view.state.update(cx, |state, _| {

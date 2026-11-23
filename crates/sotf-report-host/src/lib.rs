@@ -11,7 +11,13 @@ mod producer;
 mod server;
 
 #[doc(inline)]
+pub use autoeq_report_native::load_saved_bundle;
+#[doc(inline)]
+pub use autoeq_report_native::retake;
+#[doc(inline)]
 pub use autoeq_report_wasm::capture_quality;
+#[doc(inline)]
+pub use autoeq_report_wasm::field_verification::FieldRetakeRequest;
 #[doc(inline)]
 pub use autoeq_report_wasm::report_document::ReportDocument;
 #[doc(inline)]

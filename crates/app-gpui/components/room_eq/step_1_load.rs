@@ -212,7 +212,7 @@ impl PlayerView {
                                                 .size(TextSize::Xs)
                                                 .color(theme.text_secondary),
                                         )
-                                        .child(
+                                        .child(dev_track!(
                                             Button::new(
                                                 "load_from_file",
                                                 workflow_text.import_from_file,
@@ -223,7 +223,25 @@ impl PlayerView {
                                             .on_click_event(cx.listener(|view, _, _, cx| {
                                                 view.load_room_eq_from_file(cx);
                                             })),
-                                        ),
+                                            "roomeq.load_from_file"
+                                        ))
+                                        .child(dev_track!(
+                                            Button::new(
+                                                "open_saved_commissioning",
+                                                translations.roomeq_open_saved_field
+                                            )
+                                            .disabled(cfg!(any(
+                                                target_os = "ios",
+                                                target_os = "tvos"
+                                            )))
+                                            .variant(ButtonVariant::Secondary)
+                                            .size(ButtonSize::Sm)
+                                            .theme(theme.to_button_theme())
+                                            .on_click_event(cx.listener(|view, _, _, cx| {
+                                                view.open_saved_field_report(cx);
+                                            })),
+                                            "roomeq.report.open_saved"
+                                        )),
                                 ),
                         ),
                     ),

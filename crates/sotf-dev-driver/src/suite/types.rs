@@ -62,6 +62,9 @@ pub(super) struct ScenarioConfig {
     pub(super) fixture_server: Option<FixtureServerConfig>,
     #[serde(default)]
     pub(super) room_eq: Option<RoomEqConfig>,
+    /// Stage the shipped example for the wizard's Import from File control.
+    #[serde(default)]
+    pub(super) room_eq_quickstart: Option<RoomEqQuickstart>,
     #[serde(default)]
     pub(super) headphone_discovery: Option<HeadphoneDiscoveryConfig>,
     #[serde(default)]
@@ -93,6 +96,16 @@ pub(super) struct FakeRecordingConfig {
     /// Optional one-shot deterministic error triggered by the first visible
     /// Capture action. Valid values are device-loss, clipping, and io-failure.
     pub(super) fault: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(super) enum RoomEqQuickstart {
+    #[serde(rename = "stereo")]
+    Stereo,
+    #[serde(rename = "2.1")]
+    MainsAndSub,
+    #[serde(rename = "protected-2.1")]
+    ProtectedMainsAndSub,
 }
 
 #[derive(Debug, Deserialize)]

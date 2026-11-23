@@ -601,6 +601,7 @@ impl PlayerView {
             .recording_state
             .session_quality_lines();
         let recording = &state.app.measurement_state.recording_state;
+        let pending_retake = recording.pending_field_retake.clone();
         let (captured_label, unknown_label, next_label) = match state.app.ui_state.language {
             crate::app::i18n::Language::French => (
                 "Niveau enregistré",
@@ -650,6 +651,25 @@ impl PlayerView {
         Card::new().content(
             VStack::new()
                 .spacing(StackSpacing::Sm)
+                .when_some(pending_retake, |stack, pending| {
+                    let index = pending.index;
+                    let label = format!("Rig {} · source {} · seat {} · {:?}. Confirm preset {} is applied before starting.", pending.request.rig_id, pending.request.source_id, pending.request.seat_id, pending.request.role, pending.request.preset_id);
+                    let start = view.clone();
+                    let cancel = view.clone();
+                    stack.child(Text::new(label).size(TextSize::Xs).color(theme.text_primary))
+                        .child(HStack::new().spacing(StackSpacing::Xs)
+                        .child(Button::new("start-field-retake", "Start retake").variant(ButtonVariant::Primary).size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme()).disabled(is_recording).on_click(move |_, cx| {
+                                start.update(cx, |view, cx| view.start_recording_channel(index, cx));
+                            }))
+                        .child(Button::new("cancel-field-retake", "Cancel retake").variant(ButtonVariant::Secondary).size(ButtonSize::Sm)
+                            .theme(theme.to_button_theme()).on_click(move |_, cx| {
+                                cancel.update(cx, |view, cx| view.state.update(cx, |state, cx| {
+                                    state.app.measurement_state.recording_state.pending_field_retake = None;
+                                    cx.notify();
+                                }));
+                            })))
+                })
                 .child(
                     HStack::new()
                         .spacing(StackSpacing::Sm)
@@ -1419,6 +1439,25 @@ impl PlayerView {
 
     /// Start recording all channels sequentially
     pub fn start_recording_all_channels(&mut self, cx: &mut Context<Self>) {
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .pending_field_retake
+            .is_some()
+            || self
+                .state
+                .read(cx)
+                .app
+                .measurement_state
+                .recording_state
+                .pending_field_registration
+                .is_some()
+        {
+            return;
+        }
         if !self.require_capture_routing(None, cx) {
             return;
         }
@@ -1511,6 +1550,79 @@ impl PlayerView {
         };
 
         use sotf_audio_player::signal_recorder::SignalType;
+
+        if self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .pending_field_registration
+            .is_some()
+        {
+            return;
+        }
+
+        let pending = self
+            .state
+            .read(cx)
+            .app
+            .measurement_state
+            .recording_state
+            .pending_field_retake
+            .clone();
+        if let Some(pending) = pending {
+            let preset = self.field_retake_preset_id(cx);
+            let (outputs, inputs) = self.imported_retake_device_channels(cx);
+            let report_valid = sotf_report_host::load_saved_bundle(&pending.graph_path)
+                .map_err(|error| error.to_string())
+                .and_then(|bundle| {
+                    bundle
+                        .field_retake_requests(&pending.report_path)
+                        .map_err(|error| error.to_string())
+                })
+                .and_then(|requests| {
+                    if requests.contains(&pending.request) {
+                        Ok(())
+                    } else {
+                        Err("The report or retake is stale".into())
+                    }
+                });
+            let validation = report_valid.and_then(|()| {
+                let state = self.state.read(cx);
+                let rec = &state.app.measurement_state.recording_state;
+                rec.validate_field_retake(&pending.request, &pending.registry, preset)
+                    .and_then(|(index, output, microphone)| {
+                        if index != channel_idx
+                            || rec.validated_imported_route(index, outputs, inputs)
+                                != Some((output as u16, microphone))
+                        {
+                            return Err(
+                                "The selected capture no longer matches the registered retake"
+                                    .into(),
+                            );
+                        }
+                        Ok(())
+                    })
+            });
+            if let Err(error) = validation {
+                self.state.update(cx, |state, cx| {
+                    state.app.measurement_state.recording_state.set_status(
+                        error,
+                        crate::app::types::recording::RecordingStatusSeverity::Error,
+                    );
+                    cx.notify();
+                });
+                return;
+            }
+            self.state.update(cx, |state, _| {
+                state
+                    .app
+                    .measurement_state
+                    .recording_state
+                    .pending_field_retake = None
+            });
+        }
 
         if !self.require_capture_routing(Some(channel_idx), cx) {
             return;
@@ -3384,6 +3496,8 @@ impl PlayerView {
                     rec.channel_recordings = recordings;
                     rec.imported_session = Some(imported);
                     rec.imported_retake_routes.clear();
+                            rec.pending_field_retake = None;
+                            rec.pending_field_registration = None;
                     rec.imported_route_dropdown = None;
                     rec.imported_route_highlight = None;
                     // Imported source folders are never owned by the wizard.

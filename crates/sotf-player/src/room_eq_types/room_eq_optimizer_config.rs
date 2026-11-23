@@ -140,6 +140,9 @@ pub struct RoomEqOptimizerConfig {
     /// When set, `apply_smart_defaults()` skips overriding feature toggles.
     #[serde(default)]
     pub imported_from_file: bool,
+    /// Preserved backend finalization and protection policy.
+    #[serde(default)]
+    pub finalization: roomeq_model::FinalizationConfig,
 }
 
 impl Default for RoomEqOptimizerConfig {
@@ -199,6 +202,7 @@ impl Default for RoomEqOptimizerConfig {
             channel_matching: ChannelMatchingUiConfig::default(),
             epa_temporal_masking: EpaTemporalMaskingConfig::default(),
             imported_from_file: false,
+            finalization: roomeq_model::FinalizationConfig::default(),
         }
     }
 }
@@ -410,6 +414,7 @@ impl RoomEqOptimizerConfig {
             self.channel_matching.max_filters = cm.max_filters;
         }
 
+        self.finalization.clone_from(&backend.finalization);
         self.imported_from_file = true;
     }
 
@@ -729,6 +734,7 @@ impl RoomEqOptimizerConfig {
                     ..roomeq_model::EpaConfig::default()
                 }
             }),
+            finalization: self.finalization.clone(),
             ..BackendOptimizerConfig::default()
         }
     }

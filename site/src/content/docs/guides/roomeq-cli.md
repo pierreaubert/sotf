@@ -7,64 +7,19 @@ The `roomeq` binary takes a JSON configuration file describing your speaker meas
 room setup, runs the optimizer, and writes a DSP chain JSON that can be loaded directly into
 SotF's audio engine or exported to third-party tools.
 
-## Quick Start
+## Quick start
 
-### Stereo System
+Use your REW measurements to set up your mains and sub, then check the result with another sweep. Download the example, unzip it and open `roomeq/results.html` in a browser. The offline page shows the target, what reached the mains and sub, and which results still need a sweep in the room. It includes a separate measured-room example where keeping the starting subwoofer pair protected the worst position. [Download the stereo and 2.1 example session](/examples/roomeq.zip)
 
-```bash
-roomeq --config stereo.json --output stereo-dsp.json
-```
+To play the included 48 kHz preset through CamillaDSP, open a terminal in the extracted `roomeq` directory and run `python3 check_playback.py`. It shows which mains and sub outputs each input reaches. The included `README.md` explains the required software and how to reproduce both solves.
 
-`stereo.json`:
-```json
-{
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv"
-  },
-  "optimizer": {
-    "num_filters": 7,
-    "algorithm": "autoeq:de",
-    "min_freq": 20.0,
-    "max_freq": 1600.0
-  }
-}
-```
+### Stereo
 
-### 2.1 with Subwoofer + Harman Target
+Run the commands under **Stereo** in the included `README.md`. They validate `stereo.json`, save the native DSP graph, and export the saved graph to CamillaDSP.
 
-```bash
-roomeq --config 2.1.json --output 2.1-dsp.json
-```
+### Mains and sub
 
-`2.1.json`:
-```json
-{
-  "system": {
-    "model": "stereo",
-    "speakers": { "L": "left", "R": "right", "LFE": "sub" },
-    "subwoofers": {
-      "config": "single",
-      "crossover": "bass_xo",
-      "sub": "L"
-    }
-  },
-  "speakers": {
-    "left": "measurements/left.csv",
-    "right": "measurements/right.csv",
-    "sub": "measurements/sub.csv"
-  },
-  "crossovers": {
-    "bass_xo": { "type": "LR24", "frequency": 80.0 }
-  },
-  "optimizer": {
-    "num_filters": 7,
-    "algorithm": "autoeq:de",
-    "target_response": { "shape": "harman" },
-    "phase_alignment": { "enabled": true }
-  }
-}
-```
+Follow **Mains and sub** in the same quick start using `2.1.json`. The example maps two mains and one physical sub, specifies an 80 Hz Linkwitz–Riley crossover, and fits a Harman target. Keep each DSP JSON file with its sibling assets directory. Inspect the selected graph and its acceptance outcome before applying it. A new sweep at a reserved position checks the installed system.
 
 ## CLI Flags
 

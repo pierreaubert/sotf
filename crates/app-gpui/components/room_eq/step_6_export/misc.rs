@@ -26,7 +26,7 @@ macro_rules! dev_track {
 
 /// Export format options shown in the dropdown. Index 0 is the native
 /// `SotF` JSON; indices 1–6 map to `roomeq_workflow::ExportFormat` variants.
-const EXPORT_FORMATS: &[(&str, &str)] = &[
+pub(in crate::components::room_eq) const EXPORT_FORMATS: &[(&str, &str)] = &[
     ("SotF JSON", "json"),
     ("CamillaDSP", "yaml"),
     ("Equalizer APO", "txt"),
@@ -37,7 +37,9 @@ const EXPORT_FORMATS: &[(&str, &str)] = &[
 ];
 
 /// Backend format for a dropdown index (0 = native `SotF` JSON).
-fn export_format_for_index(index: usize) -> Option<roomeq_workflow::ExportFormat> {
+pub(in crate::components::room_eq) fn export_format_for_index(
+    index: usize,
+) -> Option<roomeq_workflow::ExportFormat> {
     match index {
         1 => Some(roomeq_workflow::ExportFormat::CamillaDsp),
         2 => Some(roomeq_workflow::ExportFormat::EqualizerApo),
@@ -263,7 +265,7 @@ impl PlayerView {
                                         .size(TextSize::Xs)
                                         .color(theme.text_secondary),
                                 )
-                                .child(
+                                .child(dev_track!(
                                     div()
                                         .id("export-format-selector")
                                         .px(d.pad_x)
@@ -292,28 +294,38 @@ impl PlayerView {
                                             Text::label(format!("{format_name} (.{format_ext})"))
                                                 .color(theme.text_primary),
                                         ),
-                                )
-                                .child(dev_track!(
-                                    Button::new("export_file", translations.roomeq_export_button)
-                                        .disabled(
-                                            !result_is_current
-                                                || selected_unsupported_reason.is_some(),
-                                        )
+                                    "roomeq.export_target"
+                                ))
+                                .child({
+                                    let enabled = result_is_current && selected_unsupported_reason.is_none();
+                                    let button = Button::new("export_file", translations.roomeq_export_button)
+                                        .disabled(!enabled)
                                         .variant(ButtonVariant::Primary)
                                         .size(ButtonSize::Sm)
                                         .theme(theme.to_button_theme())
                                         .on_click_event(cx.listener(|view, _, _, cx| {
                                             view.export_room_eq_format(cx);
-                                        })),
-                                    "roomeq.export_file"
-                                )),
+                                        }));
+                                    #[cfg(feature = "dev-api")]
+                                    let button = {
+                                        use crate::app::dev_api::{DevElementState, DevTrackExt};
+                                        button.dev_track_with_state("roomeq.export_file", DevElementState::default().enabled(enabled))
+                                    };
+                                    button
+                                }),
                         );
 
                         if let Some(reason) = &selected_unsupported_reason {
-                            export_content = export_content.child(dev_track!(
-                                Text::body(reason.clone()).color(theme.warning),
-                                "roomeq.export_unsupported_reason"
-                            ));
+                            let message = Text::body(reason.clone()).color(theme.warning);
+                            #[cfg(feature = "dev-api")]
+                            let message = {
+                                use crate::app::dev_api::{DevElementState, DevTrackExt};
+                                message.dev_track_with_state(
+                                    "roomeq.export_unsupported_reason",
+                                    DevElementState::default().text(reason.clone()),
+                                )
+                            };
+                            export_content = export_content.child(message);
                         }
 
                         // Keep failure feedback beside the action even when the wizard's
@@ -371,7 +383,7 @@ impl PlayerView {
                                                         }),
                                                 );
                                             if supported {
-                                                item.cursor_pointer()
+                                                dev_track!(item.cursor_pointer()
                                                     .hover(|s| s.bg(theme.surface_hover))
                                                     .on_mouse_down(MouseButton::Left, {
                                                         cx.listener(move |view, _, _, cx| {
@@ -390,7 +402,7 @@ impl PlayerView {
                                                             });
                                                             cx.notify();
                                                         })
-                                                    })
+                                                    }), format!("roomeq.export_target.{i}"))
                                                     .into_any_element()
                                             } else {
                                                 item.into_any_element()

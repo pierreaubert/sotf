@@ -244,7 +244,12 @@ impl RoomEqState {
         } else {
             self.model.load_from_recording(&player_state);
         }
+        self.select_measured_easy_layout();
+        Ok(())
+    }
 
+    /// Select the beginner layout whose roles match the loaded measurements.
+    pub(crate) fn select_measured_easy_layout(&mut self) {
         let channel_names = self
             .model
             .channel_measurements
@@ -258,7 +263,6 @@ impl RoomEqState {
             self.easy_layout = layout;
             layout.configure_preset_defaults(&mut self.model.simple_preset);
         }
-        Ok(())
     }
 
     /// Normalize an SPL curve so its average over 1–2 kHz is 0 dB.

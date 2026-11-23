@@ -1,11 +1,12 @@
 {
   "name": "sotf-website",
   "type": "module",
-  "version": "0.7.17",
+  "version": "0.7.19",
   "scripts": {
     "gen-data": "node scripts/gen-export-formats.mjs",
     "predev": "npm run gen-data",
     "prebuild": "npm run gen-data",
+    "postbuild": "node scripts/check-roomeq-download.mjs",
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",

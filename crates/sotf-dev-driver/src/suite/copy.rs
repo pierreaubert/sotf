@@ -1,4 +1,4 @@
-use super::types::RoomEqConfig;
+use super::types::{RoomEqConfig, RoomEqQuickstart};
 use anyhow::{Context, Result, bail};
 use std::fs::{self};
 use std::path::{Path, PathBuf};
@@ -22,6 +22,26 @@ pub(super) fn copy_audio_fixtures(src: &Path, dst: &Path) -> Result<()> {
         }
         fs::copy(&path, dst.join(entry.file_name()))
             .with_context(|| format!("copying fixture {}", path.display()))?;
+    }
+    Ok(())
+}
+
+pub(super) fn copy_room_eq_quickstart(example: RoomEqQuickstart, qa_dir: &Path) -> Result<()> {
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../autoeq/examples/roomeq");
+    let name = match example {
+        RoomEqQuickstart::Stereo => "stereo.json",
+        RoomEqQuickstart::MainsAndSub | RoomEqQuickstart::ProtectedMainsAndSub => "2.1.json",
+    };
+    let destination = qa_dir.join("room-eq-import");
+    copy_dir_recursive(&source.join("measurements"), &destination.join("measurements"))?;
+    let input = source.join(name);
+    let output = destination.join("room.json");
+    if matches!(example, RoomEqQuickstart::ProtectedMainsAndSub) {
+        let mut config: serde_json::Value = serde_json::from_slice(&fs::read(&input)?)?;
+        config["optimizer"]["finalization"]["subwoofer_limiter"] = true.into();
+        fs::write(&output, serde_json::to_vec_pretty(&config)?)?;
+    } else {
+        fs::copy(&input, &output)?;
     }
     Ok(())
 }

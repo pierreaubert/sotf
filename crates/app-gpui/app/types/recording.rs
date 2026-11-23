@@ -26,6 +26,22 @@ pub struct ImportedRetakeRoute {
     pub microphone_slot: Option<usize>,
 }
 
+#[derive(Debug, Clone)]
+pub struct PendingFieldRetake {
+    pub request: sotf_report_host::FieldRetakeRequest,
+    pub registry: sotf_report_host::retake::RetakeContext,
+    pub index: usize,
+    pub graph_path: std::path::PathBuf,
+    pub report_path: std::path::PathBuf,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingFieldRegistration {
+    pub request: sotf_report_host::FieldRetakeRequest,
+    pub graph_path: std::path::PathBuf,
+    pub report_path: std::path::PathBuf,
+}
+
 /// Complete recording screen state. Holds only GPUI-specific view state;
 /// all domain state lives in the embedded [`RecordingScreenModel`].
 #[derive(Debug, Clone)]
@@ -40,6 +56,8 @@ pub struct RecordingState {
     /// Original topology and anchored references retained for imported-session saves.
     pub imported_session: Option<sotf_audio_player::recording_types::RecordingImport>,
     pub imported_retake_routes: std::collections::HashMap<usize, ImportedRetakeRoute>,
+    pub pending_field_retake: Option<PendingFieldRetake>,
+    pub pending_field_registration: Option<PendingFieldRegistration>,
     pub imported_route_dropdown: Option<(usize, bool)>,
     pub imported_route_highlight: Option<usize>,
     pub take_review: sotf_audio_player::ui_models::take_review::TakeReviewState,
@@ -184,6 +202,8 @@ impl Default for RecordingState {
             capture_inputs: None,
             imported_session: None,
             imported_retake_routes: std::collections::HashMap::default(),
+            pending_field_retake: None,
+            pending_field_registration: None,
             imported_route_dropdown: None,
             imported_route_highlight: None,
             take_review: sotf_audio_player::ui_models::take_review::TakeReviewState::default(),
@@ -358,12 +378,169 @@ impl RecordingState {
 
     pub fn init_channel_recordings(&mut self) {
         self.imported_session = None;
+        self.pending_field_retake = None;
+        self.pending_field_registration = None;
         self.imported_retake_routes.clear();
         self.imported_route_dropdown = None;
         self.imported_route_highlight = None;
         self.take_review.clear();
         self.model.init_channel_recordings();
         self.capture_inputs = Some(self.model.capture_input_snapshot());
+    }
+
+    /// Compute the identity an explicit retake registry must bind.
+    pub fn field_retake_session_id(&self) -> Result<String, String> {
+        if self.imported_session.is_none()
+            || self
+                .recording_directory
+                .as_deref()
+                .is_none_or(str::is_empty)
+        {
+            return Err("Open a saved imported recording before registering a field retake".into());
+        }
+        let sources: Vec<_> = self
+            .channel_recordings
+            .iter()
+            .map(|take| take.imported_source.as_ref())
+            .collect();
+        if sources.is_empty() || sources.iter().any(|source| source.is_none()) {
+            return Err("The recording has unknown source addresses".into());
+        }
+        let snapshot = serde_json::json!({"inputs": self.model.capture_input_snapshot(), "directory": self.recording_directory, "sources": sources});
+        Ok(sotf_report_host::retake::capture_session_identity(
+            &snapshot,
+        ))
+    }
+
+    /// Build a one-route registry from the explicitly selected acquisition.
+    pub fn field_retake_registration(
+        &self,
+        request: &sotf_report_host::FieldRetakeRequest,
+        index: usize,
+        outputs: usize,
+        inputs: usize,
+        preset_id: Option<String>,
+    ) -> Result<sotf_report_host::retake::RetakeContext, String> {
+        if self.workflow_is_busy() {
+            return Err("A capture is already active".into());
+        }
+        if preset_id.as_deref() != Some(&request.preset_id) {
+            return Err("The selected preset differs from the requested arm".into());
+        }
+        let (output_channel, microphone) = self
+            .validated_imported_route(index, outputs, inputs)
+            .ok_or("Choose the output and microphone for this acquisition first")?;
+        let source = self
+            .channel_recordings
+            .get(index)
+            .and_then(|take| take.imported_source.as_ref())
+            .ok_or("The selected acquisition has no source address")?;
+        let input_channel = *self
+            .recording_config
+            .channel_mappings
+            .get(microphone)
+            .ok_or("The selected microphone is unavailable")?;
+        if self.playback_config.device_id.trim().is_empty()
+            || self.recording_config.device_id.trim().is_empty()
+        {
+            return Err("Select the capture devices before registering".into());
+        }
+        Ok(sotf_report_host::retake::RetakeContext {
+            rig_id: request.rig_id.clone(),
+            capture_session_id: self.field_retake_session_id()?,
+            active_preset_id: None,
+            capture_active: false,
+            acquisitions: vec![sotf_report_host::retake::RegisteredAcquisition {
+                source_id: request.source_id.clone(),
+                seat_id: request.seat_id.clone(),
+                acquisition_id: serde_json::to_string(source).map_err(|error| error.to_string())?,
+                output_device_id: self.playback_config.device_id.clone(),
+                input_device_id: self.recording_config.device_id.clone(),
+                output_channel,
+                input_channel: u16::try_from(input_channel)
+                    .map_err(|_| "Input channel exceeds supported range")?,
+            }],
+        })
+    }
+
+    /// Validate the requested route against the current wizard without mutation.
+    pub fn validate_field_retake(
+        &self,
+        request: &sotf_report_host::FieldRetakeRequest,
+        registry: &sotf_report_host::retake::RetakeContext,
+        preset_id: Option<String>,
+    ) -> Result<(usize, usize, usize), String> {
+        let actual_session = self.field_retake_session_id()?;
+        if registry.capture_session_id != actual_session {
+            return Err(format!(
+                "The registry does not match the open capture session. Current session identity: {actual_session}"
+            ));
+        }
+        let mut context = registry.clone();
+        context.active_preset_id = preset_id;
+        context.capture_active = self.workflow_is_busy();
+        let target = sotf_report_host::retake::resolve_retake(request, &context)?;
+        if target.acquisition.output_device_id != self.playback_config.device_id
+            || target.acquisition.input_device_id != self.recording_config.device_id
+        {
+            return Err("The selected capture devices differ from the registered rig".into());
+        }
+        let matches: Vec<_> = self
+            .channel_recordings
+            .iter()
+            .enumerate()
+            .filter_map(|(index, take)| {
+                let address = take.imported_source.as_ref()?;
+                (serde_json::to_string(address).ok()?.as_str() == target.acquisition.acquisition_id)
+                    .then_some(index)
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err(
+                "The registered acquisition is missing or ambiguous in the open recording".into(),
+            );
+        }
+        let inputs: Vec<_> = self
+            .recording_config
+            .channel_mappings
+            .iter()
+            .enumerate()
+            .filter_map(|(slot, channel)| {
+                (*channel == usize::from(target.acquisition.input_channel)).then_some(slot)
+            })
+            .collect();
+        if inputs.len() != 1 {
+            return Err("The registered microphone input is missing or ambiguous".into());
+        }
+        Ok((
+            matches[0],
+            usize::from(target.acquisition.output_channel),
+            inputs[0],
+        ))
+    }
+
+    /// Preselect one validated route; this never starts capture.
+    pub fn stage_field_retake(
+        &mut self,
+        request: sotf_report_host::FieldRetakeRequest,
+        registry: sotf_report_host::retake::RetakeContext,
+        preset_id: Option<String>,
+        graph_path: std::path::PathBuf,
+        report_path: std::path::PathBuf,
+    ) -> Result<(), String> {
+        let (index, output, input) = self.validate_field_retake(&request, &registry, preset_id)?;
+        self.select_imported_route(index, true, output);
+        self.select_imported_route(index, false, input);
+        self.auto_record_remaining = false;
+        self.step = RecordingStep::Capture;
+        self.pending_field_retake = Some(PendingFieldRetake {
+            request,
+            registry,
+            index,
+            graph_path,
+            report_path,
+        });
+        Ok(())
     }
 
     #[must_use]

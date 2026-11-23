@@ -52,6 +52,325 @@ pub(crate) fn native_report_section_count(cx: &mut App) -> usize {
 }
 
 impl PlayerView {
+    pub(crate) fn register_field_retake(&mut self, index: usize, cx: &mut Context<Self>) {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let preset = self.field_retake_preset_id(cx);
+            let (outputs, inputs) = self.imported_retake_device_channels(cx);
+            let initial = {
+                let state = self.state.read(cx);
+                let recording = &state.app.measurement_state.recording_state;
+                recording
+                    .pending_field_registration
+                    .clone()
+                    .ok_or("No field registration is selected".to_string())
+                    .and_then(|pending| {
+                        let registry = recording.field_retake_registration(
+                            &pending.request,
+                            index,
+                            outputs,
+                            inputs,
+                            preset,
+                        )?;
+                        Ok((pending, registry))
+                    })
+            };
+            let (pending, expected) = match initial {
+                Ok(value) => value,
+                Err(error) => {
+                    self.report_error(error, cx);
+                    return;
+                }
+            };
+            cx.spawn(async move |view, cx| {
+                let Some(file) = rfd::AsyncFileDialog::new()
+                    .set_title("Save registered capture rig")
+                    .set_file_name("capture-rig.json")
+                    .add_filter("JSON", &["json"])
+                    .save_file()
+                    .await
+                else {
+                    return;
+                };
+                let path = file.path().to_owned();
+                let _ = view.update(cx, |view, cx| {
+                    let preset = view.field_retake_preset_id(cx);
+                    let (outputs, inputs) = view.imported_retake_device_channels(cx);
+                    let report_valid = sotf_report_host::load_saved_bundle(&pending.graph_path)
+                        .map_err(|error| error.to_string())
+                        .and_then(|bundle| {
+                            bundle
+                                .field_retake_requests(&pending.report_path)
+                                .map_err(|error| error.to_string())
+                        })
+                        .and_then(|requests| {
+                            if requests.contains(&pending.request) {
+                                Ok(())
+                            } else {
+                                Err("The field report changed".into())
+                            }
+                        });
+                    let result = report_valid.and_then(|()| {
+                        view.state.update(cx, |state, _| {
+                            use std::io::Write;
+                            let recording = &mut state.app.measurement_state.recording_state;
+                            if recording.pending_field_registration.as_ref() != Some(&pending) {
+                                return Err("The registration was cancelled or changed".to_string());
+                            }
+                            let registry = recording.field_retake_registration(
+                                &pending.request,
+                                index,
+                                outputs,
+                                inputs,
+                                preset.clone(),
+                            )?;
+                            if registry != expected {
+                                return Err(
+                                    "The recording, devices or route changed before registration"
+                                        .to_string(),
+                                );
+                            }
+                            let bytes = serde_json::to_vec_pretty(&registry)
+                                .map_err(|error| error.to_string())?;
+                            let parent = path.parent().ok_or("Registry path has no directory")?;
+                            let mut file = tempfile::NamedTempFile::new_in(parent)
+                                .map_err(|error| format!("Cannot prepare registry: {error}"))?;
+                            file.write_all(&bytes)
+                                .and_then(|()| file.as_file().sync_all())
+                                .map_err(|error| format!("Cannot save registry: {error}"))?;
+                            file.persist_noclobber(&path).map_err(|error| {
+                                format!("Cannot publish new registry: {}", error.error)
+                            })?;
+                            recording.stage_field_retake(
+                                pending.request.clone(),
+                                registry,
+                                preset,
+                                pending.graph_path.clone(),
+                                pending.report_path.clone(),
+                            )?;
+                            recording.pending_field_registration = None;
+                            Ok(())
+                        })
+                    });
+                    match result {
+                        Ok(()) => {
+                            view.switch_screen(crate::app::Screen::Recording, cx);
+                            cx.notify();
+                        }
+                        Err(error) => view.report_error(error, cx),
+                    }
+                });
+            })
+            .detach();
+        }
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        let _ = (index, cx);
+    }
+
+    pub(crate) fn field_retake_preset_id(&self, cx: &Context<Self>) -> Option<String> {
+        let state = self.state.read(cx);
+        let room = &state.app.measurement_state.room_eq_state;
+        if !room.results_are_current() {
+            return None;
+        }
+        let mut graph = room.dsp_output.clone()?;
+        graph.correction_decisions = None;
+        Some(roomeq_workflow::final_ledger::canonical_graph_identity(&graph).fingerprint)
+    }
+
+    fn request_field_retake(
+        &mut self,
+        request: sotf_report_host::FieldRetakeRequest,
+        register: bool,
+        graph_path: std::path::PathBuf,
+        report_path: std::path::PathBuf,
+        cx: &mut Context<Self>,
+    ) {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        cx.spawn(async move |view, cx| {
+            let check = cx
+                .background_executor()
+                .spawn({
+                    let request = request.clone();
+                    let graph_path = graph_path.clone();
+                    let report_path = report_path.clone();
+                    async move {
+                        let bundle = sotf_report_host::load_saved_bundle(&graph_path)?;
+                        anyhow::ensure!(
+                            bundle
+                                .field_retake_requests(&report_path)?
+                                .contains(&request),
+                            "The report or selected retake is stale"
+                        );
+                        Ok::<_, anyhow::Error>(())
+                    }
+                })
+                .await;
+            if let Err(error) = check {
+                let _ = view.update(cx, |view, cx| view.report_error(format!("{error:#}"), cx));
+                return;
+            }
+            if register {
+                let _ = view.update(cx, |view, cx| {
+                    let preset = view.field_retake_preset_id(cx);
+                    let result = view.state.update(cx, |state, _| {
+                        let recording = &mut state.app.measurement_state.recording_state;
+                        if recording.workflow_is_busy() {
+                            return Err("A capture is already active".to_string());
+                        }
+                        if recording.pending_field_retake.is_some()
+                            || recording.pending_field_registration.is_some()
+                        {
+                            return Err(
+                                "Finish or cancel the current field retake first".to_string()
+                            );
+                        }
+                        if preset.as_deref() != Some(&request.preset_id) {
+                            return Err(
+                                "The selected preset differs from the requested arm".to_string()
+                            );
+                        }
+                        recording.field_retake_session_id()?;
+                        recording.pending_field_registration =
+                            Some(crate::app::types::recording::PendingFieldRegistration {
+                                request,
+                                graph_path,
+                                report_path,
+                            });
+                        recording.step = crate::app::types::RecordingStep::Evaluating;
+                        Ok(())
+                    });
+                    match result {
+                        Ok(()) => {
+                            view.switch_screen(crate::app::Screen::Recording, cx);
+                            cx.notify();
+                        }
+                        Err(error) => view.report_error(error, cx),
+                    }
+                });
+                return;
+            }
+            let Some(file) = rfd::AsyncFileDialog::new()
+                .set_title("Select the registered capture rig")
+                .add_filter("JSON", &["json"])
+                .pick_file()
+                .await
+            else {
+                return;
+            };
+            let registry = std::fs::read(file.path())
+                .map_err(anyhow::Error::from)
+                .and_then(|bytes| {
+                    serde_json::from_slice::<sotf_report_host::retake::RetakeContext>(&bytes)
+                        .map_err(anyhow::Error::from)
+                });
+            let _ = view.update(cx, |view, cx| {
+                let result = registry
+                    .map_err(|error| error.to_string())
+                    .and_then(|registry| {
+                        let preset = view.field_retake_preset_id(cx);
+                        view.state.update(cx, |state, _| {
+                            let recording = &mut state.app.measurement_state.recording_state;
+                            if recording.pending_field_retake.is_some() || recording.pending_field_registration.is_some() {
+                                return Err("Finish or cancel the current field retake first".to_string());
+                            }
+                            recording.stage_field_retake(
+                                    request,
+                                    registry,
+                                    preset,
+                                    graph_path,
+                                    report_path,
+                                )
+                        })
+                    });
+                match result {
+                    Ok(()) => {
+                        view.switch_screen(crate::app::Screen::Recording, cx);
+                        cx.notify();
+                    }
+                    Err(error) => view.report_error(error, cx),
+                }
+            });
+        })
+        .detach();
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        let _ = (request, register, graph_path, report_path, cx);
+    }
+
+    /// Open a saved graph and its separately selected commissioning report.
+    pub(crate) fn open_saved_field_report(&mut self, cx: &mut Context<Self>) {
+        #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+        {
+            let app = &self.state.read(cx).app;
+            let text = app.ui_state.translations.clone();
+            let labels = crate::app::i18n::SharedReportText::for_language(app.ui_state.language);
+            let dark = app.ui_state.theme_id != crate::app::theme::ThemeId::Light;
+            cx.spawn(async move |view, cx| {
+                let Some(graph) = rfd::AsyncFileDialog::new()
+                    .set_title(text.roomeq_select_saved_graph)
+                    .add_filter("JSON", &["json"])
+                    .pick_file()
+                    .await
+                else {
+                    return;
+                };
+                let Some(field) = rfd::AsyncFileDialog::new()
+                    .set_title(text.roomeq_select_field_report)
+                    .add_filter("JSON", &["json"])
+                    .pick_file()
+                    .await
+                else {
+                    return;
+                };
+                let graph = graph.path().to_owned();
+                let field = field.path().to_owned();
+                let origin = FieldReportOrigin {
+                    owner: view.clone(),
+                    graph: graph.clone(),
+                    field: field.clone(),
+                };
+                let worker = cx.background_executor().spawn(async move {
+                    let bundle = sotf_report_host::load_saved_bundle(&graph)?;
+                    let requests = bundle.field_retake_requests(&field).unwrap_or_default();
+                    Ok::<_, anyhow::Error>((
+                        Arc::new(bundle.field_report_document(&field)?),
+                        requests,
+                    ))
+                });
+                match worker.await {
+                    Ok((document, requests)) => {
+                        let native_document = Arc::clone(&document);
+                        let report = cx
+                            .background_executor()
+                            .spawn(async move {
+                                NativeReport::try_complete(native_document)
+                                    .map(|report| report.with_retake_requests(requests))
+                            })
+                            .await;
+                        let outcome = if let Some(report) = report {
+                            open_native_report_window(report, labels.save, dark, Some(origin), cx)
+                        } else {
+                            export_document(document, cx)
+                                .await
+                                .and_then(|report| open_report_window(report, dark, cx))
+                        };
+                        if let Err(error) = outcome {
+                            let _ = view
+                                .update(cx, |view, cx| view.report_error(error.to_string(), cx));
+                        }
+                    }
+                    Err(error) => {
+                        let _ =
+                            view.update(cx, |view, cx| view.report_error(format!("{error:#}"), cx));
+                    }
+                }
+            })
+            .detach();
+        }
+        #[cfg(any(target_os = "ios", target_os = "tvos"))]
+        let _ = cx;
+    }
+
     pub(crate) fn open_shared_room_eq_report(&mut self, cx: &mut Context<Self>) {
         self.prepare_shared_room_eq_report(false, cx);
     }
@@ -159,7 +478,9 @@ impl PlayerView {
                     return;
                 }
                 if let Some(report) = report {
-                    if let Err(error) = open_native_report_window(report, labels.save, dark, cx) {
+                    if let Err(error) =
+                        open_native_report_window(report, labels.save, dark, None, cx)
+                    {
                         let _ =
                             view.update(cx, |view, cx| view.report_error(error.to_string(), cx));
                     }
@@ -243,10 +564,18 @@ async fn save_exported_report(
         .await
 }
 
+#[derive(Clone)]
+struct FieldReportOrigin {
+    owner: gpui::WeakEntity<PlayerView>,
+    graph: std::path::PathBuf,
+    field: std::path::PathBuf,
+}
+
 fn open_native_report_window(
     report: NativeReport,
     save_label: &'static str,
     dark: bool,
+    owner: Option<FieldReportOrigin>,
     cx: &mut AsyncApp,
 ) -> anyhow::Result<()> {
     cx.open_window(
@@ -261,16 +590,36 @@ fn open_native_report_window(
             #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
             let document = std::sync::Arc::clone(report.document());
             let view = cx.new(|_| ReportView::from_prepared(report).with_dark_appearance(dark));
-            cx.new(|_| NativeReportWindow {
-                view,
-                #[cfg(any(feature = "dev-api", not(any(target_os = "ios", target_os = "tvos"))))]
-                document,
-                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                save_label,
-                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                saving: false,
-                #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
-                save_error: None,
+            cx.new(|cx| {
+                if let Some(origin) = owner {
+                    cx.subscribe(
+                        &view,
+                        move |_, _, event: &autoeq_report_gpui::native::FieldRetakeEvent, cx| {
+                            let request = event.request.clone();
+                            let register = event.register;
+                            let graph = origin.graph.clone();
+                            let field = origin.field.clone();
+                            let _ = origin.owner.update(cx, |view, cx| {
+                                view.request_field_retake(request, register, graph, field, cx)
+                            });
+                        },
+                    )
+                    .detach();
+                }
+                NativeReportWindow {
+                    view,
+                    #[cfg(any(
+                        feature = "dev-api",
+                        not(any(target_os = "ios", target_os = "tvos"))
+                    ))]
+                    document,
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                    save_label,
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                    saving: false,
+                    #[cfg(not(any(target_os = "ios", target_os = "tvos")))]
+                    save_error: None,
+                }
             })
         },
     )?;

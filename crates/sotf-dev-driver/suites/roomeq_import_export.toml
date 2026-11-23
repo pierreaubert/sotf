@@ -1,0 +1,30 @@
+# From the SotF checkout, run target/debug/sotf-dev-driver run-suite crates/sotf-dev-driver/suites/roomeq_import_export.toml -v.
+[runner]
+app_bin = "target/debug/sotf-desktop"
+artifacts_dir = "target/qa-gpui"
+readiness_timeout = "60s"
+size = "1440x1000"
+
+[[scenario]]
+name = "roomeq-import-mains-sub"
+path = "crates/sotf-dev-driver/scenarios/roomeq_import_mains_sub.scn"
+room_eq_quickstart = "2.1"
+release_channel = "Prod"
+timeout = "180s"
+tags = ["roomeq", "ui", "export"]
+
+[[scenario]]
+name = "roomeq-import-protected"
+path = "crates/sotf-dev-driver/scenarios/roomeq_import_protected.scn"
+room_eq_quickstart = "protected-2.1"
+release_channel = "Prod"
+timeout = "180s"
+tags = ["roomeq", "ui", "export"]
+
+[[scenario]]
+name = "roomeq-import-wavelet"
+path = "crates/sotf-dev-driver/scenarios/roomeq_import_wavelet.scn"
+room_eq_quickstart = "stereo"
+release_channel = "Prod"
+timeout = "180s"
+tags = ["roomeq", "ui", "export"]

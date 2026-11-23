@@ -1,7 +1,7 @@
 ---
 import exportFormats from '../data/export-formats.json';
 
-// "Export Everywhere" label is built from the autoeq ExportFormat enum.
+// The CLI format list comes from the RoomEQ exporter.
 // site/scripts/gen-export-formats.mjs regenerates the JSON before each build
 // (via the prebuild npm script) so this list cannot drift from the Rust source.
 const exportFormatLabels: string =
@@ -47,7 +47,7 @@ const features = [
   },
   {
     icon: '/icons/settings.svg',
-    title: 'Export Everywhere',
+    title: 'RoomEQ CLI exports',
     description: exportFormatLabels,
   },
 ];

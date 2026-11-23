@@ -287,6 +287,9 @@ fn run_one(
     if scenario.seed_demo_audio {
         copy_audio_fixtures(&runner.demo_audio_dir, &seeded_library)?;
     }
+    if let Some(example) = scenario.room_eq_quickstart {
+        super::copy::copy_room_eq_quickstart(example, &qa_dir)?;
+    }
     let room_eq_fixture_dir = scenario
         .room_eq
         .as_ref()

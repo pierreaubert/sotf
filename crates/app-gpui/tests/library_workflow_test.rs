@@ -1,8 +1,44 @@
 use gpui::TestAppContext;
+use sotf_audio_player::{Album, Track};
 use sotf_audio_player_gpui::app::manager::Manager;
 use sotf_audio_player_gpui::app::state::library::{
     ChannelFilter, LibraryEvent, LibraryQuery, LibraryResponse, LibrarySortOrder, LibraryState,
 };
+use std::path::PathBuf;
+
+#[test]
+fn album_detail_resolves_full_album_without_duplicate_tracks() {
+    let track = |number, root: &str| Track {
+        path: PathBuf::from(format!("/{root}/{number}.flac")),
+        title: Some(format!("Track {number}")),
+        track_number: Some(number),
+        disc_number: Some(1),
+        duration_secs: Some(60),
+        ..Default::default()
+    };
+    let album = Album {
+        id: Some(42),
+        title: "Album".into(),
+        tracks: vec![track(1, "a"), track(1, "b"), track(2, "a"), track(2, "b")],
+        ..Default::default()
+    };
+    let mut state = LibraryState::new_for_test();
+    state.library.albums.push(album.clone());
+    let mut snapshot = album;
+    snapshot.tracks.truncate(1);
+
+    let detail = state.album_for_detail(&snapshot);
+    assert_eq!(detail.tracks.len(), 2);
+    assert_eq!(
+        detail
+            .tracks
+            .iter()
+            .filter_map(|t| t.duration_secs)
+            .sum::<u64>(),
+        120
+    );
+    assert_eq!(detail.tracks[1].title.as_deref(), Some("Track 2"));
+}
 
 #[gpui::test]
 fn test_library_workflow(_cx: &mut TestAppContext) {

@@ -1,6 +1,5 @@
 {
-  "source": "crates/autoeq/src/roomeq/export.rs",
-  "generatedAt": "2026-05-29T10:53:40.526Z",
+  "source": "autoeq/crates/roomeq-export/src/export_format.rs",
   "formats": [
     {
       "id": "CamillaDsp",
@@ -28,7 +27,7 @@
       "cliName": "wavelet",
       "label": "Wavelet",
       "extension": "txt",
-      "description": "Wavelet GraphicEQ text format"
+      "description": "Relative magnitude profile for Wavelet's normalizing AutoEq importer."
     },
     {
       "id": "PipeWire",
@@ -43,6 +42,20 @@
       "label": "Roon",
       "extension": "json",
       "description": "Roon DSP Engine preset (JSON)"
+    },
+    {
+      "id": "Rew",
+      "cliName": "rew",
+      "label": "REW manual-entry sheet",
+      "extension": "txt",
+      "description": "REW Generic EQ reference text for manual entry; REW cannot reload this text."
+    },
+    {
+      "id": "BiquadCoefficients",
+      "cliName": "coefficients",
+      "label": "Biquad coefficients",
+      "extension": "json",
+      "description": "Raw normalized biquad coefficients with channel/order metadata"
     }
   ]
 }

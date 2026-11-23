@@ -1,24 +1,27 @@
 #!/usr/bin/env node
 /**
- * Extract the autoeq ExportFormat enum into a JSON file the site can import.
+ * Prepare the RoomEQ format list and downloadable session for the static site.
  *
- * Source of truth: crates/autoeq/src/roomeq/export.rs
- * Output:          site/src/data/export-formats.json
+ * The site uses the same sibling AutoEQ checkout as the SotF workspace.
  *
  * Parsing strategy: read the file as text, locate the `enum ExportFormat { … }`
- * block, and walk it line-by-line collecting (doc comment, #[value name],
+ * block, and walk it line-by-line collecting (doc comment, serde name,
  * variant ident) triples plus the matching `default_extension()` arms.
  *
  * Failures (file missing, regex mismatch) are fatal — the marketing site lies
  * if this list drifts, so we'd rather break the build than ship stale data.
  */
-import { readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SOURCE = resolve(__dirname, '../../crates/autoeq/src/roomeq/export.rs');
+const AUTOEQ = resolve(__dirname, '../../../autoeq');
+const formatSource = 'crates/roomeq-export/src/export_format.rs';
+const SOURCE = resolve(AUTOEQ, formatSource);
 const OUTPUT = resolve(__dirname, '../src/data/export-formats.json');
+const ARCHIVE = resolve(AUTOEQ, 'examples/roomeq.zip');
+const DOWNLOAD = resolve(__dirname, '../public/examples/roomeq.zip');
 
 // Display label for each variant (kebab-case readable names). Keep this map
 // in sync if the enum gains new variants — the script will throw if a variant
@@ -30,6 +33,8 @@ const LABELS = {
   Wavelet: 'Wavelet',
   PipeWire: 'PipeWire',
   RoonDsp: 'Roon',
+  Rew: 'REW manual-entry sheet',
+  BiquadCoefficients: 'Biquad coefficients',
 };
 
 function fail(msg) {
@@ -45,7 +50,7 @@ if (!enumMatch) fail('could not find `pub enum ExportFormat { … }`');
 const enumBody = enumMatch[1];
 
 // 2. Walk the body. Each variant is preceded by a /// doc comment line and a
-//    #[value(name = "…")] attribute. We anchor on the variant identifier and
+//    #[serde(rename = "…")] attribute. We anchor on the variant identifier and
 //    look backwards for its doc + cli name.
 const variants = [];
 const lines = enumBody.split('\n');
@@ -59,7 +64,7 @@ for (const raw of lines) {
     pendingDoc = (pendingDoc ? pendingDoc + ' ' : '') + m[1].trim();
     continue;
   }
-  if ((m = line.match(/^#\[value\(name\s*=\s*"([^"]+)"\)\]$/))) {
+  if ((m = line.match(/^#\[serde\(rename\s*=\s*"([^"]+)"\)\]$/))) {
     pendingCliName = m[1];
     continue;
   }
@@ -91,25 +96,31 @@ const out = variants.map((v) => {
   if (!(v.id in LABELS)) {
     fail(`no LABELS entry for variant ${v.id} — update site/scripts/gen-export-formats.mjs`);
   }
+  if (!v.cliName || !extByVariant[v.id]) {
+    fail(`missing format name or file extension for ${v.id} in ${formatSource}`);
+  }
   return {
     id: v.id,
     cliName: v.cliName,
     label: LABELS[v.id],
-    extension: extByVariant[v.id] ?? null,
+    extension: extByVariant[v.id],
     description: v.doc,
   };
 });
 
 const json = JSON.stringify(
   {
-    source: 'crates/autoeq/src/roomeq/export.rs',
-    generatedAt: new Date().toISOString(),
+    source: `autoeq/${formatSource}`,
     formats: out,
   },
   null,
   2,
 );
 
+await mkdir(dirname(DOWNLOAD), { recursive: true });
+const staged = `${DOWNLOAD}.${process.pid}.tmp`;
+await copyFile(ARCHIVE, staged).catch(() => fail(`cannot stage the example from ${ARCHIVE}`));
+await rename(staged, DOWNLOAD);
 await writeFile(OUTPUT, json + '\n', 'utf8');
 console.log(`gen-export-formats: wrote ${out.length} formats → ${OUTPUT}`);
 for (const f of out) {

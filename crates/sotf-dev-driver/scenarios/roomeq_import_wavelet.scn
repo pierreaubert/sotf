@@ -1,0 +1,23 @@
+# Import the published fixture through the wizard and inspect its delivered result.
+focus room-e-q
+assert roomeq.step == "LoadData"
+assert roomeq.measurement_count == 0
+scroll_into_view roomeq.content roomeq.load_from_file
+click roomeq.load_from_file
+wait_until roomeq.measurement_count == 2 timeout=10s
+click roomeq.next
+wait_until roomeq.step == "Delay" timeout=5s
+click roomeq.next
+wait_until roomeq.step == "Process" timeout=5s
+scroll_into_view roomeq.content roomeq.select_simple
+click roomeq.select_simple
+wait_until roomeq.step == "Configure" timeout=5s
+click roomeq.next
+wait_until roomeq.step == "Optimize" timeout=5s
+scroll_into_view roomeq.content roomeq.optimize_target
+click roomeq.optimize_target
+click roomeq.optimize_target.4
+assert_text roomeq.optimize_target.advice.0 == "Wavelet normalizes imported profiles. Use the profile for relative EQ and set playback level on the device."
+click roomeq.optimize_target
+click roomeq.optimize_target.0
+assert_absent roomeq.optimize_target.advice.0

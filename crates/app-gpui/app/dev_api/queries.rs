@@ -1674,6 +1674,8 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
                         .is_some_and(|quality| !quality.trustworthy)
             })
             .count()),
+        "roomeq.export.saved_format" => json!(app.measurement_state.room_eq_state.delivery
+            .last_export().filter(|receipt| receipt.path.is_file()).map(|receipt| &receipt.format)),
         "roomeq.export.path" => json!(default_room_eq_export_path()),
         "roomeq.export.exists" => json!(default_room_eq_export_path().is_file()),
         "roomeq.export.bytes" => json!(room_eq_export_summary().and_then(|s| s.bytes)),
@@ -1686,6 +1688,7 @@ fn read_path(path: &str, state: &AppState) -> Result<Value> {
         "roomeq.export.filter_count" => {
             json!(room_eq_export_summary().and_then(|s| s.filter_count))
         }
+        "roomeq.export.terminal_limiter_outputs" => json!(room_eq_export_summary().map(|s| s.terminal_limiter_outputs)),
         "roomeq.export.version" => json!(room_eq_export_summary().and_then(|s| s.version)),
 
         // Settings / preferences
@@ -2269,6 +2272,7 @@ struct RoomEqExportSummary {
     channel_count: Option<usize>,
     plugin_count: Option<usize>,
     filter_count: Option<usize>,
+    terminal_limiter_outputs: Vec<String>,
 }
 
 fn default_room_eq_export_path() -> std::path::PathBuf {
@@ -2309,8 +2313,20 @@ fn room_eq_export_summary() -> Option<RoomEqExportSummary> {
         .map(std::vec::Vec::len)
         .sum::<usize>();
 
+    let terminal_limiter_outputs = json["channels"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(name, channel)| {
+            let terminal = channel["plugins"].as_array()?.last()?;
+            (terminal["plugin_type"] == "limiter"
+                && terminal["parameters"]["room_eq_stage"] == "post_route")
+                .then(|| name.clone())
+        })
+        .collect();
     Some(RoomEqExportSummary {
         bytes,
+        terminal_limiter_outputs,
         version: json
             .get("version")
             .and_then(|v| v.as_str())

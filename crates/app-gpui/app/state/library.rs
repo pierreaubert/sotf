@@ -104,6 +104,34 @@ impl Default for LibraryState {
 }
 
 impl LibraryState {
+    pub fn album_for_detail(
+        &self,
+        snapshot: &sotf_audio_player::Album,
+    ) -> sotf_audio_player::Album {
+        let album =
+            self.library
+                .albums
+                .iter()
+                .find(|candidate| {
+                    candidate.id.is_some()
+                        && candidate.id == snapshot.id
+                        && candidate.tracks.iter().any(|track| {
+                            snapshot.tracks.iter().any(|shown| shown.path == track.path)
+                        })
+                })
+                .unwrap_or(snapshot);
+        let mut album = sotf_audio_player::group_and_merge_albums(vec![album])
+            .pop()
+            .unwrap_or_else(|| album.clone());
+        album.tracks.sort_by_key(|track| {
+            (
+                track.disc_number.unwrap_or(1),
+                track.track_number.unwrap_or(u32::MAX),
+            )
+        });
+        album
+    }
+
     fn desktop_controller(mut controller: LibraryController) -> LibraryController {
         controller.set_result_order(sotf_audio_player::controllers::LibraryResultOrder::Recent);
         controller

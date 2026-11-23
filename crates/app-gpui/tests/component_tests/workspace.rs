@@ -1776,3 +1776,154 @@ fn spectrum_display_interpolates_missing_log_bands_and_preserves_measured_values
     );
     assert_eq!(raw[0], f32::NEG_INFINITY);
 }
+
+#[test]
+fn field_retake_stages_only_the_registered_source_and_rejects_stale_state() {
+    use sotf_audio_player::recording_types::{ChannelRecordingState, RecordingImport};
+    use sotf_audio_player_gpui::app::types::recording::RecordingState;
+    use sotf_report_host::retake::{RegisteredAcquisition, RetakeContext};
+    let imported = RecordingImport::from_json(
+        r#"{"version":"1.1.0","speakers":{"L":{"measurements":[{"name":"Seat A","frequencies":[100,1000],"magnitude_db":[0,1]},{"name":"Seat B","frequencies":[100,1000],"magnitude_db":[2,3]}]}}}"#,
+        None,
+    ).unwrap();
+    let mut state = RecordingState {
+        model: sotf_audio_player::ui_models::recording::RecordingScreenModel {
+            channel_recordings: imported.recordings(),
+            recording_config: sotf_audio_player::recording_types::RecordingDeviceConfig {
+                device_id: "mic-device".into(),
+                channel_mappings: vec![3],
+                num_channels: 1,
+                ..Default::default()
+            },
+            recording_directory: Some("/test/recording".into()),
+            ..Default::default()
+        },
+        imported_session: Some(imported),
+        ..Default::default()
+    };
+    state.playback_config.device_id = "out-device".into();
+    let session_id = state.field_retake_session_id().unwrap();
+    let acquisition_id = serde_json::to_string(
+        state.channel_recordings[1]
+            .imported_source
+            .as_ref()
+            .unwrap(),
+    )
+    .unwrap();
+    let registry = RetakeContext {
+        rig_id: "rig-a".into(),
+        capture_session_id: session_id,
+        active_preset_id: None,
+        capture_active: false,
+        acquisitions: vec![RegisteredAcquisition {
+            source_id: "left".into(),
+            seat_id: "seat-b".into(),
+            acquisition_id,
+            output_device_id: "out-device".into(),
+            input_device_id: "mic-device".into(),
+            output_channel: 5,
+            input_channel: 3,
+        }],
+    };
+    let request: sotf_report_host::FieldRetakeRequest = serde_json::from_value(serde_json::json!({"rig_id":"rig-a","source_id":"left","seat_id":"seat-b","role":"candidate","preset_id":"candidate","candidate_id":"candidate"})).unwrap();
+    assert!(
+        state
+            .field_retake_registration(&request, 1, 8, 4, Some("candidate".into()))
+            .is_err()
+    );
+    state.select_imported_route(1, true, 5);
+    state.select_imported_route(1, false, 0);
+    let registered = state
+        .field_retake_registration(&request, 1, 8, 4, Some("candidate".into()))
+        .unwrap();
+    assert_eq!(registered, registry);
+    state.imported_retake_routes.clear();
+    let pending = sotf_audio_player_gpui::app::types::recording::PendingFieldRegistration {
+        request: request.clone(),
+        graph_path: "graph".into(),
+        report_path: "report".into(),
+    };
+    state.pending_field_registration = Some(pending);
+    state.pending_field_registration = None;
+    assert!(
+        state
+            .channel_recordings
+            .iter()
+            .all(|take| take.result.is_some())
+    );
+    let mut wrong = request.clone();
+    wrong.rig_id = "rig-b".into();
+    assert!(
+        state
+            .stage_field_retake(
+                wrong,
+                registry.clone(),
+                Some("candidate".into()),
+                "graph".into(),
+                "report".into()
+            )
+            .is_err()
+    );
+    let mut wrong = request.clone();
+    wrong.seat_id = "unknown".into();
+    assert!(
+        state
+            .stage_field_retake(
+                wrong,
+                registry.clone(),
+                Some("candidate".into()),
+                "graph".into(),
+                "report".into()
+            )
+            .is_err()
+    );
+    assert!(
+        state
+            .stage_field_retake(
+                request.clone(),
+                registry.clone(),
+                Some("old".into()),
+                "graph".into(),
+                "report".into()
+            )
+            .is_err()
+    );
+    state.channel_recordings[0].state = ChannelRecordingState::Recording;
+    assert!(
+        state
+            .stage_field_retake(
+                request.clone(),
+                registry.clone(),
+                Some("candidate".into()),
+                "graph".into(),
+                "report".into()
+            )
+            .is_err()
+    );
+    state.channel_recordings[0].state = ChannelRecordingState::Done;
+    state
+        .stage_field_retake(
+            request.clone(),
+            registry.clone(),
+            Some("candidate".into()),
+            "graph".into(),
+            "report".into(),
+        )
+        .unwrap();
+    assert_eq!(state.pending_field_retake.as_ref().unwrap().index, 1);
+    assert_eq!(state.capture_take_indices(1), vec![1]);
+    assert_eq!(state.validated_imported_route(1, 8, 4), Some((5, 0)));
+    assert_eq!(state.validated_imported_route(0, 8, 4), None);
+    assert!(
+        state
+            .channel_recordings
+            .iter()
+            .all(|take| take.result.is_some())
+    );
+    state.signal_level_db -= 3.0;
+    assert!(
+        state
+            .validate_field_retake(&request, &registry, Some("candidate".into()))
+            .is_err()
+    );
+}

@@ -521,3 +521,41 @@ fn test_import_preserves_seed_and_refine() {
         "local_algo must survive smart defaults"
     );
 }
+
+#[test]
+fn imported_21_target_advice_uses_preserved_routing_and_protection() {
+    let text = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../autoeq/examples/roomeq/2.1.json"
+    ))
+    .unwrap();
+    let mut config: roomeq_model::RoomConfig = serde_json::from_str(&text).unwrap();
+    config.optimizer.finalization.subwoofer_limiter = true;
+    let mut state = RoomEqState::default();
+    state.model.channel_measurements = vec![
+        make_dummy_measurement("L"),
+        make_dummy_measurement("R"),
+        make_dummy_measurement("LFE"),
+    ];
+    state.init_speaker_configs();
+    state.model.imported_system = config.system.clone();
+    state
+        .model
+        .optimizer_config
+        .import_from_backend(&config.optimizer);
+    let resolved = state.to_room_config();
+    let codes = |format| {
+        roomeq_workflow::query_config_export_advice(&resolved, format)
+            .into_iter()
+            .map(|a| a.code)
+            .collect::<Vec<_>>()
+    };
+    let camilla = codes(roomeq_workflow::ExportFormat::CamillaDsp);
+    assert!(camilla.contains(&roomeq_workflow::ExportConfigAdviceCode::RoutedBassManagement));
+    assert!(camilla.contains(&roomeq_workflow::ExportConfigAdviceCode::MandatoryRuntimeLimiter));
+    let easy = codes(roomeq_workflow::ExportFormat::EasyEffects);
+    assert!(
+        easy.contains(&roomeq_workflow::ExportConfigAdviceCode::RoutedBassManagementUnsupported)
+    );
+    assert!(easy.contains(&roomeq_workflow::ExportConfigAdviceCode::MandatoryRuntimeLimiter));
+}

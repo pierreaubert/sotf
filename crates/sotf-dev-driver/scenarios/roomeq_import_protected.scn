@@ -1,0 +1,43 @@
+# Import the published fixture through the wizard and inspect its delivered result.
+focus room-e-q
+assert roomeq.step == "LoadData"
+assert roomeq.measurement_count == 0
+scroll_into_view roomeq.content roomeq.load_from_file
+click roomeq.load_from_file
+wait_until roomeq.measurement_count == 3 timeout=10s
+click roomeq.next
+wait_until roomeq.step == "Delay" timeout=5s
+click roomeq.next
+wait_until roomeq.step == "Process" timeout=5s
+scroll_into_view roomeq.content roomeq.select_simple
+click roomeq.select_simple
+wait_until roomeq.step == "Configure" timeout=5s
+click roomeq.next
+wait_until roomeq.step == "Optimize" timeout=5s
+scroll_into_view roomeq.content roomeq.optimize_target
+click roomeq.optimize_target
+click roomeq.optimize_target.1
+assert_visible roomeq.optimize_target.advice.1
+assert_text roomeq.optimize_target.advice.1 == "The configured protection may require a limiter this target cannot preserve. Native playback can retain protection."
+scroll_into_view roomeq.content roomeq.optimize_start
+click roomeq.optimize_start
+wait_until roomeq.optimization_status != "Idle" timeout=10s
+wait_until roomeq.optimization_status == "Completed" timeout=150s
+assert roomeq.step == "Review"
+assert roomeq.result_count == 3
+click roomeq.next
+wait_until roomeq.step == "Export" timeout=5s
+scroll_into_view roomeq.content roomeq.export_file
+assert_text roomeq.export_unsupported_reason == "CamillaDsp export cannot preserve the mandatory runtime sub-output limiter; use native playback"
+assert_enabled roomeq.export_file == false
+assert roomeq.export.saved_format == null
+click roomeq.export_target
+scroll_into_view roomeq.content roomeq.export_target.0
+click roomeq.export_target.0
+scroll_into_view roomeq.content roomeq.export_file
+assert_absent roomeq.export_unsupported_reason
+assert_enabled roomeq.export_file == true
+click roomeq.export_file
+wait_until roomeq.export.exists == true timeout=10s
+assert roomeq.export.channel_count == 3
+assert roomeq.export.terminal_limiter_outputs == ["Sub1"]
